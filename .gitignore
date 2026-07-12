@@ -11,3 +11,6 @@ DerivedData/
 
 # Archived conversion leftovers (optional local only)
 App/Resources/Models/Catgirl/_placeholder_skinnie/
+
+# Packaged app artifacts (upload via GitHub Releases)
+dist/

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import TokcatKit
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
@@ -170,27 +171,84 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("显示动态 3D 宠物", isOn: binding(\.showDesktopPet))
+            } header: {
+                Text("显示")
+            }
 
-                Picker("皮肤", selection: binding(\.desktopPetSkin)) {
+            Section {
+                Picker("皮肤库", selection: binding(\.desktopPetSkin)) {
                     ForEach(DesktopPetSkin.allCases) { skin in
                         Text(skin.displayName).tag(skin)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
+
+                // Quick chips for common skins
+                HStack(spacing: 8) {
+                    ForEach(DesktopPetSkin.allCases) { skin in
+                        Button(skin.displayName) {
+                            model.updateSettings { $0.desktopPetSkin = skin }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(model.settings.desktopPetSkin == skin ? .accentColor : .secondary)
+                    }
+                }
 
                 Text(model.settings.desktopPetSkin.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("皮肤库")
+            } footer: {
+                Text("粉猫 = 内置 CC0 模型；Q版猫娘 = 程序化角色；自定义 = 导入你的 USDZ。")
+            }
 
-                if model.settings.desktopPetSkin == .catgirl {
-                    Text("猫娘优先加载 Resources/Models/Catgirl/Catgirl.usdz；若无模型文件，则使用内置 Q 版猫娘。")
-                        .font(.caption2)
+            Section {
+                if let name = model.settings.customPetModelFileName, !name.isEmpty {
+                    LabeledContent("当前模型") {
+                        Text(name)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("尚未导入自定义模型")
                         .foregroundStyle(.secondary)
                 }
+
+                Button("导入模型…") {
+                    PetModelLibrary.presentOpenPanel { url in
+                        guard let url else { return }
+                        do {
+                            let fileName = try PetModelLibrary.importModel(from: url)
+                            model.updateSettings {
+                                $0.customPetModelFileName = fileName
+                                $0.desktopPetSkin = .custom
+                            }
+                        } catch {
+                            let alert = NSAlert()
+                            alert.messageText = "导入失败"
+                            alert.informativeText = error.localizedDescription
+                            alert.alertStyle = .warning
+                            alert.runModal()
+                        }
+                    }
+                }
+
+                Button("清除自定义模型", role: .destructive) {
+                    PetModelLibrary.removeCustomModel(fileName: model.settings.customPetModelFileName)
+                    model.updateSettings {
+                        $0.customPetModelFileName = nil
+                        if $0.desktopPetSkin == .custom {
+                            $0.desktopPetSkin = .pinkCat
+                        }
+                    }
+                }
+                .disabled(model.settings.customPetModelFileName == nil)
             } header: {
-                Text("桌面宠物")
+                Text("自定义模型")
             } footer: {
-                Text("悬浮在桌面上的 SceneKit 宠物。可切换方块猫 / 猫娘，关闭后完全隐藏。")
+                Text("支持 .usdz / .usda / .usdc / .scn / .reality。导入后自动切换到“自定义”皮肤，文件保存在本地 Application Support。")
             }
         }
         .formStyle(.grouped)

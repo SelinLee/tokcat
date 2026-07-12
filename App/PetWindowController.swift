@@ -10,6 +10,8 @@ final class PetWindowController: NSWindowController {
     private let sceneView: SCNView
     private var coordinator: PetSceneCoordinator?
     private var pollTimer: Timer?
+    private var lastSkin: DesktopPetSkin?
+    private var lastCustomFile: String?
 
     init(model: AppModel) {
         self.appModel = model
@@ -58,7 +60,7 @@ final class PetWindowController: NSWindowController {
         super.init(window: window)
 
         rebuildScene()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
             }
@@ -71,7 +73,9 @@ final class PetWindowController: NSWindowController {
     }
 
     private func tick() {
-        if coordinator?.skin != appModel.settings.desktopPetSkin {
+        let skin = appModel.settings.desktopPetSkin
+        let custom = appModel.settings.customPetModelFileName
+        if skin != lastSkin || custom != lastCustomFile {
             rebuildScene()
         } else {
             coordinator?.apply(appModel.petState)
@@ -79,8 +83,10 @@ final class PetWindowController: NSWindowController {
     }
 
     private func rebuildScene() {
+        lastSkin = appModel.settings.desktopPetSkin
+        lastCustomFile = appModel.settings.customPetModelFileName
         let next = PetSceneCoordinator(
-            skin: appModel.settings.desktopPetSkin,
+            settings: appModel.settings,
             initialLevel: appModel.petState.level
         )
         coordinator = next
@@ -93,55 +99,96 @@ final class PetWindowController: NSWindowController {
 
 private final class TransparentView: NSView {
     override var isOpaque: Bool { false }
-    override func draw(_ dirtyRect: NSRect) {
-        // Keep fully transparent — never fill with window background.
-    }
+    override func draw(_ dirtyRect: NSRect) {}
 }
 
-@MainActor
 final class PetSceneCoordinator {
     let skin: DesktopPetSkin
     let scene: SCNScene
     let cameraNode: SCNNode?
     private let applyState: (PetState) -> Void
 
-    init(skin: DesktopPetSkin, initialLevel: Int) {
-        self.skin = skin
-        switch skin {
+    init(settings: AppSettings, initialLevel: Int) {
+        self.skin = settings.desktopPetSkin
+
+        switch settings.desktopPetSkin {
         case .procedural:
-            let scene = SCNScene()
-            scene.background.contents = NSColor.clear
-            let rig = CatSceneBuilder.buildScene(in: scene)
-            let animator = CatAnimator(rig: rig, initialLevel: initialLevel)
-            self.scene = scene
-            self.cameraNode = scene.rootNode.childNodes.first(where: { $0.camera != nil })
-            self.applyState = { animator.apply($0) }
+            let built = Self.makeProceduralCubeCat(initialLevel: initialLevel)
+            self.scene = built.scene
+            self.cameraNode = built.camera
+            self.applyState = built.apply
+
+        case .pinkCat:
+            if let loaded = Self.loadExternal(preferredURL: nil) {
+                self.scene = loaded.scene
+                self.cameraNode = loaded.camera
+                self.applyState = loaded.apply
+                NSLog("[Tokcat] using bundled pink cat")
+            } else {
+                let built = Self.makeProceduralCatgirl(initialLevel: initialLevel)
+                self.scene = built.scene
+                self.cameraNode = built.camera
+                self.applyState = built.apply
+                NSLog("[Tokcat] pink cat missing; procedural Q-catgirl fallback")
+            }
 
         case .catgirl:
-            if let loaded = CatModelLoader.loadPreparedCatgirl(),
-               CatModelLoader.isVisuallyUsable(loaded.root),
-               CatModelLoader.hasUsefulMaterials(loaded.root),
-               !CatModelLoader.looksLikeBareMannequin(loaded.root) {
-                loaded.scene.background.contents = NSColor.clear
-                let animator = BundledCatgirlAnimator(root: loaded.root, initialLevel: initialLevel)
+            let built = Self.makeProceduralCatgirl(initialLevel: initialLevel)
+            self.scene = built.scene
+            self.cameraNode = built.camera
+            self.applyState = built.apply
+            NSLog("[Tokcat] using procedural Q-catgirl")
+
+        case .custom:
+            let url = PetModelLibrary.customModelURL(fileName: settings.customPetModelFileName)
+            if let url, let loaded = Self.loadExternal(preferredURL: url) {
                 self.scene = loaded.scene
-                self.cameraNode = loaded.cameraNode
-                self.applyState = { animator.apply($0) }
-                NSLog("[Tokcat] using bundled USDZ catgirl")
+                self.cameraNode = loaded.camera
+                self.applyState = loaded.apply
+                NSLog("[Tokcat] using custom model %@", url.lastPathComponent)
             } else {
-                let scene = SCNScene()
-                scene.background.contents = NSColor.clear
-                let rig = CatgirlSceneBuilder.buildScene(in: scene)
-                let animator = CatgirlAnimator(rig: rig, initialLevel: initialLevel)
-                self.scene = scene
-                self.cameraNode = scene.rootNode.childNodes.first(where: { $0.camera != nil })
-                self.applyState = { animator.apply($0) }
-                NSLog("[Tokcat] using procedural catgirl fallback")
+                let built = Self.makeProceduralCatgirl(initialLevel: initialLevel)
+                self.scene = built.scene
+                self.cameraNode = built.camera
+                self.applyState = built.apply
+                NSLog("[Tokcat] custom model missing; procedural Q-catgirl fallback")
             }
         }
     }
 
     func apply(_ state: PetState) {
         applyState(state)
+    }
+
+    private static func loadExternal(preferredURL: URL?) -> (scene: SCNScene, camera: SCNNode?, apply: (PetState) -> Void)? {
+        guard let loaded = CatModelLoader.loadPreparedModel(preferredURL: preferredURL),
+              CatModelLoader.isVisuallyUsable(loaded.root),
+              CatModelLoader.hasUsefulMaterials(loaded.root) || preferredURL != nil,
+              !CatModelLoader.looksLikeBareMannequin(loaded.root) || preferredURL != nil
+        else {
+            return nil
+        }
+        loaded.scene.background.contents = NSColor.clear
+        let animator = BundledCatgirlAnimator(root: loaded.root, initialLevel: 1)
+        // initialLevel is re-applied immediately by caller via apply(petState)
+        return (loaded.scene, loaded.cameraNode, { animator.apply($0) })
+    }
+
+    private static func makeProceduralCubeCat(initialLevel: Int) -> (scene: SCNScene, camera: SCNNode?, apply: (PetState) -> Void) {
+        let scene = SCNScene()
+        scene.background.contents = NSColor.clear
+        let rig = CatSceneBuilder.buildScene(in: scene)
+        let animator = CatAnimator(rig: rig, initialLevel: initialLevel)
+        let camera = scene.rootNode.childNodes.first(where: { $0.camera != nil })
+        return (scene, camera, { animator.apply($0) })
+    }
+
+    private static func makeProceduralCatgirl(initialLevel: Int) -> (scene: SCNScene, camera: SCNNode?, apply: (PetState) -> Void) {
+        let scene = SCNScene()
+        scene.background.contents = NSColor.clear
+        let rig = CatgirlSceneBuilder.buildScene(in: scene)
+        let animator = CatgirlAnimator(rig: rig, initialLevel: initialLevel)
+        let camera = scene.rootNode.childNodes.first(where: { $0.camera != nil })
+        return (scene, camera, { animator.apply($0) })
     }
 }

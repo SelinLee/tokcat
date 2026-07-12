@@ -11,6 +11,7 @@ final class CatgirlAnimator {
         self.rig = rig
         self.lastLevel = initialLevel
         startIdle()
+        startBlinkLoop()
     }
 
     func apply(_ state: PetState) {
@@ -23,6 +24,21 @@ final class CatgirlAnimator {
             playLevelUp()
         }
         lastLevel = state.level
+    }
+
+    private func startBlinkLoop() {
+        let close = SCNAction.customAction(duration: 0.08) { _, _ in
+            self.rig.leftEye.scale = SCNVector3(1, 0.15, 1)
+            self.rig.rightEye.scale = SCNVector3(1, 0.15, 1)
+        }
+        let open = SCNAction.customAction(duration: 0.1) { _, _ in
+            self.rig.leftEye.scale = SCNVector3(1, 1, 1)
+            self.rig.rightEye.scale = SCNVector3(1, 1, 1)
+        }
+        let blink = SCNAction.sequence([close, open])
+        self.rig.head.runAction(.repeatForever(.sequence([
+            .wait(duration: 2.6), blink, .wait(duration: 1.8), blink, .wait(duration: 3.2)
+        ])), forKey: "blink")
     }
 
     private func startIdle() {

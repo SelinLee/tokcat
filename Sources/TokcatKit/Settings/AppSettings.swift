@@ -89,20 +89,22 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 }
 
 
-/// Desktop pet visual style.
-/// `procedural` is the original geometric cube cat.
-/// `catgirl` prefers a bundled USDZ humanoid catgirl, with a built-in
-/// chibi catgirl rig as fallback until a converted model is present.
+/// Desktop pet visual style / skin library entry.
+/// Built-ins ship with the app; `custom` loads a user-imported USDZ/SCN.
 public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiable {
     case procedural
+    case pinkCat
     case catgirl
+    case custom
 
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
         case .procedural: return "方块猫"
-        case .catgirl: return "猫娘"
+        case .pinkCat: return "粉猫"
+        case .catgirl: return "Q版猫娘"
+        case .custom: return "自定义"
         }
     }
 
@@ -110,8 +112,20 @@ public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiabl
         switch self {
         case .procedural:
             return "原始低多边形方块猫，由 SceneKit 几何体拼装。"
+        case .pinkCat:
+            return "内置 CC0 粉猫（Chubby Tubby Cat），支持更自然的待机与表情动画。"
         case .catgirl:
-            return "Q 版人形猫娘。若有 Catgirl.usdz 则优先加载，否则使用内置模型。"
+            return "内置 Q 版程序化猫娘（粉发猫耳），无需外部模型。"
+        case .custom:
+            return "使用你导入的 .usdz / .scn / .reality 模型。可在设置中导入或清除。"
+        }
+    }
+
+    /// Whether this skin expects an external model file.
+    public var usesExternalModel: Bool {
+        switch self {
+        case .pinkCat, .custom: return true
+        case .procedural, .catgirl: return false
         }
     }
 }
@@ -156,6 +170,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Visual skin for the floating desktop pet.
     public var desktopPetSkin: DesktopPetSkin
 
+    /// File name of a user-imported model under Application Support (for `.custom`).
+    public var customPetModelFileName: String?
+
     /// Polling interval for monitors and pet ticks, in seconds.
     public var pollIntervalSeconds: Double
 
@@ -196,7 +213,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents: Bool = true,
         showPetSummary: Bool = true,
         showDesktopPet: Bool = true,
-        desktopPetSkin: DesktopPetSkin = .catgirl,
+        desktopPetSkin: DesktopPetSkin = .pinkCat,
+        customPetModelFileName: String? = nil,
         pollIntervalSeconds: Double = 2
     ) {
         self.showCPU = showCPU
@@ -219,6 +237,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showPetSummary = showPetSummary
         self.showDesktopPet = showDesktopPet
         self.desktopPetSkin = desktopPetSkin
+        self.customPetModelFileName = customPetModelFileName
         self.pollIntervalSeconds = pollIntervalSeconds
     }
 
@@ -262,7 +281,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case showCPU, showMemory, showNetwork, showThermal, showGPU
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
-        case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, desktopPetSkin
+        case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, desktopPetSkin, customPetModelFileName
         case pollIntervalSeconds
         case menuBarAccessory // legacy
     }
@@ -278,7 +297,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents = try container.decodeIfPresent(Bool.self, forKey: .showRecentTokenEvents) ?? true
         showPetSummary = try container.decodeIfPresent(Bool.self, forKey: .showPetSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
-        desktopPetSkin = try container.decodeIfPresent(DesktopPetSkin.self, forKey: .desktopPetSkin) ?? .catgirl
+        // New default is pinkCat. Legacy "catgirl" remains a valid stored choice.
+        if let skin = try container.decodeIfPresent(DesktopPetSkin.self, forKey: .desktopPetSkin) {
+            desktopPetSkin = skin
+        } else {
+            desktopPetSkin = .pinkCat
+        }
+        customPetModelFileName = try container.decodeIfPresent(String.self, forKey: .customPetModelFileName)
         pollIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 2
         menuBarShowCatIcon = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCatIcon) ?? true
         let rawScale = try container.decodeIfPresent(Double.self, forKey: .menuBarCatIconScale)
@@ -344,6 +369,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showPetSummary, forKey: .showPetSummary)
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
         try container.encode(desktopPetSkin, forKey: .desktopPetSkin)
+        try container.encodeIfPresent(customPetModelFileName, forKey: .customPetModelFileName)
         try container.encode(pollIntervalSeconds, forKey: .pollIntervalSeconds)
     }
 }

@@ -94,7 +94,9 @@ final class AppModel: ObservableObject {
         }
         // Skin swap is handled by PetRootView `.id(desktopPetSkin)`; ensure the
         // window is visible when user changes skin while pet is enabled.
-        if oldValue.desktopPetSkin != settings.desktopPetSkin, settings.showDesktopPet {
+        if (oldValue.desktopPetSkin != settings.desktopPetSkin
+            || oldValue.customPetModelFileName != settings.customPetModelFileName),
+           settings.showDesktopPet {
             applyDesktopPetVisibility()
         }
     }

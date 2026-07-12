@@ -20,6 +20,7 @@ final class AppSettingsTests: XCTestCase {
         settings.menuBarIconStyle = .lineCPU
         settings.showDesktopPet = false
         settings.desktopPetSkin = .procedural
+        settings.customPetModelFileName = "demo.usdz"
         settings.pollIntervalSeconds = 7
         store.save(settings)
 
@@ -31,6 +32,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(loaded.menuBarIconStyle, .lineCPU)
         XCTAssertFalse(loaded.showDesktopPet)
         XCTAssertEqual(loaded.desktopPetSkin, .procedural)
+        XCTAssertEqual(loaded.customPetModelFileName, "demo.usdz")
         XCTAssertEqual(loaded.menuBarCatIconPointSize, AppSettings.catIconBasePointSize * (0.5 + 0.75), accuracy: 0.001)
     }
 
@@ -168,10 +170,12 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testDesktopPetSkinDefaultIsCatgirl() {
-        XCTAssertEqual(AppSettings.default.desktopPetSkin, .catgirl)
-        XCTAssertEqual(DesktopPetSkin.allCases.count, 2)
+        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pinkCat)
+        XCTAssertEqual(DesktopPetSkin.allCases.count, 4)
         XCTAssertEqual(DesktopPetSkin.procedural.displayName, "方块猫")
-        XCTAssertEqual(DesktopPetSkin.catgirl.displayName, "猫娘")
+        XCTAssertEqual(DesktopPetSkin.catgirl.displayName, "Q版猫娘")
+        XCTAssertEqual(DesktopPetSkin.pinkCat.displayName, "粉猫")
+        XCTAssertEqual(DesktopPetSkin.custom.displayName, "自定义")
     }
 
     func testDesktopPetSkinPersistsAndLegacyDefaultsToCatgirl() throws {
@@ -184,7 +188,7 @@ final class AppSettingsTests: XCTestCase {
         AppSettingsStore(defaults: defaults).save(settings)
         XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .procedural)
 
-        // Legacy payloads without desktopPetSkin keep catgirl default.
+        // Legacy payloads without desktopPetSkin default to pinkCat.
         let legacyJSON = """
         {
           "showCPU": true,
@@ -200,7 +204,7 @@ final class AppSettingsTests: XCTestCase {
         }
         """.data(using: .utf8)!
         defaults.set(legacyJSON, forKey: AppSettingsStore.defaultsKey)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .catgirl)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .pinkCat)
     }
 }
 

@@ -14,10 +14,26 @@ enum CatModelLoader {
         let cameraNode: SCNNode?
     }
 
+    /// Loads the preferred model for a library skin.
+    /// - Parameter preferredURL: optional custom/imported model URL.
+    static func loadPreparedModel(preferredURL: URL? = nil) -> LoadedModel? {
+        let urls: [URL]
+        if let preferredURL {
+            urls = [preferredURL] + candidateURLs()
+        } else {
+            urls = candidateURLs()
+        }
+        for url in urls {
+            if let source = loadScene(from: url) {
+                return prepareBundledScene(source, sourceURL: url)
+            }
+        }
+        return nil
+    }
+
+    /// Back-compat alias used by older call sites.
     static func loadPreparedCatgirl() -> LoadedModel? {
-        guard let sourceURL = firstExistingModelURL() else { return nil }
-        guard let source = loadScene(from: sourceURL) else { return nil }
-        return prepareBundledScene(source, sourceURL: sourceURL)
+        loadPreparedModel(preferredURL: nil)
     }
 
     private static func firstExistingModelURL() -> URL? {
