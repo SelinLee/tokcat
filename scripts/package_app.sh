@@ -59,15 +59,46 @@ echo "==> Assembling ${APP_NAME}.app"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-# Binary + resource bundle must sit together for Bundle.module resolution.
+# Executable
 cp "$BIN" "$MACOS_DIR/${EXEC_NAME}"
 chmod +x "$MACOS_DIR/${EXEC_NAME}"
-rm -rf "$MACOS_DIR/Tokcat_TokcatApp.bundle"
-cp -R "$RES_BUNDLE_SRC" "$MACOS_DIR/Tokcat_TokcatApp.bundle"
 
-# Also mirror into Resources for Finder/AppKit conventions.
-rm -rf "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
-cp -R "$RES_BUNDLE_SRC" "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
+# SwiftPM resource bundle: put under Contents/Resources and also next to the
+# executable (Bundle.module for executable targets resolves relative to the binary).
+# Make the MacOS copy a proper bundle with Info.plist so codesign accepts --deep.
+copy_resource_bundle() {
+  local dest="$1"
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  # Copy payload files
+  rsync -a --delete "$RES_BUNDLE_SRC"/ "$dest"/
+  # Ensure bundle Info.plist exists (SwiftPM loose bundles often lack it).
+  if [[ ! -f "$dest/Info.plist" ]]; then
+    cat > "$dest/Info.plist" <<'BUNDLEPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.selinlee.tokcat.resources</string>
+  <key>CFBundleName</key>
+  <string>Tokcat_TokcatApp</string>
+  <key>CFBundlePackageType</key>
+  <string>BNDL</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+</dict>
+</plist>
+BUNDLEPLIST
+  fi
+}
+
+copy_resource_bundle "$MACOS_DIR/Tokcat_TokcatApp.bundle"
+copy_resource_bundle "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
 
 # PkgInfo
 printf 'APPL????' > "$CONTENTS/PkgInfo"
@@ -111,7 +142,11 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 PLIST
 
 echo "==> Ad-hoc codesign"
-codesign --force --deep --sign - "$APP_DIR"
+# Sign nested resource bundles first, then the app.
+codesign --force --sign - "$MACOS_DIR/Tokcat_TokcatApp.bundle" || true
+codesign --force --sign - "$RESOURCES_DIR/Tokcat_TokcatApp.bundle" || true
+codesign --force --sign - "$MACOS_DIR/${EXEC_NAME}"
+codesign --force --deep --options runtime --sign - "$APP_DIR" || codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Verify bundle"
 if command -v spctl >/dev/null 2>&1; then
