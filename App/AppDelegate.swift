@@ -12,8 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        petWindowController = PetWindowController(model: model)
-        petWindowController?.showWindow(nil)
+        let petWindow = PetWindowController(model: model)
+        petWindowController = petWindow
+        model.attachPetWindow(petWindow)
 
         model.start()
     }

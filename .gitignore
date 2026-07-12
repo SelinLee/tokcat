@@ -5,3 +5,9 @@
 *.xcworkspace
 DerivedData/
 .claude/settings.local.json
+
+# Local agent worktrees
+.claude/worktrees/
+
+# Archived conversion leftovers (optional local only)
+App/Resources/Models/Catgirl/_placeholder_skinnie/
