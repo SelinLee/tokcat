@@ -1,6 +1,6 @@
 # Tokcat
 
-**在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用**，并做日本地统计。  
+**在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用，并提供本地统计。**  
 附带一只用这些用量喂养的桌面像素宠物。默认离线，不联网、不上传。
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@
 
 ## 核心能力：多 Agent 用量与费用
 
-Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 上报），统一成 token 事件后：
+Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 上报），统一为 token 事件后：
 
 | 能力 | 说明 |
 |------|------|
@@ -37,8 +37,8 @@ Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 
 
 设置里可开关各适配器。新适配器默认从文件**末尾**跟踪，避免首次启动灌入海量历史。
 
-> 宠物养成是「用量可视化」的壳：token 进来 → 统计落库 → 同时喂养桌面猫。  
-> **即使你不在意宠物，统计与费用监控也可单独使用。**
+> 宠物养成是「用量可视化」的可选壳层：token 进来 → 统计落库 → 同时喂养桌面猫。  
+> **即使不使用宠物，统计与费用监控也可单独使用。**
 
 ---
 
@@ -46,10 +46,10 @@ Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 
 
 1. 安装并打开 Tokcat（菜单栏出现猫头）  
 2. 正常使用 Claude Code / Codex / Cursor 等  
-3. 菜单栏旁可看 **tok/s · 费用速率**；点开面板看今日用量  
-4. 主界面 → **统计**：日/周/月曲线与明细  
+3. 菜单栏可看 **tok/s · 费用速率**；点开面板查看今日用量  
+4. 主界面 → **统计**：日 / 周 / 月曲线与明细  
 
-数据仅写本机 SQLite：`~/Library/Application Support/TokenCat/tokencat.sqlite3`
+数据仅写入本机 SQLite：`~/Library/Application Support/TokenCat/tokencat.sqlite3`
 
 ---
 
@@ -62,10 +62,10 @@ Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 
 
 ### 2. 统计与费率（主界面）
 - **统计**：日 / 周 / 月；分组 = 中转站 / 模型 / Agent；Tokens 或费用  
-- 异步聚合 + 缓存，切换周期不卡主线程  
+- 异步聚合 + 缓存，切换周期不阻塞主线程  
 - **设置 → 费率**：维护模型单价；可与 CC Switch 上报价配合  
 
-### 3. 桌面宠物（可选陪伴层）
+### 3. 桌面宠物（可选）
 - 默认 **像素 Tokcat**（吃 / 升级 / 工作 / 困 / 饿…）
 - 也可用方块猫 / 粉猫 / 自定义 USDZ  
 - 用量驱动成长：等级、聪明 / 稳定 / 手感、掉落装备与图鉴  
@@ -77,7 +77,7 @@ Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 
 ### 5. 隐私
 - **应用本身不做网络请求**  
 - 只读本机日志与系统指标  
-- 无账号、无云同步、无上传 usage  
+- 无账号、无云同步、无 usage 上传  
 
 ---
 
@@ -102,10 +102,6 @@ Tokcat 轮询读取**本机 agent 日志**（无需 cloud hook、无需 API Key 
 TOKCAT_VERSION=0.3.0 scripts/package_app.sh
 # 产物在 dist/（不入库）：Tokcat.app 与 Tokcat-0.3.0-macos.zip
 ```
-
-### 关于 DMG
-
-当前 **Zip 足够安装**。在未做 Apple Developer ID **公证** 前，DMG 并不会减少 Gatekeeper 拦截；有公证后再做 DMG 更有意义。
 
 ---
 
@@ -153,7 +149,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 - [x] 菜单栏指标与主界面  
 - [x] 像素宠物 / 掉落 / 背包 / 图鉴  
 - [ ] 更多 agent / 日志格式  
-- [ ] Developer ID 签名与公证（可选 DMG）  
+- [ ] Developer ID 签名与公证  
 
 ---
 
