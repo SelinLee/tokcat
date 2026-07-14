@@ -45,4 +45,31 @@ final class TokenEconomyTests: XCTestCase {
         XCTAssertEqual(economy.totalCostUSD(events, tier: .premium), 5)
         XCTAssertEqual(economy.totalTokens(events, tier: .economy), 100)
     }
+
+    func testEstimatedCostUsesSplitCacheRates() {
+        let table = PricingTable(
+            pricingByModelKey: [
+                "test-model": ModelPricing(
+                    inputPerMillion: 1_000_000,
+                    outputPerMillion: 2_000_000,
+                    cacheWritePerMillion: 3_000_000,
+                    cacheReadPerMillion: 4_000_000
+                )
+            ],
+            fallback: ModelPricing(inputPerMillion: 0, outputPerMillion: 0)
+        )
+        let event = TokenEvent(
+            timestamp: Date(),
+            source: .claudeCode,
+            model: "test-model",
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 1,
+            cacheWriteTokens: 1,
+            costUSD: 0,
+            costIsEstimated: true
+        )
+        // Must not collapse write into read.
+        XCTAssertEqual(table.estimatedCost(for: event), 1 + 2 + 3 + 4, accuracy: 1e-9)
+    }
 }

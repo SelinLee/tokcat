@@ -1,10 +1,11 @@
-# Catgirl model drop-in
+# Pink cat model drop-in
 
-Place a converted Apple-friendly model here so the **Catgirl** desktop-pet skin can load a real humanoid asset:
+Place a converted Apple-friendly model here so the **粉猫** desktop-pet skin can load:
 
-- `Catgirl.usdz` (preferred)
+- `Catgirl.usdz` (preferred file name for historical path compatibility)
 - or `Catgirl.usda` / `Catgirl.scn`
 
-If none of these files are present, Tokcat falls back to the built-in chibi catgirl SceneKit rig (`CatgirlSceneBuilder`).
+If none of these files are present, Tokcat falls back to the procedural **方块猫**.
 
-See `docs/CatgirlModel.md` at the repo root for the recommended CC0 source and VRoid → USDZ conversion steps.
+Bundled default is the CC0 Chubby Tubby Cat (see `ATTRIBUTION.md`).  
+For custom imports, prefer Settings → 宠物 → 自定义, or convert with `scripts/convert_pet_model.sh`.

@@ -1,0 +1,73 @@
+{
+  "name": "Tokcat Pixel",
+  "version": 3,
+  "frameSize": 32,
+  "displayScale": 4,
+  "clips": {
+    "idle": {
+      "frames": 4,
+      "fps": 6,
+      "loop": true
+    },
+    "working": {
+      "frames": 4,
+      "fps": 8,
+      "loop": true
+    },
+    "happy": {
+      "frames": 3,
+      "fps": 6,
+      "loop": true
+    },
+    "sad": {
+      "frames": 3,
+      "fps": 5,
+      "loop": true
+    },
+    "sleepy": {
+      "frames": 3,
+      "fps": 4,
+      "loop": true
+    },
+    "hungry": {
+      "frames": 3,
+      "fps": 5,
+      "loop": true
+    },
+    "rest": {
+      "frames": 4,
+      "fps": 3,
+      "loop": true
+    },
+    "pace": {
+      "frames": 8,
+      "fps": 5,
+      "loop": true
+    },
+    "groom": {
+      "frames": 4,
+      "fps": 4,
+      "loop": false
+    },
+    "look_around": {
+      "frames": 6,
+      "fps": 4,
+      "loop": false
+    },
+    "eating": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false
+    },
+    "level_up": {
+      "frames": 5,
+      "fps": 10,
+      "loop": false
+    },
+    "interact": {
+      "frames": 3,
+      "fps": 8,
+      "loop": false
+    }
+  }
+}

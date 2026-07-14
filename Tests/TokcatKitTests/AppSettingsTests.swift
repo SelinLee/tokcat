@@ -165,20 +165,22 @@ final class AppSettingsTests: XCTestCase {
     func testDefaultShowsCPUOnMenuBar() {
         XCTAssertTrue(AppSettings.default.menuBarShowCPU)
         XCTAssertFalse(AppSettings.default.menuBarShowMemory)
+        XCTAssertTrue(AppSettings.default.menuBarShowTokenRate)
         XCTAssertTrue(AppSettings.default.menuBarShowCatIcon)
         XCTAssertTrue(AppSettings.default.showDesktopPet)
     }
 
-    func testDesktopPetSkinDefaultIsCatgirl() {
-        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pinkCat)
+    func testDesktopPetSkinDefaultIsPixelTokcat() {
+        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pixelTokcat)
         XCTAssertEqual(DesktopPetSkin.allCases.count, 4)
+        XCTAssertEqual(DesktopPetSkin.pixelTokcat.displayName, "像素 Tokcat")
+        XCTAssertTrue(DesktopPetSkin.pixelTokcat.isPixel)
         XCTAssertEqual(DesktopPetSkin.procedural.displayName, "方块猫")
-        XCTAssertEqual(DesktopPetSkin.catgirl.displayName, "Q版猫娘")
         XCTAssertEqual(DesktopPetSkin.pinkCat.displayName, "粉猫")
         XCTAssertEqual(DesktopPetSkin.custom.displayName, "自定义")
     }
 
-    func testDesktopPetSkinPersistsAndLegacyDefaultsToCatgirl() throws {
+    func testDesktopPetSkinPersistsAndLegacyDefaultsToPixelTokcat() throws {
         let suiteName = "tokcat.tests.skin.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -188,7 +190,7 @@ final class AppSettingsTests: XCTestCase {
         AppSettingsStore(defaults: defaults).save(settings)
         XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .procedural)
 
-        // Legacy payloads without desktopPetSkin default to pinkCat.
+        // Legacy payloads without desktopPetSkin default to pixelTokcat.
         let legacyJSON = """
         {
           "showCPU": true,
@@ -204,8 +206,84 @@ final class AppSettingsTests: XCTestCase {
         }
         """.data(using: .utf8)!
         defaults.set(legacyJSON, forKey: AppSettingsStore.defaultsKey)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .pinkCat)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .pixelTokcat)
     }
+
+    func testLegacyCatgirlSkinMigratesToPinkCat() throws {
+        let suite = "tokcat.tests.catgirl-migrate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let payload: [String: Any] = [
+            "showCPU": true,
+            "showMemory": true,
+            "showNetwork": true,
+            "showThermal": true,
+            "showGPU": true,
+            "menuBarShowCPU": true,
+            "menuBarShowMemory": false,
+            "menuBarShowNetwork": false,
+            "menuBarShowThermal": false,
+            "menuBarShowGPU": false,
+            "menuBarShowCatIcon": true,
+            "menuBarCatIconScale": 0.5,
+            "menuBarCatIconScaleVersion": 2,
+            "menuBarIconStyle": "tokcat",
+            "menuBarTextScale": 1.4,
+            "menuBarVerticalOffset": -2.5,
+            "showTokenSummary": true,
+            "showRecentTokenEvents": true,
+            "showPetSummary": true,
+            "showDesktopPet": true,
+            "desktopPetSkin": "catgirl",
+            "pollIntervalSeconds": 2,
+            "enabledAgentSources": AgentSource.defaultEnabled.map(\.rawValue).sorted()
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        defaults.set(data, forKey: AppSettingsStore.defaultsKey)
+        let loaded = AppSettingsStore(defaults: defaults).load()
+        XCTAssertEqual(loaded.desktopPetSkin, .pinkCat)
+    }
+
+
+    func testProviderPricingMigrationImportsBotcf() throws {
+        let suiteName = "tokcat.tests.pricing-migrate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Simulate older settings without botcf rows.
+        var old = AppSettings.default
+        old.pricingEntries = old.pricingEntries.filter { $0.providerKey == nil }
+        let store = AppSettingsStore(defaults: defaults)
+        store.save(old)
+        defaults.set(false, forKey: AppSettingsStore.migratedProviderPricingKey)
+
+        let loaded = store.load()
+        let botcf = loaded.pricingEntries.filter { $0.providerKey?.lowercased() == "botcf" }
+        XCTAssertFalse(botcf.isEmpty)
+        let sol = try XCTUnwrap(botcf.first { $0.modelKey == "gpt-5.6-sol" })
+        XCTAssertEqual(sol.pricing.inputPerMillion, 0.395, accuracy: 0.0001)
+    }
+    func testPixelTokcatSkinRoundTrip() {
+        let suiteName = "tokcat.tests.pixel.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pixelTokcat)
+        XCTAssertTrue(DesktopPetSkin.pixelTokcat.isPixel)
+
+        var settings = AppSettings.default
+        settings.desktopPetSkin = .pixelTokcat
+        store.save(settings)
+        XCTAssertEqual(store.load().desktopPetSkin, .pixelTokcat)
+
+        settings.desktopPetSkin = .pinkCat
+        store.save(settings)
+        XCTAssertEqual(store.load().desktopPetSkin, .pinkCat)
+        XCTAssertFalse(DesktopPetSkin.pinkCat.isPixel)
+    }
+
 }
 
 final class SystemMetricsMonitorTests: XCTestCase {
@@ -225,4 +303,20 @@ final class SystemMetricsMonitorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(second.gpuPercent, 0)
         XCTAssertLessThanOrEqual(second.gpuPercent, 100)
     }
+
+
+
+    func testEnablePetSoundEffectsDefaultAndPersistence() throws {
+        let suiteName = "tokcat.tests.petsfx.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = AppSettingsStore(defaults: defaults)
+        XCTAssertFalse(store.load().enablePetSoundEffects)
+
+        var settings = AppSettings.default
+        settings.enablePetSoundEffects = true
+        store.save(settings)
+        XCTAssertTrue(store.load().enablePetSoundEffects)
+    }
+
 }

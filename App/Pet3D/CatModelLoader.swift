@@ -2,7 +2,7 @@ import Foundation
 import SceneKit
 import AppKit
 
-/// Loads an optional bundled USDZ/SCN catgirl model for the desktop pet.
+/// Loads an optional bundled USDZ/SCN model for the desktop pet (pink cat / custom).
 enum CatModelLoader {
     static let resourceSubdirectory = "Models/Catgirl"
     static let candidateNames = ["Catgirl", "TokcatCatgirl", "catgirl"]
@@ -31,7 +31,7 @@ enum CatModelLoader {
         return nil
     }
 
-    /// Back-compat alias used by older call sites.
+    /// Back-compat alias for older call sites (pink-cat slot).
     static func loadPreparedCatgirl() -> LoadedModel? {
         loadPreparedModel(preferredURL: nil)
     }
@@ -51,7 +51,7 @@ enum CatModelLoader {
                 NSLog("[Tokcat] model has no meshes: %@", url.lastPathComponent)
                 return nil
             }
-            NSLog("[Tokcat] loaded catgirl model: %@", url.path)
+            NSLog("[Tokcat] loaded pet model: %@", url.path)
             return scene
         } catch {
             NSLog("[Tokcat] failed to load %@: %@", url.lastPathComponent, "\(error)")
@@ -83,7 +83,7 @@ enum CatModelLoader {
 
     static func prepareBundledScene(_ source: SCNScene, sourceURL: URL? = nil) -> LoadedModel {
         let content = SCNNode()
-        content.name = "catgirl.bundled.root"
+        content.name = "pet.bundled.root"
 
         for child in source.rootNode.childNodes {
             child.removeFromParentNode()
@@ -293,7 +293,7 @@ enum CatModelLoader {
             && minB.y > -1.5 && maxB.y < 4
         if !ok {
             NSLog(
-                "[Tokcat] catgirl bounds unusable h=%f w=%f d=%f minY=%f maxY=%f",
+                "[Tokcat] pet model bounds unusable h=%f w=%f d=%f minY=%f maxY=%f",
                 height, width, depth, minB.y, maxB.y
             )
         }

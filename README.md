@@ -1,87 +1,169 @@
-# Tokcat 🐱
+# Tokcat
 
-一只桌面宠物猫，靠你使用 AI coding agent（目前是 Claude Code）产生的 token 用量喂养和成长。本地优先，默认离线运行，不联网、不上传任何数据。
+**本地优先的 macOS 菜单栏宠物**：靠你使用 AI coding agent 产生的 token 用量喂养、成长、掉落装备。  
+默认离线，不联网、不上传任何数据。
 
-## 功能
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#环境要求)
 
-- **菜单栏图标**：自绘立体黑白猫头（template），可选旁显示 CPU/内存/网速/温度压力。
-- **菜单栏系统指标**：整机 CPU、内存、网速、热压力；可在设置中开关。
-- **Agent Token 监控**：菜单栏只展示 token/成本相关内容（今日用量、总成本、最近事件），不再混入工具进程 CPU。
-- **独立设置窗口（中文分页）**：菜单栏 / 监控 / 宠物 / 通用；图标库、指标旁路显示、皮肤库与自定义模型导入；偏好写入 `UserDefaults`。
-- **桌面悬浮宠物**：透明悬浮 3D 宠物，跟随 mood / hunger 做待机与表情动画。皮肤库：**方块猫 / 粉猫（CC0）/ Q版猫娘 / 自定义 USDZ 导入**。
-- **Tier 1 · 通用进程监控**：`libproc` 仍可用于已知工具进程（内部保留）；菜单栏默认聚焦整机指标。
-- **Tier 2 · Token 适配器**：解析 `~/.claude/projects/*/*.jsonl` 本地日志，零配置、无需装 hook，可回溯历史会话。
-- **Token 价值分层**：按模型单价把 token 分为 premium / standard / economy 三档，分别增强猫的 intelligence / vitality 属性。
-- **连续情绪值**：响应延迟映射为 0-1 的连续 mood 值（指数滑动平均），不是三态机。
-- **本地 SQLite 持久化**：宠物状态、历史用量事件、适配器读取进度全部落地本地数据库，重启不丢失、不重复计算。
+---
+
+## 它是什么
+
+Tokcat 住在菜单栏里，也可以在桌面悬浮。你写代码、跑 Claude Code / Codex / Cursor 等工具时，它会从**本机 agent 日志**读到 token 用量，用来：
+
+- 涨经验、升级、改三围（聪明 / 稳定 / 手感）
+- 改变心情与饱食，驱动像素猫表情与动作
+- 掉落皮肤、装备、道具；可装备、可图鉴收集
+- 在主界面看用量统计（日 / 周 / 月）、费率与设置
+
+> 名字里的 token = 模型用量；猫 = 桌面陪伴。全部计算与存储都在本机完成。
+
+---
+
+## 功能一览
+
+### 菜单栏
+- 自绘 Tokcat 猫头（template），随 **空闲 / 工作中 / 完成** 切换表情与浮标（zzz / 蒸汽·灯泡 / OK）
+- 可选旁显示：CPU、GPU、内存、网速、温度压力、token 速率
+- 紧凑下拉面板：系统条、宠物状态横排、Agent 摘要、最近 2 条事件、快捷操作
+
+### 桌面宠物
+- **默认像素 Tokcat**：事件驱动动画（吃、升级、互动、工作、困、饿…）
+- 也支持：方块猫 / 粉猫（CC0）/ 自定义 USDZ
+- 可拖动位置（记忆）、点击互动；装备可叠帽子等外观
+- 音效默认关闭（设置里可开）
+
+### 主界面（左侧导航）
+| 页 | 内容 |
+|----|------|
+| **统计** | 日 / 周 / 月 token 与费用趋势；按中转站 / 模型 / Agent 分组 |
+| **宠物** | 角色卡：等级、序列称号、三围、途径、目标、喂养与证印 |
+| **背包** | 人偶装备栏 + 物品格 + 检视；掉落规则与加成 |
+| **图鉴** | 皮肤 / 装备 / 道具收集进度；可启用已拥有外观 |
+| **设置** | 菜单栏、监控、Agent、费率、宠物、通用 |
+
+### 养成与「令牌密契」
+- 营养分层喂属性；拉长成长曲线 + 日 XP 软上限
+- **明文主显 + 密契副文案**（新人只看等级与俗名也能玩）
+- 三途径（聪明 / 稳定 / 手感）门控与称号
+- 掉落 / 保底 / 装备权能（需求不满足时外观可在、权能休眠）
+
+### 多 Agent 适配（本地日志）
+开箱可读本机日志，无需 hook 上云，例如：
+
+Claude Code · Codex CLI · Cursor · Gemini CLI · OpenClaw · WorkBuddy · Kimi · CC Switch 代理归因 等  
+
+新适配器默认从文件**末尾**跟踪，避免一次灌入海量历史。
+
+### 隐私
+- **零网络请求**（应用本身不访问互联网）
+- 只读本机日志与进程/系统指标
+- 数据：`~/Library/Application Support/TokenCat/tokencat.sqlite3`  
+  卸载 App 不会自动删库；可手动删除该目录
+
+---
 
 ## 环境要求
 
-- macOS 13+
-- Xcode 15+ / Swift 5.10+
+- macOS 13 Ventura 或更高
+- 开发构建：Xcode 15+ / Swift 5.10+
 
-## 发行版
+---
 
-从 [GitHub Releases](https://github.com/SelinLee/tokcat/releases) 下载 `Tokcat-*-macos.zip`：
+## 安装（普通用户）
+
+从 [GitHub Releases](https://github.com/SelinLee/tokcat/releases) 下载最新 `Tokcat-*-macos.zip`：
 
 1. 解压得到 `Tokcat.app`
 2. 拖到「应用程序」
-3. 首次启动：右键 → 打开（ad-hoc 签名，需绕过 Gatekeeper 一次）
+3. **首次启动**：右键 App → **打开**（当前为 ad-hoc 签名，需绕过 Gatekeeper 一次）
+4. 菜单栏出现猫头后，点图标可开主界面 / 设置
+
+### 要不要做 DMG？
+
+| 格式 | 体验 | 说明 |
+|------|------|------|
+| **Zip（当前）** | 解压 → 拖到应用程序 | 小、简单、GitHub Release 友好 |
+| **DMG** | 打开磁盘映像 → 拖到 Applications | 更「安装器」感，体积与步骤多一步 |
+
+在 **未做 Apple Developer ID 签名 + 公证** 的前提下：
+
+- DMG **不会**比 Zip 更容易过 Gatekeeper  
+- 用户仍要「右键 → 打开」一次  
+- 因此默认继续提供 **Zip**；有公证后再上 DMG 更有意义  
 
 本地打包：
 
 ```bash
-TOKCAT_VERSION=0.2.0 scripts/package_app.sh
-# 产物：dist/Tokcat.app 与 dist/Tokcat-0.2.0-macos.zip
+TOKCAT_VERSION=0.3.0 scripts/package_app.sh
+# 产物（不入库）：dist/Tokcat.app 与 dist/Tokcat-0.3.0-macos.zip
 ```
 
-## 构建与运行
+---
+
+## 从源码运行
 
 ```bash
+git clone https://github.com/SelinLee/tokcat.git
+cd tokcat
 swift build
 swift test
 swift run TokcatApp
 ```
 
-或者用 Xcode 打开 `Package.swift` 直接运行调试。
+也可用 Xcode 打开 `Package.swift` 调试。
 
-首次通过 ad-hoc 签名的构建产物运行（非 Xcode 直接运行）时，如果遇到 Gatekeeper 拦截提示"无法打开，因为无法验证开发者"，在 Finder 中右键该 App → "打开"，绕过一次即可。
+---
 
-## 架构
+## 架构（简图）
 
-```
-Tokcat/
-  App/                        # SwiftUI app：菜单栏 + 悬浮宠物窗口
-  App/Pet3D/                  # SceneKit 宠物：cube cat / catgirl / USDZ loader
-  App/Resources/Models/       # 可选 USDZ 等模型资源
-  docs/CatgirlModel.md        # 猫娘资产许可与 VRoid→USDZ 转换步骤
-  Sources/TokcatKit/
-    Monitor/                  # SystemMetricsMonitor + ProcessMonitor
-    Settings/                 # AppSettings + UserDefaults store
-    Adapters/                 # AgentAdapter 协议 + ClaudeCodeAdapter（Tier 2）
-    Economy/                  # TokenEconomy：定价表、营养分层、成本聚合
-    Speed/                    # SpeedTracker：连续速度→情绪映射
-    Pet/                      # PetEngine：状态机、属性、升级
-    Persistence/              # 本地 SQLite 存储
-    Models/                   # 数据模型
-  Tests/TokcatKitTests/
+```text
+本机 Agent 日志 / 系统指标
+        │
+        ▼
+  TokcatKit 适配器 + 经济 + PetEngine + Loot
+        │
+        ├─ SQLite（本机）
+        │
+        ▼
+  菜单栏 · 悬浮像素宠物 · 主界面（统计/宠物/背包/图鉴/设置）
 ```
 
-详细设计文档见 [.claude/plan.md](.claude/plan.md)。
+| 路径 | 职责 |
+|------|------|
+| `App/` | SwiftUI 菜单栏、主窗、悬浮宠物 |
+| `App/PixelPet/` | 像素动画状态机与叠加渲染 |
+| `App/Pet3D/` | 可选 3D / USDZ 皮肤 |
+| `Sources/TokcatKit/` | 适配器、成长、掉落、统计、SQLite |
+| `docs/` | 像素路线图、令牌密契设定与计划 |
 
-## 隐私
+设计备忘：[`docs/PixelPetRoadmap.md`](docs/PixelPetRoadmap.md) · [`docs/TokenCompactLore.md`](docs/TokenCompactLore.md) · [`docs/TokenCompactPlan.md`](docs/TokenCompactPlan.md)
 
-Tokcat 只读取本地日志文件和本地进程信息，不做任何网络请求，不上传使用数据。所有状态持久化在 `~/Library/Application Support/TokenCat/tokencat.sqlite3`。
+---
 
-## 路线图
+## 路线图（摘要）
 
-- [x] Phase 1（MVP）：菜单栏 + 悬浮宠物、两层监控、营养分层、连续情绪值、本地持久化
-- [ ] Phase 2：扩展适配器（Codex CLI、Cursor、Gemini CLI）、成本可视化面板、更多宠物皮肤
-- [x] Phase 1.5：桌面宠物皮肤库（方块猫 / 粉猫 / Q版猫娘 / 自定义导入）+ 待机表情动画 + USDZ 管线（见 [docs/CatgirlModel.md](docs/CatgirlModel.md)）
-- [x] Phase 1.6：macOS `.app` 打包脚本与 GitHub Release 分发
-- [ ] Phase 3：可选云端效率排行榜（opt-in）
-- [ ] Phase 4：团队/组织聚合看板
+- [x] 菜单栏宠物 + 本地 token 喂养 + SQLite  
+- [x] 多 Agent 适配与费率  
+- [x] 像素 Tokcat、掉落 / 背包 / 装备 / 图鉴  
+- [x] 主界面统计看板与性能优化（异步统计、图鉴滚动等）  
+- [ ] 节日内容与打磨  
+- [ ] Developer ID 签名 / 公证（可选 DMG）  
 
-## License
+---
+
+## 贡献
+
+欢迎 Issue / PR。请勿提交：
+
+- `dist/`、`.build/`、本地 `.sqlite` / 个人日志  
+- 含 API Key、账号路径、私人 usage 导出的文件  
+
+---
+
+## 许可
 
 [MIT](LICENSE)
+
+粉猫等第三方资源见对应 `ATTRIBUTION.md` / 模型 README。

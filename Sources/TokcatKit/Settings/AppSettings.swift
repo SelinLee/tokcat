@@ -92,41 +92,46 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 /// Desktop pet visual style / skin library entry.
 /// Built-ins ship with the app; `custom` loads a user-imported USDZ/SCN.
 public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiable {
+    case pixelTokcat
     case procedural
     case pinkCat
-    case catgirl
     case custom
 
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
+        case .pixelTokcat: return "像素 Tokcat"
         case .procedural: return "方块猫"
         case .pinkCat: return "粉猫"
-        case .catgirl: return "Q版猫娘"
         case .custom: return "自定义"
         }
     }
 
     public var detail: String {
         switch self {
+        case .pixelTokcat:
+            return "原创像素风 Tokcat：事件驱动帧动画，后续可扩展皮肤/道具/装备。"
         case .procedural:
             return "原始低多边形方块猫，由 SceneKit 几何体拼装。"
         case .pinkCat:
             return "内置 CC0 粉猫（Chubby Tubby Cat），支持更自然的待机与表情动画。"
-        case .catgirl:
-            return "内置 Q 版程序化猫娘（粉发猫耳），无需外部模型。"
         case .custom:
             return "使用你导入的 .usdz / .scn / .reality 模型。可在设置中导入或清除。"
         }
     }
 
-    /// Whether this skin expects an external model file.
+    /// Whether this skin expects an external 3D model file.
     public var usesExternalModel: Bool {
         switch self {
         case .pinkCat, .custom: return true
-        case .procedural, .catgirl: return false
+        case .pixelTokcat, .procedural: return false
         }
+    }
+
+    /// 2D pixel atlas path (SceneKit not used).
+    public var isPixel: Bool {
+        self == .pixelTokcat
     }
 }
 
@@ -139,10 +144,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showGPU: Bool
 
     /// Metrics shown to the right of the menu bar cat icon.
-    /// Order is fixed: CPU → Memory → Network → Thermal.
+    /// Order is fixed: CPU → GPU → Memory → Network → TokenRate → Thermal.
     public var menuBarShowCPU: Bool
     public var menuBarShowMemory: Bool
     public var menuBarShowNetwork: Bool
+    /// Dual-line token throughput + spend rate (`tok 10.2k/s` over `$ 0.04/m`).
+    public var menuBarShowTokenRate: Bool
     public var menuBarShowThermal: Bool
     public var menuBarShowGPU: Bool
 
@@ -164,8 +171,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Pet mood/hunger strip in the menu bar panel.
     public var showPetSummary: Bool
 
-    /// Floating dynamic 3D desktop pet window.
+    /// Floating desktop pet window (pixel or 3D).
     public var showDesktopPet: Bool
+
+    /// Soft system UI sounds for feed / level / interact (default off; opt-in in Settings).
+    public var enablePetSoundEffects: Bool
 
     /// Visual skin for the floating desktop pet.
     public var desktopPetSkin: DesktopPetSkin
@@ -173,8 +183,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// File name of a user-imported model under Application Support (for `.custom`).
     public var customPetModelFileName: String?
 
+    /// Remembered desktop pet window origin (screen coordinates). Nil = default corner.
+    public var desktopPetWindowX: Double?
+    public var desktopPetWindowY: Double?
+
     /// Polling interval for monitors and pet ticks, in seconds.
     public var pollIntervalSeconds: Double
+
+    /// Enabled agent adapters (raw AgentSource values).
+    public var enabledAgentSources: [String]
+
+    /// User-editable pricing catalog.
+    public var pricingEntries: [PricingEntry]
+
+    /// Fallback model pricing used when no catalog key matches.
+    public var fallbackPricing: ModelPricing
 
     /// UI scale slider range: 0%...100%. Default 50% is the "just right" size
     /// (what used to be absolute 150% of the 13pt glyph).
@@ -202,6 +225,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowCPU: Bool = true,
         menuBarShowMemory: Bool = false,
         menuBarShowNetwork: Bool = false,
+        menuBarShowTokenRate: Bool = true,
         menuBarShowThermal: Bool = false,
         menuBarShowGPU: Bool = false,
         menuBarShowCatIcon: Bool = true,
@@ -213,9 +237,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents: Bool = true,
         showPetSummary: Bool = true,
         showDesktopPet: Bool = true,
-        desktopPetSkin: DesktopPetSkin = .pinkCat,
+        enablePetSoundEffects: Bool = false,
+        desktopPetSkin: DesktopPetSkin = .pixelTokcat,
         customPetModelFileName: String? = nil,
-        pollIntervalSeconds: Double = 2
+        desktopPetWindowX: Double? = nil,
+        desktopPetWindowY: Double? = nil,
+        pollIntervalSeconds: Double = 2,
+        enabledAgentSources: [String] = AgentSource.defaultEnabled.map(\.rawValue).sorted(),
+        pricingEntries: [PricingEntry] = PricingTable.catalogDefault.entries,
+        fallbackPricing: ModelPricing = .sonnetLike
     ) {
         self.showCPU = showCPU
         self.showMemory = showMemory
@@ -225,6 +255,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarShowCPU = menuBarShowCPU
         self.menuBarShowMemory = menuBarShowMemory
         self.menuBarShowNetwork = menuBarShowNetwork
+        self.menuBarShowTokenRate = menuBarShowTokenRate
         self.menuBarShowThermal = menuBarShowThermal
         self.menuBarShowGPU = menuBarShowGPU
         self.menuBarShowCatIcon = menuBarShowCatIcon
@@ -236,9 +267,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showRecentTokenEvents = showRecentTokenEvents
         self.showPetSummary = showPetSummary
         self.showDesktopPet = showDesktopPet
+        self.enablePetSoundEffects = enablePetSoundEffects
         self.desktopPetSkin = desktopPetSkin
         self.customPetModelFileName = customPetModelFileName
+        self.desktopPetWindowX = desktopPetWindowX
+        self.desktopPetWindowY = desktopPetWindowY
         self.pollIntervalSeconds = pollIntervalSeconds
+        self.enabledAgentSources = enabledAgentSources
+        self.pricingEntries = pricingEntries
+        self.fallbackPricing = fallbackPricing
     }
 
     public static let `default` = AppSettings()
@@ -259,6 +296,64 @@ public struct AppSettings: Codable, Equatable, Sendable {
         min(Self.verticalOffsetRange.upperBound, max(Self.verticalOffsetRange.lowerBound, menuBarVerticalOffset))
     }
 
+    public var enabledAgents: Set<AgentSource> {
+        Set(enabledAgentSources.compactMap(AgentSource.init(rawValue:)))
+    }
+
+    public var pricingTable: PricingTable {
+        PricingTable(entries: pricingEntries, fallback: fallbackPricing)
+    }
+
+    public mutating func setAgent(_ source: AgentSource, enabled: Bool) {
+        var set = enabledAgents
+        if enabled {
+            set.insert(source)
+        } else {
+            set.remove(source)
+        }
+        enabledAgentSources = set.map(\.rawValue).sorted()
+    }
+
+    public mutating func updatePricingEntry(_ entry: PricingEntry) {
+        // Match by stable id (provider|model) so botcf/gpt and official/gpt can coexist.
+        if let idx = pricingEntries.firstIndex(where: { $0.id == entry.id }) {
+            pricingEntries[idx] = entry
+        } else {
+            pricingEntries.append(entry)
+        }
+        pricingEntries.sort(by: PricingTable.catalogSort)
+    }
+
+    public mutating func removePricingEntry(modelKey: String, providerKey: String? = nil) {
+        let target = PricingEntry(modelKey: modelKey, providerKey: providerKey, pricing: .sonnetLike).id
+        pricingEntries.removeAll { $0.id == target }
+    }
+
+    public mutating func removePricingEntry(id: String) {
+        pricingEntries.removeAll { $0.id == id }
+    }
+
+    public mutating func resetPricingToDefaults() {
+        pricingEntries = PricingTable.catalogDefault.entries.sorted(by: PricingTable.catalogSort)
+        fallbackPricing = .sonnetLike
+    }
+
+    /// Import any newly-added default catalog rows (e.g. botcf rates) without
+    /// overwriting prices the user already customized.
+    @discardableResult
+    public mutating func mergeMissingCatalogPricing(
+        from catalog: PricingTable = .catalogDefault,
+        overwriteProviderScoped: Bool = false
+    ) -> Int {
+        let result = PricingTable.mergingMissingCatalogEntries(
+            into: pricingEntries,
+            catalog: catalog,
+            overwriteProviderScoped: overwriteProviderScoped
+        )
+        pricingEntries = result.entries
+        return result.inserted + result.updated
+    }
+
     /// Resolved menu-bar cat size in points.
     /// Maps UI scale 0%...100% → 50%...150% of the base ("just right") point size.
     /// So default 50% keeps the current preferred look; ±50% adjusts around it.
@@ -268,7 +363,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     public var showsAnyMenuBarMetric: Bool {
-        menuBarShowCPU || menuBarShowGPU || menuBarShowMemory || menuBarShowNetwork || menuBarShowThermal
+        menuBarShowCPU || menuBarShowGPU || menuBarShowMemory || menuBarShowNetwork || menuBarShowTokenRate || menuBarShowThermal
     }
 
     public var showsAnyMenuBarContent: Bool {
@@ -279,10 +374,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case showCPU, showMemory, showNetwork, showThermal, showGPU
-        case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowThermal, menuBarShowGPU
+        case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
-        case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, desktopPetSkin, customPetModelFileName
+        case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, enablePetSoundEffects, desktopPetSkin, customPetModelFileName, desktopPetWindowX, desktopPetWindowY
         case pollIntervalSeconds
+        case enabledAgentSources, pricingEntries, fallbackPricing
         case menuBarAccessory // legacy
     }
 
@@ -297,14 +393,27 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents = try container.decodeIfPresent(Bool.self, forKey: .showRecentTokenEvents) ?? true
         showPetSummary = try container.decodeIfPresent(Bool.self, forKey: .showPetSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
-        // New default is pinkCat. Legacy "catgirl" remains a valid stored choice.
-        if let skin = try container.decodeIfPresent(DesktopPetSkin.self, forKey: .desktopPetSkin) {
-            desktopPetSkin = skin
+        enablePetSoundEffects = try container.decodeIfPresent(Bool.self, forKey: .enablePetSoundEffects) ?? false
+        // Default is pixelTokcat. Legacy "catgirl" migrates to pinkCat.
+        if let raw = try container.decodeIfPresent(String.self, forKey: .desktopPetSkin) {
+            if raw == "catgirl" {
+                desktopPetSkin = .pinkCat
+            } else {
+                desktopPetSkin = DesktopPetSkin(rawValue: raw) ?? .pixelTokcat
+            }
         } else {
-            desktopPetSkin = .pinkCat
+            desktopPetSkin = .pixelTokcat
         }
         customPetModelFileName = try container.decodeIfPresent(String.self, forKey: .customPetModelFileName)
+        desktopPetWindowX = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowX)
+        desktopPetWindowY = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowY)
         pollIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 2
+        enabledAgentSources = try container.decodeIfPresent([String].self, forKey: .enabledAgentSources)
+            ?? AgentSource.defaultEnabled.map(\.rawValue).sorted()
+        pricingEntries = try container.decodeIfPresent([PricingEntry].self, forKey: .pricingEntries)
+            ?? PricingTable.catalogDefault.entries
+        fallbackPricing = try container.decodeIfPresent(ModelPricing.self, forKey: .fallbackPricing)
+            ?? .sonnetLike
         menuBarShowCatIcon = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCatIcon) ?? true
         let rawScale = try container.decodeIfPresent(Double.self, forKey: .menuBarCatIconScale)
         let scaleVersion = try container.decodeIfPresent(Int.self, forKey: .menuBarCatIconScaleVersion) ?? 1
@@ -324,23 +433,28 @@ public struct AppSettings: Codable, Equatable, Sendable {
         if container.contains(.menuBarShowCPU)
             || container.contains(.menuBarShowMemory)
             || container.contains(.menuBarShowNetwork)
+            || container.contains(.menuBarShowTokenRate)
             || container.contains(.menuBarShowThermal)
         {
             menuBarShowCPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCPU) ?? false
             menuBarShowMemory = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowMemory) ?? false
             menuBarShowNetwork = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowNetwork) ?? false
+            // New metric defaults on for upgrades so users immediately see tok/$ rates.
+            menuBarShowTokenRate = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowTokenRate) ?? true
             menuBarShowThermal = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowThermal) ?? false
             menuBarShowGPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowGPU) ?? false
         } else if let legacy = try container.decodeIfPresent(String.self, forKey: .menuBarAccessory) {
             menuBarShowCPU = legacy == "cpu"
             menuBarShowMemory = legacy == "memory"
             menuBarShowNetwork = legacy == "network"
+            menuBarShowTokenRate = false
             menuBarShowThermal = legacy == "thermal"
             menuBarShowGPU = false
         } else {
             menuBarShowCPU = true
             menuBarShowMemory = false
             menuBarShowNetwork = false
+            menuBarShowTokenRate = true
             menuBarShowThermal = false
             menuBarShowGPU = false
         }
@@ -356,6 +470,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(menuBarShowCPU, forKey: .menuBarShowCPU)
         try container.encode(menuBarShowMemory, forKey: .menuBarShowMemory)
         try container.encode(menuBarShowNetwork, forKey: .menuBarShowNetwork)
+        try container.encode(menuBarShowTokenRate, forKey: .menuBarShowTokenRate)
         try container.encode(menuBarShowThermal, forKey: .menuBarShowThermal)
         try container.encode(menuBarShowGPU, forKey: .menuBarShowGPU)
         try container.encode(menuBarShowCatIcon, forKey: .menuBarShowCatIcon)
@@ -368,15 +483,26 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showRecentTokenEvents, forKey: .showRecentTokenEvents)
         try container.encode(showPetSummary, forKey: .showPetSummary)
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
+        try container.encode(enablePetSoundEffects, forKey: .enablePetSoundEffects)
         try container.encode(desktopPetSkin, forKey: .desktopPetSkin)
         try container.encodeIfPresent(customPetModelFileName, forKey: .customPetModelFileName)
+        try container.encodeIfPresent(desktopPetWindowX, forKey: .desktopPetWindowX)
+        try container.encodeIfPresent(desktopPetWindowY, forKey: .desktopPetWindowY)
         try container.encode(pollIntervalSeconds, forKey: .pollIntervalSeconds)
+        try container.encode(enabledAgentSources, forKey: .enabledAgentSources)
+        try container.encode(pricingEntries, forKey: .pricingEntries)
+        try container.encode(fallbackPricing, forKey: .fallbackPricing)
     }
 }
 
 /// Loads and saves `AppSettings` via `UserDefaults`.
 public final class AppSettingsStore {
     public static let defaultsKey = "tokcat.appSettings"
+    /// One-shot flag so newly added default adapters can be enabled without
+    /// re-enabling adapters the user deliberately turned off later.
+    public static let migratedCCSwitchKey = "tokcat.migrated.ccSwitch.v1"
+    /// Ensures botcf / provider-scoped catalog rows are imported into saved settings.
+    public static let migratedProviderPricingKey = "tokcat.migrated.providerPricing.v3"
 
     private let defaults: UserDefaults
     private let encoder = JSONEncoder()
@@ -387,14 +513,51 @@ public final class AppSettingsStore {
     }
 
     public func load() -> AppSettings {
-        guard let data = defaults.data(forKey: Self.defaultsKey) else {
-            return .default
+        let settings: AppSettings
+        if let data = defaults.data(forKey: Self.defaultsKey),
+           let decoded = try? decoder.decode(AppSettings.self, from: data) {
+            settings = decoded
+        } else {
+            settings = .default
         }
-        return (try? decoder.decode(AppSettings.self, from: data)) ?? .default
+        return migrateSettings(settings)
     }
 
     public func save(_ settings: AppSettings) {
         guard let data = try? encoder.encode(settings) else { return }
         defaults.set(data, forKey: Self.defaultsKey)
+    }
+
+    private func migrateSettings(_ settings: AppSettings) -> AppSettings {
+        var next = settings
+        var changed = false
+
+        if !defaults.bool(forKey: Self.migratedCCSwitchKey) {
+            if !next.enabledAgentSources.contains(AgentSource.ccSwitch.rawValue) {
+                next.enabledAgentSources.append(AgentSource.ccSwitch.rawValue)
+                next.enabledAgentSources.sort()
+                changed = true
+            }
+            defaults.set(true, forKey: Self.migratedCCSwitchKey)
+        }
+
+        // Always merge missing catalog rows once per version so botcf rates land
+        // in Settings without wiping user edits. Safe to re-run on flag reset.
+        if !defaults.bool(forKey: Self.migratedProviderPricingKey) {
+            // Import botcf / openrouter catalog rates into saved settings.
+            let changedCount = next.mergeMissingCatalogPricing(overwriteProviderScoped: true)
+            if changedCount > 0 {
+                changed = true
+            } else {
+                next.pricingEntries.sort(by: PricingTable.catalogSort)
+                changed = true
+            }
+            defaults.set(true, forKey: Self.migratedProviderPricingKey)
+        }
+
+        if changed {
+            save(next)
+        }
+        return next
     }
 }

@@ -20,17 +20,31 @@ struct TokcatApp: App {
 /// inside the short macOS menu bar (~22pt). SwiftUI multi-line Text is clipped.
 private struct MenuBarLabelView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var live: LiveMetricsStore
+
+    init(model: AppModel) {
+        self.model = model
+        self.live = model.liveMetrics
+    }
 
     var body: some View {
         Image(nsImage: MenuBarStatusRenderer.image(
             settings: model.settings,
-            metrics: model.systemMetrics
+            metrics: live.systemMetrics,
+            tokensPerSecond: live.tokensPerSecond,
+            usdPerSecond: live.usdPerSecond,
+            activity: live.menuBarActivity,
+            hatID: model.activeBonuses.menuBarHatID
         ))
         .renderingMode(.template)
         // Prevent SwiftUI from rescaling and clipping the pre-sized image.
         .frame(
-            width: MetricsFormatting.menuBarFixedWidth(settings: model.settings),
+            width: MetricsFormatting.menuBarFixedWidth(
+                settings: model.settings,
+                activity: live.menuBarActivity
+            ),
             height: MetricsFormatting.menuBarPointHeight(settings: model.settings)
         )
+        .help(live.menuBarActivity.mode.title)
     }
 }

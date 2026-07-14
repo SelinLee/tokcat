@@ -20,11 +20,12 @@ final class BundledCatgirlAnimator {
         self.root = root
         self.lastLevel = initialLevel
 
-        if let existing = root.childNode(withName: "catgirl.anim.pivot", recursively: false) {
+        if let existing = root.childNode(withName: "pet.anim.pivot", recursively: false)
+            ?? root.childNode(withName: "catgirl.anim.pivot", recursively: false) {
             self.pivot = existing
         } else {
             let pivot = SCNNode()
-            pivot.name = "catgirl.anim.pivot"
+            pivot.name = "pet.anim.pivot"
             for child in root.childNodes {
                 child.removeFromParentNode()
                 pivot.addChildNode(child)
@@ -40,15 +41,58 @@ final class BundledCatgirlAnimator {
         startRandomIdleGestures()
     }
 
-    func apply(_ state: PetState) {
-        applyMoodEnergy(mood: state.mood)
-        applyHungerPose(hunger: state.hunger)
-        applyExpression(mood: state.mood, hunger: state.hunger)
+    private var lastStatus: PetDerivedStatus?
+    private var lastStage: PetStage?
+
+    func apply(_ state: PetState, status: PetDerivedStatus = .content, stage: PetStage = .kitten) {
+        let intelligenceBoost = min(1, log1p(max(0, state.stats.intelligence)) / log1p(80))
+        let vitalityBoost = min(1, log1p(max(0, state.stats.vitality)) / log1p(80))
+        let energyBoost = min(1, log1p(max(0, state.stats.energy)) / log1p(40))
+
+        applyMoodEnergy(mood: state.mood, energyBoost: energyBoost, status: status)
+        applyHungerPose(hunger: state.hunger, vitalityBoost: vitalityBoost, status: status)
+        applyExpression(mood: state.mood, hunger: state.hunger, intelligenceBoost: intelligenceBoost)
+        applyStatusOverlay(status)
+        applyStage(stage)
 
         if state.level > lastLevel {
             playLevelUp()
         }
         lastLevel = state.level
+        lastStatus = status
+        lastStage = stage
+    }
+
+    func playFeedFeedback() {
+        let hopUp = SCNAction.moveBy(x: 0, y: 0.07, z: 0, duration: 0.1)
+        hopUp.timingMode = .easeOut
+        let hopDown = hopUp.reversed()
+        hopDown.timingMode = .easeIn
+        pivot.runAction(.sequence([hopUp, hopDown]), forKey: "feedHop")
+        if let tail {
+            let swish = SCNAction.sequence([
+                SCNAction.rotateBy(x: 0, y: 0.5, z: 0, duration: 0.1),
+                SCNAction.rotateBy(x: 0, y: -1.0, z: 0, duration: 0.16),
+                SCNAction.rotateBy(x: 0, y: 0.5, z: 0, duration: 0.1)
+            ])
+            tail.runAction(swish, forKey: "feedSwish")
+        }
+    }
+
+    func playInteractionFeedback() {
+        if let head {
+            let lean = SCNAction.sequence([
+                SCNAction.rotateBy(x: -0.1, y: 0.2, z: 0, duration: 0.12),
+                SCNAction.rotateBy(x: 0.1, y: -0.2, z: 0, duration: 0.18)
+            ])
+            head.runAction(lean, forKey: "petHead")
+        } else {
+            let nudge = SCNAction.sequence([
+                SCNAction.rotateBy(x: 0, y: 0.25, z: 0, duration: 0.12),
+                SCNAction.rotateBy(x: 0, y: -0.25, z: 0, duration: 0.16)
+            ])
+            pivot.runAction(nudge, forKey: "petNudge")
+        }
     }
 
     // MARK: - Node discovery
@@ -199,10 +243,23 @@ final class BundledCatgirlAnimator {
 
     // MARK: - State driven
 
-    private func applyMoodEnergy(mood: Double) {
+    private func applyMoodEnergy(mood: Double, energyBoost: Double = 0, status: PetDerivedStatus = .content) {
         let m = max(0, min(1, mood))
-        let period = 1.7 - m * 0.9
-        let amp = CGFloat(0.12 + m * 0.45)
+        var period = 1.7 - m * 0.9 - energyBoost * 0.35
+        var amp = CGFloat(0.12 + m * 0.45 + energyBoost * 0.2)
+        switch status {
+        case .excited, .celebrating:
+            period *= 0.7
+            amp *= 1.25
+        case .sleepy, .hungry:
+            period *= 1.35
+            amp *= 0.45
+        case .focused:
+            period *= 0.85
+        default:
+            break
+        }
+        period = max(0.35, period)
 
         if let tail {
             tail.removeAction(forKey: "wagLoop")
@@ -231,11 +288,15 @@ final class BundledCatgirlAnimator {
         }
     }
 
-    private func applyHungerPose(hunger: Double) {
+    private func applyHungerPose(hunger: Double, vitalityBoost: Double = 0, status: PetDerivedStatus = .content) {
         let h = max(0, min(1, hunger))
-        let droop = CGFloat((1 - h) * 0.28)
+        var droop = CGFloat((1 - h) * 0.28) * CGFloat(1 - vitalityBoost * 0.25)
+        if status == .sleepy { droop = max(droop, 0.22) }
+        if status == .focused || status == .excited { droop *= 0.6 }
         let band = h < 0.25 ? 0 : (h < 0.6 ? 1 : 2)
-        if band == lastHungerBand { return }
+        // Always re-apply when status shifts even if hunger band unchanged.
+        let statusCode = status.rawValue.hashValue
+        if band == lastHungerBand && lastStatus?.rawValue.hashValue == statusCode { return }
         lastHungerBand = band
 
         if let head {
@@ -260,11 +321,11 @@ final class BundledCatgirlAnimator {
         pivot.runAction(move, forKey: "hungerSink")
     }
 
-    private func applyExpression(mood: Double, hunger: Double) {
-        // Eye scale: happy wider, hungry/sad squintier.
+    private func applyExpression(mood: Double, hunger: Double, intelligenceBoost: Double = 0) {
+        // Eye scale: happy wider, hungry/sad squintier; smart pets get a brighter look.
         let m = max(0, min(1, mood))
         let h = max(0, min(1, hunger))
-        let eyeY = CGFloat(0.85 + m * 0.25 - (1 - h) * 0.12)
+        let eyeY = CGFloat(0.85 + m * 0.25 - (1 - h) * 0.12 + intelligenceBoost * 0.12)
         let scale = SCNAction.customAction(duration: 0.35) { _, _ in
             for eye in self.eyeNodes {
                 // Don't fight active blink frames too hard.
@@ -276,7 +337,7 @@ final class BundledCatgirlAnimator {
         pivot.runAction(scale, forKey: "eyeExpr")
     }
 
-    private func playLevelUp() {
+    func playLevelUp() {
         let up = SCNAction.moveBy(x: 0, y: 0.28, z: 0, duration: 0.14)
         up.timingMode = .easeOut
         let down = SCNAction.moveBy(x: 0, y: -0.28, z: 0, duration: 0.24)
@@ -293,5 +354,41 @@ final class BundledCatgirlAnimator {
             .group([.sequence([up, down]), spin]),
             squash, unsquash
         ]), forKey: "levelUp")
+    }
+
+    private func applyStatusOverlay(_ status: PetDerivedStatus) {
+        guard status != lastStatus else { return }
+        pivot.removeAction(forKey: "statusLoop")
+        switch status {
+        case .excited, .celebrating:
+            let pulse = SCNAction.sequence([
+                SCNAction.moveBy(x: 0, y: 0.04, z: 0, duration: 0.14),
+                SCNAction.moveBy(x: 0, y: -0.04, z: 0, duration: 0.16),
+                SCNAction.wait(duration: 0.7)
+            ])
+            pivot.runAction(.repeatForever(pulse), forKey: "statusLoop")
+        case .hungry:
+            let tremble = SCNAction.sequence([
+                SCNAction.moveBy(x: 0.008, y: 0, z: 0, duration: 0.05),
+                SCNAction.moveBy(x: -0.016, y: 0, z: 0, duration: 0.08),
+                SCNAction.moveBy(x: 0.008, y: 0, z: 0, duration: 0.05),
+                SCNAction.wait(duration: 1.3)
+            ])
+            pivot.runAction(.repeatForever(tremble), forKey: "statusLoop")
+        case .sleepy:
+            let sink = SCNAction.moveBy(x: 0, y: -0.03, z: 0, duration: 0.5)
+            sink.timingMode = .easeInEaseOut
+            pivot.runAction(sink, forKey: "statusLoop")
+        default:
+            break
+        }
+    }
+
+    private func applyStage(_ stage: PetStage) {
+        guard stage != lastStage else { return }
+        let s = CGFloat(stage.visualScale)
+        let action = SCNAction.scale(to: s, duration: 0.45)
+        action.timingMode = .easeInEaseOut
+        pivot.runAction(action, forKey: "stageScale")
     }
 }

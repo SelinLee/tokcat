@@ -1,12 +1,12 @@
 import SwiftUI
 import TokcatKit
 
-/// Renders the cat sprite, blending its look from `mood` and `hunger`.
-/// A single emoji-based placeholder stands in for real sprite frames until
-/// `Resources/Sprites` art lands — the state-selection logic is what matters
-/// here, not the art asset itself.
+/// Lightweight emoji fallback / preview for pet state.
+/// Production desktop pet uses the SceneKit window; this remains useful for
+/// previews and any non-3D surface.
 struct PetView: View {
     let petState: PetState
+    var status: PetDerivedStatus?
 
     var body: some View {
         VStack(spacing: 4) {
@@ -20,17 +20,22 @@ struct PetView: View {
         .background(.clear)
     }
 
+    private var resolvedStatus: PetDerivedStatus {
+        status ?? PetPresentation.status(for: petState)
+    }
+
     private var faceEmoji: String {
-        if petState.hunger < 0.2 {
-            return "🙀"
+        switch resolvedStatus {
+        case .celebrating: return "🥳"
+        case .hungry: return "🙀"
+        case .sleepy: return "😴"
+        case .excited: return "⚡"
+        case .focused: return "🧠"
+        case .lowEnergy: return "😪"
+        case .happy: return "😻"
+        case .content: return "😼"
+        case .sad: return "😿"
         }
-        if petState.mood > 0.7 {
-            return "😻"
-        }
-        if petState.mood < 0.3 {
-            return "😿"
-        }
-        return "😼"
     }
 }
 

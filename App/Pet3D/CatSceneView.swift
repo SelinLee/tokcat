@@ -54,8 +54,8 @@ struct CatSceneView: NSViewRepresentable {
             }
 
             let scene = SCNScene()
-            let rig = CatgirlSceneBuilder.buildScene(in: scene)
-            let animator = CatgirlAnimator(rig: rig, initialLevel: initialLevel)
+            let rig = CatSceneBuilder.buildScene(in: scene)
+            let animator = CatAnimator(rig: rig, initialLevel: initialLevel)
             self.scene = scene
             self.cameraNode = scene.rootNode.childNodes.first(where: { $0.camera != nil })
             self.applyState = { animator.apply($0) }

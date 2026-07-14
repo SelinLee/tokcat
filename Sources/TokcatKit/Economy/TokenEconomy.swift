@@ -5,12 +5,12 @@ import Foundation
 public struct TokenEconomy: Sendable {
     public var pricingTable: PricingTable
 
-    public init(pricingTable: PricingTable = .anthropicDefault) {
+    public init(pricingTable: PricingTable = .catalogDefault) {
         self.pricingTable = pricingTable
     }
 
-    public func nutritionTier(forModel model: String) -> NutritionTier {
-        switch pricingTable.pricing(forModel: model).blendedPerMillion {
+    public func nutritionTier(forModel model: String, provider: String? = nil) -> NutritionTier {
+        switch pricingTable.pricing(forModel: model, provider: provider).blendedPerMillion {
         case ..<2:
             return .economy
         case 2..<10:
@@ -21,7 +21,8 @@ public struct TokenEconomy: Sendable {
     }
 
     public func nutritionTier(for event: TokenEvent) -> NutritionTier {
-        nutritionTier(forModel: event.model)
+        // Nutrition follows the billing provider, not which agent app observed the tokens.
+        nutritionTier(forModel: event.model, provider: event.provider ?? event.providerId)
     }
 
     public func totalCostUSD(_ events: [TokenEvent]) -> Double {

@@ -6,11 +6,19 @@
 DerivedData/
 .claude/settings.local.json
 
-# Local agent worktrees
+# Local agent worktrees / tooling caches
 .claude/worktrees/
+
+# Local runtime data (never commit user pet / usage history)
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Archived conversion leftovers (optional local only)
 App/Resources/Models/Catgirl/_placeholder_skinnie/
 
-# Packaged app artifacts (upload via GitHub Releases)
+# Packaged app artifacts (upload via GitHub Releases only)
 dist/

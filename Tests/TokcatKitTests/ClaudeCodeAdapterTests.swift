@@ -74,4 +74,29 @@ final class ClaudeCodeAdapterTests: XCTestCase {
         let adapter = ClaudeCodeAdapter(projectsDirectory: tempDir)
         XCTAssertEqual(adapter.pollNewEvents().count, 0)
     }
+
+    func testPollNewEventsSplitsCacheWriteAndRead() throws {
+        _ = try writeSession(named: "session-cache", lines: [
+            #"{"type":"assistant","timestamp":"2026-01-01T00:00:01.000Z","message":{"model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":20,"cache_read_input_tokens":80}}}"#
+        ])
+        let table = PricingTable(
+            pricingByModelKey: [
+                "claude-3-5-sonnet": ModelPricing(
+                    inputPerMillion: 1_000_000,
+                    outputPerMillion: 2_000_000,
+                    cacheWritePerMillion: 3_000_000,
+                    cacheReadPerMillion: 4_000_000
+                )
+            ],
+            fallback: ModelPricing(inputPerMillion: 0, outputPerMillion: 0)
+        )
+        let adapter = ClaudeCodeAdapter(projectsDirectory: tempDir, pricingTable: table)
+        let events = adapter.pollNewEvents()
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0].cacheWriteTokens, 20)
+        XCTAssertEqual(events[0].cacheReadTokens, 80)
+        XCTAssertEqual(events[0].cachedTokens, 100)
+        // 100*1 + 50*2 + 20*3 + 80*4 = 100+100+60+320 = 580
+        XCTAssertEqual(events[0].costUSD, 580, accuracy: 1e-9)
+    }
 }

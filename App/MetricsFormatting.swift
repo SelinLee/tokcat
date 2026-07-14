@@ -2,6 +2,7 @@ import Foundation
 import TokcatKit
 import AppKit
 import CoreGraphics
+import CoreText
 
 enum MetricsFormatting {
     /// Network speed uses lowercase units and a fixed 3-digit magnitude.
@@ -12,11 +13,14 @@ enum MetricsFormatting {
 
     /// Base mono sizes before user text-scale is applied.
     static let menuBarPrimaryPointSize: CGFloat = 9
-    /// Smaller size so upload+download both fit inside the menu-bar strip.
+    /// Smaller size so dual-line metrics (network / token rates) fit.
     static let menuBarNetworkPointSize: CGFloat = 7
 
     static func menuBarFont(pointSize: CGFloat, scale: CGFloat = 1) -> NSFont {
-        NSFont.monospacedSystemFont(ofSize: pointSize * scale, weight: .medium)
+        // Guard against 0 / NaN sizes — CoreText crashes with nil font attributes.
+        let raw = pointSize * scale
+        let size = (raw.isFinite && raw > 0) ? max(1, raw) : 9
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
     }
 
     static func primaryPointSize(textScale: Double) -> CGFloat {
@@ -27,11 +31,11 @@ enum MetricsFormatting {
         menuBarNetworkPointSize * CGFloat(textScale)
     }
 
-    /// Menu-bar strip height grows slightly with text scale / network dual-line.
+    /// Menu-bar strip height grows slightly with text scale / dual-line metrics.
     static func menuBarPointHeight(settings: AppSettings) -> CGFloat {
         let textScale = CGFloat(settings.clampedTextScale)
-        if settings.menuBarShowNetwork {
-            // Two network lines + small padding; keep a sensible minimum.
+        if settings.menuBarShowNetwork || settings.menuBarShowTokenRate {
+            // Two lines + small padding; keep a sensible minimum.
             return max(18, ceil(networkPointSize(textScale: Double(textScale)) * 2.35 + 2))
         }
         return max(16, ceil(primaryPointSize(textScale: Double(textScale)) + 8))
@@ -76,16 +80,88 @@ enum MetricsFormatting {
         "↓\(fixedNetworkSpeed(bytesPerSecond))"
     }
 
+    /// Compact token rate for the dual-line menu bar cell (top).
+    /// Example: `tok 10.2k/s`
+    /// Number scales with k/M/G; time unit stays `/s` for tokens.
+    static func tokenRateLine(_ tokensPerSecond: Double) -> String {
+        let parts = fixedThreeDigitMagnitude(max(0, tokensPerSecond))
+        return "tok \(parts.magnitude)\(parts.unitSlot)/s"
+    }
+
+    /// Compact spend rate for the dual-line menu bar cell (bottom).
+    /// Example: `$ 10.2 /s`, `$ 0.04 /m`, `$ 2.16 /h`
+    /// Does **not** use milli/micro prefixes. When $/s is too small to show,
+    /// the time denominator steps up: second → minute → hour.
+    static func costRateLine(_ usdPerSecond: Double) -> String {
+        let scaled = scaleCostPerTime(max(0, usdPerSecond))
+        let parts = fixedThreeDigitMagnitude(scaled.value)
+        return "$ \(parts.magnitude)\(parts.unitSlot)/\(scaled.timeUnit)"
+    }
+
+    /// Choose `/s`, `/m` (minute), or `/h` so the magnitude stays readable
+    /// without milli/micro number prefixes. Prefer the finest time unit that
+    /// still yields a displayable value (≥ 0.01).
+    static func scaleCostPerTime(_ usdPerSecond: Double) -> (value: Double, timeUnit: String) {
+        let perSecond = max(0, usdPerSecond)
+        if perSecond >= 0.01 {
+            return (perSecond, "s")
+        }
+        let perMinute = perSecond * 60
+        if perMinute >= 0.01 {
+            return (perMinute, "m")
+        }
+        return (perSecond * 3_600, "h")
+    }
+
+    /// Fixed ~3-significant-digit magnitude with auto **number** unit scaling.
+    /// Magnitude field is always 4 mono characters (`0.01`…`9.99`, `10.2`…`99.9`, ` 100`…` 999`).
+    /// Number units: empty / `k` / `M` / `G` only (no milli/micro).
+    static func fixedThreeDigitMagnitude(_ value: Double) -> (magnitude: String, unit: String, unitSlot: String) {
+        var scaled = max(0, value)
+        let units = ["", "k", "M", "G"]
+        var unitIndex = 0
+        while scaled >= 1000, unitIndex < units.count - 1 {
+            scaled /= 1000
+            unitIndex += 1
+        }
+        if unitIndex == units.count - 1 {
+            scaled = min(scaled, 999)
+        }
+
+        let magnitude: String
+        if scaled < 10 {
+            magnitude = String(format: "%4.2f", scaled)
+        } else if scaled < 100 {
+            magnitude = String(format: "%4.1f", scaled)
+        } else {
+            magnitude = String(format: "%4.0f", scaled)
+        }
+        let unit = units[unitIndex]
+        let unitSlot = unit.isEmpty ? " " : unit
+        return (magnitude: magnitude, unit: unit, unitSlot: unitSlot)
+    }
+
+    /// Back-compat alias used by older call sites / tests.
+    static func fixedThreeDigitRate(_ value: Double) -> (magnitude: String, unit: String, unitSlot: String) {
+        fixedThreeDigitMagnitude(value)
+    }
+
     /// Widest network samples used to reserve a stable cell width.
     /// `↑999kb/s` / `↑99.9mb/s` cover both unit modes.
     static let networkWidthSampleUpload = "↑99.9mb/s"
     static let networkWidthSampleDownload = "↓99.9mb/s"
+    /// Shared dual-line sample: label + 4-digit mag + unit + /time.
+    /// `tok 10.2k/s` is the canonical widest form for both rows.
+    static let tokenRateWidthSampleTop = "tok 10.2k/s"
+    static let tokenRateWidthSampleBottom = "tok 10.2k/s"
+
     static let percentWidthSample = "100%"
     static let thermalWidthSample = "偏高"
 
     enum MenuBarMetricCell: Equatable {
         case text(String, sample: String)
         case network(upload: String, download: String)
+        case dualLine(top: String, bottom: String, topSample: String, bottomSample: String)
 
         func pointWidth(primaryFont: NSFont, networkFont: NSFont) -> CGFloat {
             switch self {
@@ -95,11 +171,21 @@ enum MetricsFormatting {
                 let up = MetricsFormatting.measure(MetricsFormatting.networkWidthSampleUpload, font: networkFont).width
                 let down = MetricsFormatting.measure(MetricsFormatting.networkWidthSampleDownload, font: networkFont).width
                 return max(up, down)
+            case .dualLine(_, _, let topSample, let bottomSample):
+                // Reserve one stable width for the pair (use the wider sample).
+                let top = MetricsFormatting.measure(topSample, font: networkFont).width
+                let bottom = MetricsFormatting.measure(bottomSample, font: networkFont).width
+                return max(top, bottom)
             }
         }
     }
 
-    static func menuBarMetricCells(settings: AppSettings, metrics: SystemMetrics) -> [MenuBarMetricCell] {
+    static func menuBarMetricCells(
+        settings: AppSettings,
+        metrics: SystemMetrics,
+        tokensPerSecond: Double = 0,
+        usdPerSecond: Double = 0
+    ) -> [MenuBarMetricCell] {
         var cells: [MenuBarMetricCell] = []
         if settings.menuBarShowCPU {
             cells.append(.text(percent(metrics.cpuPercent), sample: percentWidthSample))
@@ -118,6 +204,16 @@ enum MetricsFormatting {
                 )
             )
         }
+        if settings.menuBarShowTokenRate {
+            cells.append(
+                .dualLine(
+                    top: tokenRateLine(tokensPerSecond),
+                    bottom: costRateLine(usdPerSecond),
+                    topSample: tokenRateWidthSampleTop,
+                    bottomSample: tokenRateWidthSampleBottom
+                )
+            )
+        }
         if settings.menuBarShowThermal {
             cells.append(.text(shortThermal(metrics.thermalState), sample: thermalWidthSample))
         }
@@ -125,16 +221,35 @@ enum MetricsFormatting {
     }
 
     static func measure(_ string: String, font: NSFont) -> CGSize {
+        guard !string.isEmpty else { return .zero }
+        // Prefer CTLine measurement; fall back to a monospace estimate if CoreText fails.
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let size = (string as NSString).size(withAttributes: attrs)
-        return CGSize(width: ceil(size.width), height: ceil(size.height))
+        let attributed = NSAttributedString(string: string, attributes: attrs)
+        let line = CTLineCreateWithAttributedString(attributed)
+        let bounds = CTLineGetBoundsWithOptions(line, [])
+        if bounds.width.isFinite, bounds.height.isFinite, bounds.width >= 0 {
+            return CGSize(width: ceil(bounds.width), height: ceil(max(font.pointSize * 1.15, bounds.height)))
+        }
+        let approx = CGFloat(string.count) * max(1, font.pointSize) * 0.62
+        return CGSize(width: ceil(max(1, approx)), height: ceil(max(1, font.pointSize) * 1.2))
     }
 
     /// Fixed width derived from *settings* only, so live values never resize the item.
-    static func menuBarFixedWidth(settings: AppSettings, iconSize: CGFloat? = nil) -> CGFloat {
+    static func menuBarFixedWidth(
+        settings: AppSettings,
+        iconSize: CGFloat? = nil,
+        activity: MenuBarAgentActivity = .idle
+    ) -> CGFloat {
+        _ = activity // width is reserved even while sleeping so the item doesn't jump.
         let resolvedIcon: CGFloat
         if settings.menuBarShowCatIcon {
-            resolvedIcon = iconSize ?? CGFloat(settings.menuBarCatIconPointSize)
+            let base = iconSize ?? CGFloat(settings.menuBarCatIconPointSize)
+            if settings.menuBarIconStyle == .tokcat {
+                // Must match MenuBarCatExpression.badgePointWidth (floating zzz/OK column).
+                resolvedIcon = base + 9
+            } else {
+                resolvedIcon = base
+            }
         } else {
             resolvedIcon = 0
         }
