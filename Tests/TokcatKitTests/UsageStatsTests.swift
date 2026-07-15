@@ -47,6 +47,8 @@ final class UsageStatsTests: XCTestCase {
     }
 
     func testModelGroupingShortName() {
+        // Path-qualified and bare Claude ids should collapse to one short label.
+        // ModelNameFormatting keeps the family core ("sonnet"), not the "claude-" prefix.
         let dayStart = Date(timeIntervalSince1970: 1_705_276_800)
         let events = [
             makeEvent(dayStart.addingTimeInterval(100), source: .claudeCode, model: "anthropic/claude-sonnet", tokens: 10),
@@ -60,7 +62,8 @@ final class UsageStatsTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertEqual(snapshot.series.count, 1)
-        XCTAssertEqual(snapshot.series[0].displayName, "claude-sonnet")
+        XCTAssertEqual(snapshot.series[0].key, "sonnet")
+        XCTAssertEqual(snapshot.series[0].displayName, "sonnet")
         XCTAssertEqual(snapshot.series[0].totalTokens, 25)
     }
 
