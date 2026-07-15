@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     private let systemMetricsMonitor: SystemMetricsMonitor
     private let store: PetStore?
     private let settingsStore: AppSettingsStore
-    private var throughputTracker = ThroughputTracker(windowSeconds: 60)
+    private var throughputTracker = ThroughputTracker(windowSeconds: 12, idleZeroSeconds: 3)
     private var menuBarActivityTracker = MenuBarAgentActivityTracker()
     private var timer: Timer?
     private var menuBarAnimTimer: Timer?
@@ -746,7 +746,8 @@ final class AppModel: ObservableObject {
             latestModel: latestModel,
             latestSource: latestSource,
             tokensPerSecond: tokensPerSecond,
-            justLeveledUp: justLeveledUp
+            justLeveledUp: justLeveledUp,
+            agentMode: menuBarActivity.mode
         )
         setIfChanged(\AppModel.petProgress, next)
     }

@@ -251,11 +251,14 @@ final class BundledCatgirlAnimator {
         case .excited, .celebrating:
             period *= 0.7
             amp *= 1.25
-        case .sleepy, .hungry:
+        case .sleepy, .hungry, .failed:
             period *= 1.35
             amp *= 0.45
-        case .focused:
+        case .focused, .reviewing:
             period *= 0.85
+        case .waiting:
+            period *= 1.1
+            amp *= 0.7
         default:
             break
         }
@@ -375,10 +378,24 @@ final class BundledCatgirlAnimator {
                 SCNAction.wait(duration: 1.3)
             ])
             pivot.runAction(.repeatForever(tremble), forKey: "statusLoop")
-        case .sleepy:
+        case .sleepy, .failed:
             let sink = SCNAction.moveBy(x: 0, y: -0.03, z: 0, duration: 0.5)
             sink.timingMode = .easeInEaseOut
             pivot.runAction(sink, forKey: "statusLoop")
+        case .waiting:
+            let lean = SCNAction.sequence([
+                SCNAction.moveBy(x: 0, y: 0.015, z: 0.01, duration: 0.35),
+                SCNAction.moveBy(x: 0, y: -0.015, z: -0.01, duration: 0.45),
+                SCNAction.wait(duration: 0.9)
+            ])
+            pivot.runAction(.repeatForever(lean), forKey: "statusLoop")
+        case .reviewing, .focused:
+            let nod = SCNAction.sequence([
+                SCNAction.moveBy(x: 0, y: 0, z: 0.012, duration: 0.4),
+                SCNAction.moveBy(x: 0, y: 0, z: -0.012, duration: 0.4),
+                SCNAction.wait(duration: 1.0)
+            ])
+            pivot.runAction(.repeatForever(nod), forKey: "statusLoop")
         default:
             break
         }

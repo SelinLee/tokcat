@@ -7,6 +7,9 @@ public enum PetDerivedStatus: String, Codable, CaseIterable, Sendable, Identifia
     case sleepy
     case excited
     case focused
+    case reviewing
+    case waiting
+    case failed
     case lowEnergy
     case happy
     case content
@@ -21,6 +24,9 @@ public enum PetDerivedStatus: String, Codable, CaseIterable, Sendable, Identifia
         case .sleepy: return "打盹"
         case .excited: return "兴奋"
         case .focused: return "专注 coding"
+        case .reviewing: return "审阅中"
+        case .waiting: return "等待确认"
+        case .failed: return "受挫"
         case .lowEnergy: return "懒洋洋"
         case .happy: return "开心"
         case .content: return "平静"
@@ -35,6 +41,9 @@ public enum PetDerivedStatus: String, Codable, CaseIterable, Sendable, Identifia
         case .sleepy: return "moon.zzz"
         case .excited: return "bolt.fill"
         case .focused: return "brain.head.profile"
+        case .reviewing: return "doc.text.magnifyingglass"
+        case .waiting: return "hand.raised.fill"
+        case .failed: return "exclamationmark.triangle"
         case .lowEnergy: return "leaf"
         case .happy: return "face.smiling"
         case .content: return "heart"
@@ -49,6 +58,9 @@ public enum PetDerivedStatus: String, Codable, CaseIterable, Sendable, Identifia
         case .sleepy: return "安静太久，开始打瞌睡。"
         case .excited: return "响应很快，情绪高涨。"
         case .focused: return "最近一直在高强度 coding。"
+        case .reviewing: return "刚收工，正在盯着输出检查。"
+        case .waiting: return "停在半路，像在等你点头继续。"
+        case .failed: return "这波延迟或结果不顺，耳朵都耷拉了。"
         case .lowEnergy: return "手感偏低，动作会更慢一点。"
         case .happy: return "吃得饱、心情好。"
         case .content: return "状态平稳，安安静静陪着你。"
@@ -116,7 +128,8 @@ public enum PetPresentation {
         for state: PetState,
         justLeveledUp: Bool = false,
         now: Date = Date(),
-        tokensPerSecond: Double = 0
+        tokensPerSecond: Double = 0,
+        agentMode: MenuBarAgentMode = .sleeping
     ) -> PetDerivedStatus {
         if justLeveledUp {
             return .celebrating
@@ -127,20 +140,42 @@ public enum PetPresentation {
         if let lastFedAt = state.lastFedAt, now.timeIntervalSince(lastFedAt) > 3 * 3600, state.hunger < 0.55 {
             return .sleepy
         }
+        // Live agent activity can override mood for presentation (Codex-like situations).
+        if agentMode == .working {
+            if tokensPerSecond > 40 || (state.mood > 0.78 && state.stats.energy > 8) {
+                return .excited
+            }
+            return .focused
+        }
+        if agentMode == .completed {
+            // Post-task inspection window.
+            if state.mood < 0.28 {
+                return .failed
+            }
+            return .reviewing
+        }
         if tokensPerSecond > 40 || (state.mood > 0.78 && state.stats.energy > 8) {
             return .excited
         }
         if tokensPerSecond > 8 || (state.streakDays >= 2 && state.hunger > 0.45 && state.mood > 0.45) {
             return .focused
         }
+        // Severe latency / deflated mood → failed (Codex failed).
+        if state.mood < 0.22 {
+            return .failed
+        }
+        if state.mood < 0.32 {
+            return .sad
+        }
+        // Soft stall: low energy with middling mood → expectant waiting (Codex waiting).
+        if state.stats.energy < 2.5 && state.mood >= 0.32 && state.mood < 0.58 {
+            return .waiting
+        }
         if state.stats.energy < 2 && state.mood < 0.45 {
             return .lowEnergy
         }
         if state.mood > 0.7 && state.hunger > 0.45 {
             return .happy
-        }
-        if state.mood < 0.32 {
-            return .sad
         }
         return .content
     }

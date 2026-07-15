@@ -240,22 +240,44 @@ struct MenuBarContentView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
 
+            // Source · model · tokens · time — equal-width columns across the panel.
             ForEach(Array(model.recentEvents.suffix(2).reversed().enumerated()), id: \.offset) { _, event in
-                HStack(spacing: 6) {
-                    Text(event.source.displayName)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 46, alignment: .leading)
-                        .lineLimit(1)
-                    Text(shortModelName(event.model))
-                        .font(.caption2)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(compactTokenCount(event.inputTokens + event.outputTokens))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                recentEventColumns(
+                    source: shortSourceName(event.source),
+                    model: shortModelName(event.model),
+                    tokens: compactTokenCount(event.inputTokens + event.outputTokens),
+                    time: compactEventTime(event.timestamp)
+                )
             }
+        }
+    }
+
+    private func recentEventColumns(
+        source: String,
+        model: String,
+        tokens: String,
+        time: String
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(source)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(model)
+                .font(.caption2)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(tokens)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            Text(time)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -457,11 +479,40 @@ struct MenuBarContentView: View {
         return String(format: "%.2f/s", value)
     }
 
-    private func shortModelName(_ model: String) -> String {
-        if let last = model.split(separator: "/").last {
-            return String(last)
+    private func shortSourceName(_ source: AgentSource) -> String {
+        switch source {
+        case .claudeCode: return "Claude"
+        case .codexCLI: return "Codex"
+        case .openClaw: return "OpenClaw"
+        case .workBuddy: return "WorkBuddy"
+        case .kimi: return "Kimi"
+        case .cursor: return "Cursor"
+        case .geminiCLI: return "Gemini"
+        case .ccSwitch: return "CC Switch"
         }
-        return model
+    }
+
+    private func compactEventTime(_ date: Date) -> String {
+        let now = Date()
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 45 {
+            return "刚刚"
+        }
+        if seconds < 3_600 {
+            let minutes = max(1, Int(seconds / 60))
+            return "\(minutes)分前"
+        }
+        if Calendar.current.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        if Calendar.current.isDateInYesterday(date) {
+            return "昨天"
+        }
+        return date.formatted(.dateTime.month(.defaultDigits).day())
+    }
+
+    private func shortModelName(_ model: String) -> String {
+        ModelNameFormatting.shortDisplayName(model)
     }
 
     private func formatUSDPerMinute(_ usdPerSecond: Double) -> String {

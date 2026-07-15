@@ -60,31 +60,60 @@
 
 v1 将 1–4 烘焙进单层帧；Phase 4 以程序化 32×32 overlay 叠装备，皮肤用调色映射（经典/薄荷/午夜）。
 
-## 动作表（v1）
+## 动作表（v5 · 多轮廓大动作）
 
-| Clip | 帧数 | 循环 | 触发 |
-|------|------|------|------|
-| `idle` | 4 | 是 | 默认 content |
-| `working` | 4 | 是 | focused / excited / token 速率高 |
-| `happy` | 3 | 是 | happy 心情 |
-| `sad` | 3 | 是 | sad / lowEnergy |
-| `sleepy` | 3 | 是 | sleepy |
-| `hungry` | 3 | 是 | hungry |
-| `eating` | 4 | 否 | 喂食脉冲 |
-| `level_up` | 5 | 否 | 升级脉冲 |
-| `interact` | 3 | 否 | 点击互动 |
-| `rest` | 4 | 是* | 懒躺/趴窝常驻（*稀疏微动） |
-| `pace` | 8 | 否 | 来回踱步（时间驱动） |
-| `groom` | 4 | 否 | 理毛舔爪（时间驱动） |
-| `look_around` | 6 | 否 | 左顾右盼（时间驱动） |
+| Clip | 帧数 | 循环 | 触发 | Codex 对应 |
+|------|------|------|------|------------|
+| `idle` | 4 | 是* | 默认 content | idle |
+| `working` | 4 | 是* | focused / excited / agent working | running（工作，非奔跑） |
+| `happy` | 3 | 是* | happy / completed 庆祝 | — |
+| `sad` | 3 | 是* | sad / lowEnergy | — |
+| `sleepy` | 3 | 是* | sleepy | — |
+| `hungry` | 3 | 是* | hungry | — |
+| `waiting` | 4 | 是* | 低能量等待确认 | waiting |
+| `failed` | 4 | 是* | 极低 mood / 受挫 | failed |
+| `review` | 6 | 是* | 任务完成后审阅 | review |
+| `wave` | 4 | 否 | 点击/ambient 招呼 | waving |
+| `jump` | 5 | 否 | ambient 庆祝弹跳 | jumping |
+| `eating` | 4 | 否 | 喂食脉冲 | — |
+| `level_up` | 5 | 否 | 升级脉冲 | — |
+| `interact` | 3 | 否 | 点击互动 | waving 变体 |
+| `rest` | 4 | 是* | 懒躺/趴窝 | — |
+| `pace` | 8 | 否 | 来回踱步（时间驱动） | running-right/left 轻量替代 |
+| `groom` | 4 | 否 | 理毛舔爪（时间驱动） | — |
+| `look_around` | 6 | 否 | 左顾右盼（时间驱动） | look directions 轻量替代 |
+
+\* 基础态采用「静止 hold + 稀疏微动」，不无限循环刷帧。
+
+
+
+### 轮廓差异（v5）
+
+为避免“全是坐姿微调”，基础态改用不同剪影：
+
+| Clip | 剪影 |
+|------|------|
+| `idle` / `happy` / `sad` / `wave` | 坐姿 |
+| `working` / `review` | **工作台 + 屏幕**（右侧坐、前肢键盘） |
+| `sleepy` | **侧躺** 全身横卧 |
+| `rest` | **loaf 趴窝** 扁圆团 |
+| `failed` | **瘫软 pancake** |
+| `hungry` | **前伸 + 小碗** |
+| `waiting` | **蹲伏抬爪** |
+| `pace` | **站立行走** 腿可见 |
+| `jump` / `level_up` | 坐姿大幅上下位移 |
 
 ### 动作要点
 
 - **idle**：呼吸起伏 + 眨眼（至少 1 帧闭眼）
-- **working**：前爪轻点 / 身体微倾，表「在干活」；不要画速度线
+- **working**：前爪轻点 / 身体微倾 / 下巴思考，表「在干活」；不要画速度线、不要 literal 跑步
+- **waiting**：前爪前伸、身体前倾，表「在等你确认」
+- **failed**：低头 + 附着泪点 / 耷拉眉；禁止红叉、游离特效
+- **review**：歪头扫视、瞳孔收紧，检查刚完成的输出
+- **wave / interact**：抬爪挥手，禁止挥动手势线
+- **jump / level_up**：仅用身体位移表现起跳；禁止地面阴影与冲击波
 - **eating**：低头 + 口部开合，可出现小 token 屑（附着）
-- **level_up**：拉伸弹跳 + 附着星点；结束后回落 idle/happy
-- **interact**：抬爪挥手或歪头
+- **pace / look_around**：桌宠 ambient；对应 Codex 移动与 look 方向的轻量表达
 
 ## 文件命名
 
@@ -107,7 +136,7 @@ App/Resources/Sprites/TokcatPixel/
 ```json
 {
   "name": "Tokcat Pixel",
-  "version": 1,
+  "version": 4,
   "frameSize": 32,
   "clips": {
     "idle": { "frames": 4, "fps": 6, "loop": true },
@@ -140,3 +169,31 @@ python3 scripts/generate_pixel_tokcat.py
 ```
 
 输出写入 `App/Resources/Sprites/TokcatPixel/`。
+
+
+## 装备外观契约（v5）
+
+装备**不重画整只猫**，只在基础动作帧上叠局部层。多轮廓动作通过「姿态族锚点」对齐：
+
+| 层 | 可变范围 | 不可变 |
+|----|----------|--------|
+| **皮肤** | 体色 remap（fur light/mid/accent/shadow） | 剪影、五官布局、动作帧 |
+| **head** | 帽/耳机/冠等头顶局部 | 不改头骨轮廓 |
+| **face** | 眼镜/面罩/徽章眼部局部 | 不替换整张脸 |
+| **back** | 披风/背包/围巾 | 不改身体体积 |
+| **held** | 手持小道具 | 不引入第二角色 |
+| **aura** | 附着点光点 | 禁止大片光晕/投影 |
+
+### 姿态族可见性
+
+| 姿态族 | 典型 clip | 可见槽位 |
+|--------|-----------|----------|
+| sit | idle/happy/wave… | 全部 |
+| desk | working/review | head/face/back/aura（隐藏 held，桌面已有键盘） |
+| walk | pace | 全部 |
+| crouch | waiting | 全部 |
+| loaf | rest | head/face/aura |
+| side/flop | sleepy/failed | face/aura |
+| stretch | hungry | head/face/back/aura |
+
+实现：`PixelPetOverlayRenderer.anchor(for:)` + `visibleSlots(for:)`，由 `PixelPetClip.poseFamily` 驱动。

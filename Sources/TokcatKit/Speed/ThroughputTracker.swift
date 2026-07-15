@@ -2,12 +2,23 @@ import Foundation
 
 /// Rolling window token / cost throughput derived from recent `TokenEvent`s.
 /// Distinct from `SpeedTracker`, which maps latency → mood.
+///
+/// Tuned for a "live" feel:
+/// - short window so recent bursts dominate
+/// - hard zero after a brief idle gap so the rate does not glide down for a minute after work stops
 public struct ThroughputTracker: Sendable {
+    /// How far back samples contribute to the rate.
     public var windowSeconds: TimeInterval
+    /// After this much silence since the newest sample, reported rate is zero.
+    public var idleZeroSeconds: TimeInterval
     private var samples: [(timestamp: Date, tokens: Int, costUSD: Double)]
 
-    public init(windowSeconds: TimeInterval = 60) {
+    public init(
+        windowSeconds: TimeInterval = 12,
+        idleZeroSeconds: TimeInterval = 3
+    ) {
         self.windowSeconds = max(1, windowSeconds)
+        self.idleZeroSeconds = max(0.25, idleZeroSeconds)
         self.samples = []
     }
 
@@ -32,9 +43,17 @@ public struct ThroughputTracker: Sendable {
     public mutating func rates(now: Date = Date()) -> (tokensPerSecond: Double, usdPerSecond: Double) {
         prune(now: now)
         guard !samples.isEmpty else { return (0, 0) }
+
+        let latest = samples.lazy.map(\.timestamp).max() ?? now
+        let idle = now.timeIntervalSince(latest)
+        // Stopped working: drop immediately instead of slowly diluting over a long window.
+        if idle >= idleZeroSeconds {
+            return (0, 0)
+        }
+
         let totalTokens = samples.reduce(0) { $0 + $1.tokens }
         let totalCost = samples.reduce(0.0) { $0 + $1.costUSD }
-        let earliest = samples.map(\.timestamp).min() ?? now
+        let earliest = samples.lazy.map(\.timestamp).min() ?? now
         let span = max(now.timeIntervalSince(earliest), 1)
         // Prefer fixed window length once we have full-window coverage.
         let denominator = max(min(span, windowSeconds), 1)

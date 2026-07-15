@@ -423,10 +423,7 @@ struct SettingsView: View {
     }
 
     private func shortModelName(_ model: String) -> String {
-        if let last = model.split(separator: "/").last {
-            return String(last)
-        }
-        return model
+        ModelNameFormatting.shortDisplayName(model)
     }
 
     private func formatTokPerSec(_ value: Double) -> String {

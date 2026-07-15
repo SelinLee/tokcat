@@ -23,26 +23,54 @@ struct PixelPetPreviewView: NSViewRepresentable {
     var skinItemID: String
     var loadout: EquipmentLoadout
     var animating: Bool = true
+    /// When non-nil, showcase this clip instead of the live status pose.
+    var forcedClip: PixelPetClip? = nil
+    /// Bump to re-trigger the current forced one-shot clip.
+    var replayToken: Int = 0
+    var activity: MenuBarAgentActivity = .idle
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> PixelPetView {
         let view = PixelPetView(frame: .zero)
         view.setAnimating(animating && isMainTabActive)
-        apply(to: view)
+        context.coordinator.didApplyInitial = false
+        apply(to: view, context: context, isInitial: true)
         return view
     }
 
     func updateNSView(_ nsView: PixelPetView, context: Context) {
         nsView.setAnimating(animating && isMainTabActive)
-        apply(to: nsView)
+        apply(to: nsView, context: context, isInitial: false)
     }
 
-    private func apply(to view: PixelPetView) {
+    private func apply(to view: PixelPetView, context: Context, isInitial: Bool) {
         view.apply(
             state: PetState(),
             status: status,
             stage: stage,
             skinItemID: skinItemID,
-            loadout: loadout
+            loadout: loadout,
+            activity: activity
         )
+
+        let clipChanged = context.coordinator.forcedClip != forcedClip
+        let replayChanged = context.coordinator.replayToken != replayToken
+        context.coordinator.forcedClip = forcedClip
+        context.coordinator.replayToken = replayToken
+
+        if isInitial || clipChanged {
+            view.forceClip(forcedClip, liveStatus: status)
+        } else if forcedClip != nil, replayChanged {
+            view.replayForcedClip()
+        }
+    }
+
+    final class Coordinator {
+        var forcedClip: PixelPetClip? = nil
+        var replayToken: Int = 0
+        var didApplyInitial = false
     }
 }

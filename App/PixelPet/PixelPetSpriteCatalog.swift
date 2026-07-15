@@ -54,11 +54,16 @@ enum PixelPetSpriteCatalog {
 
     private static func defaultFrameCount(for clip: PixelPetClip) -> Int {
         switch clip {
-        case .idle, .working, .eating, .rest, .groom: return 4
-        case .levelUp: return 5
-        case .lookAround: return 6
-        case .pace: return 8
-        case .happy, .sad, .sleepy, .hungry, .interact: return 3
+        case .idle, .working, .eating, .rest, .groom, .waiting, .failed, .wave:
+            return 4
+        case .levelUp, .jump:
+            return 5
+        case .lookAround, .review:
+            return 6
+        case .pace:
+            return 8
+        case .happy, .sad, .sleepy, .hungry, .interact:
+            return 3
         }
     }
 

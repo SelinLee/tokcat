@@ -360,6 +360,7 @@ public struct PetEngine: Sendable {
         latestSource: AgentSource?,
         tokensPerSecond: Double = 0,
         justLeveledUp: Bool = false,
+        agentMode: MenuBarAgentMode = .sleeping,
         now: Date = Date()
     ) -> PetProgressSnapshot {
         let needed = xpToNextLevel(from: state.level)
@@ -371,7 +372,8 @@ public struct PetEngine: Sendable {
                 for: state,
                 justLeveledUp: justLeveledUp,
                 now: now,
-                tokensPerSecond: tokensPerSecond
+                tokensPerSecond: tokensPerSecond,
+                agentMode: agentMode
             ),
             xpToNextLevel: needed,
             xpProgress: needed > 0 ? min(1, max(0, state.xp / needed)) : 0,

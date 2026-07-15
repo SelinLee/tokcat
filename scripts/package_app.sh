@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a distributable Tokcat.app (ad-hoc signed) + zip.
+# Build a distributable Tokcat.app (ad-hoc signed) + zip + DMG.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,7 +9,7 @@ APP_NAME="Tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.2.0}"
+VERSION="${TOKCAT_VERSION:-0.3.1}"
 BUILD_NUMBER="${TOKCAT_BUILD:-1}"
 
 DIST_DIR="$ROOT/dist"
@@ -18,6 +18,7 @@ CONTENTS="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
 RESOURCES_DIR="$CONTENTS/Resources"
 ZIP_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.zip"
+DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.dmg"
 
 echo "==> Building release binary"
 swift build -c release --product TokcatApp
@@ -166,26 +167,61 @@ rm -f "$ZIP_PATH"
   ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "$(basename "$ZIP_PATH")"
 )
 
-# SHA256
+echo "==> DMG for distribution"
+DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.dmg"
+DMG_STAGE="$DIST_DIR/dmg-stage"
+rm -rf "$DMG_STAGE" "$DMG_PATH"
+mkdir -p "$DMG_STAGE"
+# Keep Parent-style layout: app + Applications shortcut for drag-install.
+ditto "$APP_DIR" "$DMG_STAGE/${APP_NAME}.app"
+ln -s /Applications "$DMG_STAGE/Applications"
+# Temporary RW image → compress to UDZO
+TMP_DMG="$DIST_DIR/.${APP_NAME}-${VERSION}-rw.dmg"
+rm -f "$TMP_DMG"
+hdiutil create \
+  -volname "$APP_NAME $VERSION" \
+  -srcfolder "$DMG_STAGE" \
+  -ov \
+  -fs HFS+ \
+  -format UDRW \
+  "$TMP_DMG" >/dev/null
+hdiutil convert "$TMP_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
+rm -f "$TMP_DMG"
+rm -rf "$DMG_STAGE"
+
+# SHA256 (zip + dmg)
+SHA_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.sha256"
 if command -v shasum >/dev/null 2>&1; then
-  shasum -a 256 "$ZIP_PATH" | tee "$DIST_DIR/${APP_NAME}-${VERSION}-macos.sha256"
+  {
+    shasum -a 256 "$ZIP_PATH"
+    shasum -a 256 "$DMG_PATH"
+  } | tee "$SHA_PATH"
 elif command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "$ZIP_PATH" | tee "$DIST_DIR/${APP_NAME}-${VERSION}-macos.sha256"
+  {
+    sha256sum "$ZIP_PATH"
+    sha256sum "$DMG_PATH"
+  } | tee "$SHA_PATH"
 fi
 
 cat > "$DIST_DIR/INSTALL.txt" <<TXT
-Tokcat ${VERSION} — macOS 菜单栏宠物
+Tokcat ${VERSION} — macOS 菜单栏用量监控 + 像素宠物
 
-安装：
-1. 解压得到 Tokcat.app
+推荐安装（DMG）：
+1. 打开 Tokcat-${VERSION}-macos.dmg
+2. 将 Tokcat.app 拖到 Applications
+3. 首次启动：右键 Tokcat.app → 打开（ad-hoc 签名，需绕过 Gatekeeper 一次）
+4. 菜单栏出现猫头图标
+
+备选（Zip）：
+1. 解压 Tokcat-${VERSION}-macos.zip 得到 Tokcat.app
 2. 拖到 /Applications（或任意位置）
-3. 首次打开：右键 Tokcat.app → 打开（通过 Gatekeeper）
-4. 菜单栏出现猫头图标；设置… 可切换皮肤 / 指标
+3. 同样：右键 → 打开
 
 说明：
 - 当前为 ad-hoc 签名，未做 Apple Developer ID 公证
-- macOS 13+，Apple Silicon / 以本机构建架构为准
+- macOS 13+，架构以本机构建为准（通常 Apple Silicon）
 - 数据仅存本地：~/Library/Application Support/TokenCat/
+- 应用本身不联网、不上传
 
 卸载：
 - 删除 Tokcat.app
@@ -196,4 +232,5 @@ echo
 echo "Done:"
 echo "  App : $APP_DIR"
 echo "  Zip : $ZIP_PATH"
-du -sh "$APP_DIR" "$ZIP_PATH"
+echo "  DMG : $DMG_PATH"
+du -sh "$APP_DIR" "$ZIP_PATH" "$DMG_PATH"

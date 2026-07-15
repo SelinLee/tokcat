@@ -120,6 +120,26 @@ final class PetEngineTests: XCTestCase {
         XCTAssertEqual(status, .hungry)
     }
 
+    func testDerivedStatusFailedAndWaiting() {
+        let failed = PetState(stats: PetStats(intelligence: 1, vitality: 1, energy: 5), mood: 0.1)
+        XCTAssertEqual(PetPresentation.status(for: failed), .failed)
+
+        let waiting = PetState(stats: PetStats(intelligence: 1, vitality: 1, energy: 1.5), mood: 0.4)
+        XCTAssertEqual(PetPresentation.status(for: waiting), .waiting)
+    }
+
+    func testDerivedStatusReviewingFromCompletedAgent() {
+        let state = PetState(hunger: 0.7, mood: 0.6)
+        let status = PetPresentation.status(for: state, agentMode: .completed)
+        XCTAssertEqual(status, PetDerivedStatus.reviewing)
+    }
+
+    func testDerivedStatusFocusedFromWorkingAgent() {
+        let state = PetState(hunger: 0.7, mood: 0.5)
+        let status = PetPresentation.status(for: state, tokensPerSecond: 12, agentMode: .working)
+        XCTAssertEqual(status, PetDerivedStatus.focused)
+    }
+
     func testXpCurveGrowsWithLevel() {
         let engine = PetEngine()
         XCTAssertLessThan(engine.xpToNextLevel(from: 1), engine.xpToNextLevel(from: 10))

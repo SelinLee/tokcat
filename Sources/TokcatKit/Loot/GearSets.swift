@@ -315,7 +315,8 @@ public enum GearPresentation {
     public static func appearanceLines(for item: ItemDefinition) -> [String] {
         var lines: [String] = []
         if let slot = item.slot {
-            lines.append("像素猫 · \(slot.title) 叠层")
+            lines.append("像素猫 · \(slot.title) 局部叠层")
+            lines.append(contentsOf: slotVisibilityHint(for: slot))
         }
         if let hat = item.menuBarHatID ?? item.effect?.menuBarHatID {
             lines.append("菜单栏 · \(menuBarHatLabel(hat))")
@@ -323,12 +324,28 @@ public enum GearPresentation {
             lines.append("菜单栏 · 无独立帽徽")
         }
         if item.kind == .skin {
-            lines.append("整套体色换肤")
+            lines.append("整套体色换肤（不改剪影/动作）")
         }
         if lines.isEmpty {
             lines.append("收藏展示")
         }
         return lines
+    }
+
+    /// Documents which poses still show a given equipment slot.
+    public static func slotVisibilityHint(for slot: EquipSlot) -> [String] {
+        switch slot {
+        case .head:
+            return ["站姿/坐姿/工作台可见；侧躺/瘫软时隐藏"]
+        case .face:
+            return ["多数姿态可见（含侧躺）"]
+        case .back:
+            return ["坐/走/蹲/工作台可见；趴窝/侧躺隐藏"]
+        case .held:
+            return ["坐/走/蹲可见；工作台/前伸/躺卧隐藏（避免与道具冲突）"]
+        case .aura:
+            return ["全姿态保留轻量附着特效"]
+        }
     }
 
     public static func powerLines(for item: ItemDefinition) -> [String] {

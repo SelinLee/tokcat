@@ -39,9 +39,10 @@ Token 事件
 一次性动作优先于持续态，播完回落：
 
 1. `levelUp`
-2. `eating`（喂食）
-3. `interact`（点击）
-4. 持续态：`working` / `hungry` / `sleepy` / `sad` / `happy` / `idle`
+2. `jump`（庆祝弹跳）
+3. `eating`（喂食）
+4. `interact` / `wave`（点击 / 招呼）
+5. 持续态：`working` / `review` / `waiting` / `failed` / `hungry` / `sleepy` / `sad` / `happy` / `idle`
 
 ### 目标数据模型（Phase 2–4 已落地）
 

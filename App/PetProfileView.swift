@@ -6,6 +6,9 @@ struct PetProfileView: View {
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showMaintenance = false
+    /// `nil` = follow live pet status pose; otherwise showcase a clip.
+    @State private var showcaseClip: PixelPetClip? = nil
+    @State private var showcaseReplayToken = 0
 
     private var snapshot: PetProgressSnapshot { model.petProgress }
     private var state: PetState { snapshot.state }
@@ -173,7 +176,7 @@ struct PetProfileView: View {
                 VStack {
                     Spacer()
                     Ellipse()
-                        .fill(statusTint.opacity(0.16))
+                        .fill(showcaseTint.opacity(0.16))
                         .frame(height: 40)
                         .blur(radius: 10)
                         .padding(.horizontal, 36)
@@ -181,14 +184,37 @@ struct PetProfileView: View {
                 }
 
                 HStack(alignment: .center, spacing: 14) {
-                    PixelPetPreviewView(
-                        stage: PetStage.stage(for: state.level),
-                        status: snapshot.status,
-                        skinItemID: model.activeSkinItemID,
-                        loadout: model.equipment,
-                        animating: !reduceMotion
-                    )
-                    .frame(width: 128, height: 148)
+                    VStack(spacing: 8) {
+                        PixelPetPreviewView(
+                            stage: PetStage.stage(for: state.level),
+                            status: snapshot.status,
+                            skinItemID: model.activeSkinItemID,
+                            loadout: model.equipment,
+                            animating: !reduceMotion,
+                            forcedClip: showcaseClip,
+                            replayToken: showcaseReplayToken,
+                            activity: model.menuBarActivity
+                        )
+                        .frame(width: 128, height: 148)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // Quick replay / interact when tapping the figure.
+                            if showcaseClip == nil {
+                                selectShowcase(.interact)
+                            } else if showcaseClip?.isOneShot == true {
+                                showcaseReplayToken &+= 1
+                            } else {
+                                // Toggle back to live for ambient locks on second pet tap.
+                                selectShowcase(nil)
+                            }
+                        }
+                        .help(showcaseClip == nil ? "点击预览互动动作" : "点击重播 / 返回实时状态")
+
+                        Text(showcaseCaption)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(GameUITheme.secondaryText)
+                            .lineLimit(1)
+                    }
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
@@ -202,7 +228,7 @@ struct PetProfileView: View {
                             .foregroundStyle(GameUITheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Text(snapshot.status.detail)
+                        Text(showcaseDetail)
                             .font(.caption)
                             .foregroundStyle(GameUITheme.primaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -236,8 +262,127 @@ struct PetProfileView: View {
                 .padding(14)
             }
             .frame(minHeight: 190)
+
+            actionShowcaseBar
         }
         .gamePanel()
+    }
+
+    private var showcaseCaption: String {
+        if let showcaseClip {
+            return "展示 · \(showcaseClip.displayTitle)"
+        }
+        return "实时 · \(snapshot.status.title)"
+    }
+
+    private var showcaseDetail: String {
+        if let showcaseClip {
+            return "正在预览「\(showcaseClip.displayTitle)」动作。点选下方芯片切换；点「实时」回到当前状态。"
+        }
+        return snapshot.status.detail
+    }
+
+    private var showcaseTint: Color {
+        guard showcaseClip != nil else { return statusTint }
+        return GameUITheme.token
+    }
+
+    private var actionShowcaseBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label("动作展示", systemImage: "figure.cooldown")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(GameUITheme.secondaryText)
+                Spacer(minLength: 0)
+                if showcaseClip != nil {
+                    Button {
+                        selectShowcase(nil)
+                    } label: {
+                        Label("实时", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .foregroundStyle(GameUITheme.accent)
+                    .background(GameUITheme.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(GameUITheme.accent.opacity(0.28), lineWidth: 1))
+                    .help("返回实时状态动作")
+
+                    if showcaseClip?.isOneShot == true {
+                        Button {
+                            showcaseReplayToken &+= 1
+                        } label: {
+                            Label("重播", systemImage: "arrow.clockwise")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .foregroundStyle(GameUITheme.token)
+                        .background(GameUITheme.token.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().strokeBorder(GameUITheme.token.opacity(0.28), lineWidth: 1))
+                        .help("重新播放当前一次性动作")
+                    }
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(PixelPetClip.showcaseOrder, id: \.self) { clip in
+                        actionChip(clip)
+                    }
+                }
+            }
+            .accessibilityLabel("宠物动作列表")
+        }
+    }
+
+    private func actionChip(_ clip: PixelPetClip) -> some View {
+        let selected = showcaseClip == clip
+        return Button {
+            if selected {
+                if clip.isOneShot {
+                    showcaseReplayToken &+= 1
+                } else {
+                    // Second tap on a looping pose returns to live.
+                    selectShowcase(nil)
+                }
+            } else {
+                selectShowcase(clip)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: clip.systemImage)
+                    .font(.caption2.weight(.bold))
+                Text(clip.displayTitle)
+                    .font(.caption2.weight(.bold))
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .foregroundStyle(selected ? Color.white : GameUITheme.primaryText)
+            .background(
+                Capsule().fill(selected ? GameUITheme.token : GameUITheme.stageTop.opacity(0.9))
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    selected ? GameUITheme.token : GameUITheme.frameStroke,
+                    lineWidth: selected ? 0 : 1
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .help("预览 \(clip.displayTitle)")
+        .accessibilityLabel(clip.displayTitle)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHint(selected ? "再次点击可重播或返回实时" : "预览该动作")
+    }
+
+    private func selectShowcase(_ clip: PixelPetClip?) {
+        showcaseClip = clip
+        if clip != nil {
+            showcaseReplayToken &+= 1
+        }
     }
 
     private var statusBadge: some View {
@@ -257,6 +402,9 @@ struct PetProfileView: View {
         case .sleepy: return .secondary
         case .excited: return GameUITheme.flash
         case .focused: return GameUITheme.token
+        case .reviewing: return GameUITheme.token.opacity(0.85)
+        case .waiting: return .yellow
+        case .failed: return .red.opacity(0.75)
         case .lowEnergy: return .gray
         case .happy: return GameUITheme.innerEar
         case .content: return GameUITheme.accent
@@ -983,7 +1131,7 @@ struct PetProfileView: View {
     }
 
     private var latestFeedText: String {
-        let modelName = snapshot.latestModel ?? "—"
+        let modelName = snapshot.latestModel.map(ModelNameFormatting.shortDisplayName) ?? "—"
         let source = snapshot.latestSource?.displayName ?? "—"
         return "\(source) · \(modelName)"
     }

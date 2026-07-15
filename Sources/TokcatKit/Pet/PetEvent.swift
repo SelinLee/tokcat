@@ -127,7 +127,7 @@ public enum PetEventFactory {
     ) -> PetTimelineEvent {
         let tierText = dominantTier?.rawValue ?? "mixed"
         let sourceText = source?.displayName ?? "Agent"
-        let modelText = model ?? "—"
+        let modelText = model.map(ModelNameFormatting.shortDisplayName) ?? "—"
         return PetTimelineEvent(
             kind: .fed,
             timestamp: timestamp,

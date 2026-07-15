@@ -217,7 +217,18 @@ final class PixelPetView: NSView {
 
     func playFeedFeedback() { animator.playFeed() }
     func playLevelFeedback() { animator.playLevelUp() }
+    func playWaveFeedback() { animator.playWave() }
+    func playJumpFeedback() { animator.playJump() }
     func playInteractionFeedback() { animator.playInteract() }
+
+    /// Profile showcase: lock a clip, or pass `nil` to resume live status pose.
+    func forceClip(_ clip: PixelPetClip?, liveStatus: PetDerivedStatus? = nil) {
+        animator.setPreviewLock(clip, liveStatus: liveStatus)
+    }
+
+    func replayForcedClip() {
+        animator.replayPreviewLock()
+    }
 
     private func applyStageChrome() {
         crownLabel.isHidden = !(stageStyle.showsCrown && loadout.itemID(for: .head) == nil)
@@ -264,6 +275,13 @@ final class PixelPetView: NSView {
         } else if clip == .happy, animator.activity.mode == .completed {
             // Completed/OK window: a bit more bounce than plain happy mood.
             range = 3.0...6.5
+        } else if clip == .review, animator.activity.mode == .completed {
+            // Inspecting results after a task.
+            range = 4.0...8.0
+        } else if clip == .waiting {
+            range = 4.5...9.0
+        } else if clip == .failed {
+            range = 7.0...12.0
         } else if clip == .rest || clip == .sleepy, animator.activity.mode == .sleeping {
             // Idle agent + sleepy pet: longer still holds.
             range = 9.0...16.0
@@ -366,7 +384,8 @@ final class PixelPetView: NSView {
             skinID: skinItemID,
             loadout: loadout,
             stage: stage,
-            frameIndex: frameIndex
+            frameIndex: frameIndex,
+            poseFamily: currentClip.poseFamily
         )
         guard let sourceCG = PixelPetUpscaler.cgImage(from: composed, fallbackSize: sourcePixelSize)
                 ?? PixelPetOverlayRenderer.cgImage(from: composed) else {

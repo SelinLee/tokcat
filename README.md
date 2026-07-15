@@ -1,7 +1,11 @@
 # Tokcat
 
-**Realtime token usage & cost monitoring for multiple AI coding agents — right in the macOS menu bar, with local-only stats.**  
-Optional desktop pixel pet fed by the same usage. Offline by default: no network calls, no uploads.
+<p align="center">
+  <img src="docs/assets/screenshots/tokcat-pixel.png" alt="Tokcat pixel mascot" width="96" />
+</p>
+
+**Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-only, no upload.**  
+Optional desktop pixel pet fed by the same usage.
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -9,76 +13,120 @@ Optional desktop pixel pet fed by the same usage. Offline by default: no network
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#requirements)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
+<p align="center">
+  <img src="docs/assets/screenshots/menubar.png" alt="Tokcat menu bar strip" width="420" />
+</p>
+
+<p align="center"><sub>Menu bar live strip — network · token rate · spend rate, next to the cat icon.</sub></p>
+
 ---
 
-## Core: multi-agent usage & cost
+## Why Tokcat
 
-Tokcat polls **local agent logs** on your Mac (no cloud hooks, no API-key upload), normalizes them into token events, then gives you:
+If you hop between Claude Code, Codex, Cursor and friends, costs scatter across tools.  
+Tokcat **only reads local agent logs** on your Mac (no cloud hook, no API-key upload), unifies them into token events, and shows:
 
-| Capability | What you get |
-|------------|----------------|
-| **Live rates** | Menu bar / panel: tok/s and spend rate (e.g. `$/m`) |
-| **Today & total** | Today’s tokens, today’s cost, cumulative cost |
-| **Model & source** | Active model, agent source, optional relay / provider attribution |
-| **Stats dashboard** | Day / week / month trends; group by **Agent / Model / Provider**; Tokens ↔ cost |
-| **Local pricing** | Editable rate table; reported real prices + estimates |
-| **Recent events** | Compact recent usage in the menu bar |
+| You care about | What you see |
+|----------------|--------------|
+| **Live rates** | Menu bar: `tok/s`, `$/h`, optional CPU / GPU / mem / network |
+| **Today & total** | Today’s tokens & cost, cumulative spend |
+| **Who spent it** | Agent · model · optional **provider / relay** (CC Switch) |
+| **Trends** | Day / week / month charts; group by provider, model, or agent |
+| **Local pricing** | Editable rate table + reported real prices when available |
+| **Optional pet** | Pixel Tokcat grows on usage — loot, bag, codex |
 
-### Supported agents / sources
+> The pet is an optional shell: **tokens → stats → (optional) feed the cat**.  
+> Monitoring and stats work fully without the pet.
 
-| Source | Notes |
-|--------|--------|
-| **Claude Code** | Local JSONL session logs |
-| **Codex CLI** | Rollout / history logs |
-| **Cursor** | Local usage records |
-| **Gemini CLI** | Local CLI logs |
-| **OpenClaw** | Local trajectory logs |
-| **WorkBuddy** | Local traces |
-| **Kimi** | Local wire.jsonl-style logs |
-| **CC Switch** | Proxy request logs for **provider / relay attribution and reported price** |
+---
 
-Adapters can be toggled in Settings. New adapters start tracking from the **end of the file** so first launch does not ingest huge histories.
+## Screenshots
 
-> The pet is an optional visualization layer: tokens arrive → stats persist → the desktop cat is fed.  
-> **You can use monitoring and stats without the pet.**
+### Live menu bar & panel
+
+| Menu bar strip | Dropdown panel |
+|----------------|----------------|
+| ![Menu bar](docs/assets/screenshots/menubar.png) | ![Menu bar panel](docs/assets/screenshots/menubar-panel.png) |
+
+- Cat icon with state (idle / working / resting / reviewing…)
+- Side metrics: network, **token rate**, **spend rate**
+- Panel: system strip, pet vitals, active agent + model, today / total cost, recent events
+- Shortcuts: main window · pet · settings · quit
+
+### Usage dashboard
+
+![Stats dashboard](docs/assets/screenshots/stats-dashboard.png)
+
+- Period: **Day / Week / Month**
+- Group by: **Provider (relay)** · **Model** · **Agent**
+- Metric: **Tokens** or **Cost**
+- Summary cards (totals, in/out split, estimate ratio) + trend chart + breakdown table
+
+### Multi-agent sources
+
+![Agent settings](docs/assets/screenshots/settings-agents.png)
+
+Toggle each adapter in **Settings → Agent**. Sources only poll **local** logs / state files.
+
+| Source | What it reads |
+|--------|----------------|
+| **Claude Code** | `~/.claude/projects/**/*.jsonl` session logs |
+| **Codex CLI** | `~/.codex/sessions/**/rollout-*.json` `token_count` events |
+| **OpenClaw** | trajectory `model.completed` events |
+| **WorkBuddy** | local generation usage traces |
+| **Kimi** | Desktop `wire.jsonl` usage records |
+| **Cursor** | local state / logs (shown when data exists) |
+| **Gemini CLI** | `~/.gemini` session logs (shown when data exists) |
+| **CC Switch** | local proxy DB → **relay attribution, reported cost, multiplier** |
+
+New adapters track from the **end of the file** so first launch does not backfill huge histories.
+
+### Optional pixel pet
+
+| Character | Inventory | Codex |
+|-----------|-----------|-------|
+| ![Pet](docs/assets/screenshots/pet-character.png) | ![Bag](docs/assets/screenshots/inventory.png) | ![Codex](docs/assets/screenshots/codex.png) |
+
+- **Character**: level, series, streak, mood / satiety / three stats, animation preview  
+- **Inventory**: loadout slots (hat / glasses / cape / held / aura) + bag filters  
+- **Codex**: skins & gear discovery progress; equip owned items from the codex  
+
+Main window tabs: **Stats · Pet · Bag · Codex · Settings**.
 
 ---
 
 ## 60-second tour
 
-1. Install and open Tokcat (cat icon in the menu bar)  
+1. Install and open Tokcat (cat appears in the menu bar)  
 2. Use Claude Code / Codex / Cursor as usual  
-3. Watch **tok/s · spend rate** beside the icon; open the panel for today’s usage  
-4. Main window → **Stats**: day / week / month charts and breakdowns  
+3. Watch **tok/s · $/h** beside the icon; click for today’s summary  
+4. Open **Main window → Stats** for day / week / month charts  
 
-Data stays in local SQLite: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
+Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
 
 ---
 
-## Feature overview
+## Feature map
 
 ### 1. Live monitoring (menu bar)
-- Custom Tokcat icon; **idle / working / done** expressions tied to agent throughput  
-- Optional side metrics: CPU, GPU, memory, network, thermal pressure, **token rate**  
-- Dropdown: agent summary (model, speed, today, total cost), recent events, system strip  
+- Custom Tokcat icon; expressions track agent throughput / pet mood  
+- Optional metrics: CPU, GPU, memory, network, thermal, **token rate**, **spend rate**  
+- Dropdown: agent + model, speed, today & total cost, recent events, pet vitals  
 
 ### 2. Stats & rates (main window)
-- **Stats**: day / week / month; group by provider / model / agent; tokens or cost  
+- Day / week / month; group by provider / model / agent; tokens ↔ cost  
 - Async aggregation + cache so period switches stay responsive  
-- **Settings → Rates**: model unit prices; works with CC Switch reported prices  
+- **Settings → Rates**: model unit prices; pairs with CC Switch reported prices  
 
 ### 3. Desktop pet (optional)
-- Default **pixel Tokcat** (eat / level-up / work / sleepy / hungry…)  
+- Default **pixel Tokcat** (idle / work / review / wait / fail / happy / sad / sleepy / hungry / rest / wave / jump…)  
 - Also: block cat / pink cat / custom USDZ  
-- Usage-driven growth: level, smarts / stability / feel, loot & codex  
-- Sound effects **off by default**  
+- Usage-driven growth: level, smarts / stability / feel, loot drops, bag & codex  
+- SFX **off by default**  
 
-### 4. Main navigation
-Stats · Pet · Bag · Codex · Settings (left sidebar)
-
-### 5. Privacy
-- **The app does not make network requests**  
-- Read-only access to local logs and system metrics  
+### 4. Privacy
+- **The app itself makes no network requests**  
+- Read-only local logs & system metrics  
 - No account, no cloud sync, no usage upload  
 
 ---
@@ -92,17 +140,28 @@ Stats · Pet · Bag · Codex · Settings (left sidebar)
 
 ## Install
 
-Download `Tokcat-*-macos.zip` from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
+Download from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
 
-1. Unzip → `Tokcat.app`  
-2. Drag into **Applications**  
+### Recommended: DMG
+1. Open `Tokcat-*-macos.dmg`  
+2. Drag `Tokcat.app` into **Applications**  
 3. **First launch**: right-click → **Open** (ad-hoc signed; one-time Gatekeeper bypass)  
+
+### Alternative: Zip
+1. Download `Tokcat-*-macos.zip` and unzip → `Tokcat.app`  
+2. Drag into **Applications**  
+3. Same first-launch step: right-click → **Open**  
 
 Build a release locally:
 
 ```bash
-TOKCAT_VERSION=0.3.0 scripts/package_app.sh
-# Artifacts under dist/ (not committed): Tokcat.app and Tokcat-0.3.0-macos.zip
+TOKCAT_VERSION=0.3.1 scripts/package_app.sh
+# Artifacts under dist/ (not committed):
+#   Tokcat.app
+#   Tokcat-0.3.1-macos.zip
+#   Tokcat-0.3.1-macos.dmg
+#   Tokcat-0.3.1-macos.sha256
+#   INSTALL.txt
 ```
 
 ---
@@ -138,8 +197,9 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 | `Sources/TokcatKit/Adapters/` | Per-agent log parsing & provider attribution |
 | `Sources/TokcatKit/Economy/` | Pricing, nutrition tiers, **UsageStats** |
 | `Sources/TokcatKit/Persistence/` | Local SQLite |
-| `App/` | Menu bar, stats window, floating pet |
+| `App/` | Menu bar, main window, floating pet |
 | `App/PixelPet/` | Pixel animation |
+| `docs/assets/screenshots/` | Product screenshots used in this README |
 | `docs/` | Pixel / pet design notes (secondary) |
 
 ---
@@ -150,6 +210,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 - [x] Day / week / month stats (Agent / Model / Provider)  
 - [x] Menu-bar metrics & main window  
 - [x] Pixel pet / loot / bag / codex  
+- [x] DMG + Zip release packaging  
 - [ ] More agents / log formats  
 - [ ] Developer ID signing & notarization  
 
@@ -157,7 +218,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 ## Contributing
 
-Issues and PRs welcome. Please do **not** commit:
+Issues and PRs welcome. Please **do not** commit:
 
 - `dist/`, `.build/`, local `*.sqlite` / personal logs  
 - API keys, account paths, private usage exports  
@@ -168,4 +229,4 @@ Issues and PRs welcome. Please do **not** commit:
 
 [MIT](LICENSE)
 
-Third-party model assets: see the matching `ATTRIBUTION.md` / model README.
+Third-party model assets: see corresponding `ATTRIBUTION.md` / model READMEs.

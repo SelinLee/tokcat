@@ -1,6 +1,6 @@
 {
   "name": "Tokcat Pixel",
-  "version": 3,
+  "version": 7,
   "frameSize": 32,
   "displayScale": 4,
   "clips": {
@@ -54,6 +54,31 @@
       "fps": 4,
       "loop": false
     },
+    "waiting": {
+      "frames": 4,
+      "fps": 4,
+      "loop": true
+    },
+    "failed": {
+      "frames": 4,
+      "fps": 5,
+      "loop": true
+    },
+    "review": {
+      "frames": 6,
+      "fps": 5,
+      "loop": true
+    },
+    "jump": {
+      "frames": 5,
+      "fps": 10,
+      "loop": false
+    },
+    "wave": {
+      "frames": 4,
+      "fps": 7,
+      "loop": false
+    },
     "eating": {
       "frames": 4,
       "fps": 8,
@@ -69,5 +94,6 @@
       "fps": 8,
       "loop": false
     }
-  }
+  },
+  "notes": "v7 refined multi-silhouette poses (cleaner desk/loaf/side/walk/stretch)"
 }

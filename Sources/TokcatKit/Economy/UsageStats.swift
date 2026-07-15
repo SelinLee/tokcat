@@ -434,10 +434,7 @@ public enum UsageStats {
     }
 
     private static func shortModelName(_ model: String) -> String {
-        if let last = model.split(separator: "/").last {
-            return String(last)
-        }
-        return model
+        ModelNameFormatting.shortDisplayName(model)
     }
 
     private static func makeBuckets(

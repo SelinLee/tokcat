@@ -145,8 +145,11 @@ final class CatAnimator {
         if status == .sleepy {
             droopAngle = max(droopAngle, 0.35)
         }
-        if status == .focused || status == .excited {
+        if status == .focused || status == .excited || status == .reviewing {
             droopAngle *= 0.55
+        }
+        if status == .failed {
+            droopAngle = max(droopAngle, 0.3)
         }
 
         let headDroop = SCNAction.rotateTo(x: CGFloat(droopAngle), y: 0, z: 0, duration: 0.55)
@@ -187,8 +190,12 @@ final class CatAnimator {
             ])
             rig.root.runAction(.repeatForever(bounce), forKey: "statusLoop")
             startBreathing(energy: 0.9)
-        case .focused:
+        case .focused, .reviewing:
             startBreathing(energy: 0.65)
+        case .waiting:
+            startBreathing(energy: 0.4)
+        case .failed:
+            startBreathing(energy: 0.2)
         case .lowEnergy, .sad:
             startBreathing(energy: 0.25)
         case .hungry:
