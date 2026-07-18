@@ -1,7 +1,7 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png?v=3" alt="Tokcat V3 states" width="720" />
+  <img src="docs/assets/screenshots/tokcat-states-row.png?v=4" alt="Tokcat V3 states" width="720" />
 </p>
 
 <p align="center"><sub>Tokcat V3 — idle · working · hungry · happy · wave · rest</sub></p>
