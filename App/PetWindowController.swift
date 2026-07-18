@@ -546,15 +546,11 @@ final class PetSceneCoordinator {
             )
         }
 
-        if skin == .pinkCat || skin == .custom {
-            let loaded: CatModelLoader.LoadedModel?
-            if skin == .custom, let customFileName,
-               let url = PetModelLibrary.customModelURL(fileName: customFileName) {
-                loaded = CatModelLoader.loadPreparedModel(preferredURL: url)
-            } else {
-                loaded = CatModelLoader.loadPreparedModel()
-            }
-            if let loaded, CatModelLoader.isVisuallyUsable(loaded.root) {
+        if skin == .custom {
+            if let customFileName,
+               let url = PetModelLibrary.customModelURL(fileName: customFileName),
+               let loaded = CatModelLoader.loadPreparedModel(preferredURL: url),
+               CatModelLoader.isVisuallyUsable(loaded.root) {
                 let animator = BundledCatgirlAnimator(root: loaded.root, initialLevel: initialLevel)
                 return PetSceneCoordinator(
                     scene: loaded.scene,

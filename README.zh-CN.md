@@ -1,8 +1,10 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-pixel.png" alt="Tokcat 像素形象" width="96" />
+  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 状态一览" width="820" />
 </p>
+
+<p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 等待 · 审阅 · 饥饿 · 进食 · 开心 · 招手 · 跳跃 · 升级 · 互动 · 理毛 · 张望 · 踱步 · 休息 · 困倦 · 难过 · 失败</sub></p>
 
 **在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用，并提供本地统计。**  
 可选桌面像素宠物由同一批用量喂养。默认离线：不联网、不上传。
@@ -33,7 +35,7 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 | **谁花的** | Agent · 模型 · 可选 **中转站 / provider**（CC Switch） |
 | **趋势** | 日 / 周 / 月曲线；按中转站、模型、Agent 分组 |
 | **本地费率** | 可编辑单价表 + 有上报时用真实费用 |
-| **可选宠物** | 像素 Tokcat 随用量成长：掉落、背包、图鉴 |
+| **可选宠物** | Tokcat V3 随用量成长：掉落、背包、图鉴 |
 
 > 宠物是可选壳层：**token 进来 → 统计落库 →（可选）喂养桌面猫**。  
 > **即使不用宠物，监控与统计也能单独使用。**
@@ -119,8 +121,8 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 - **设置 → 费率**：维护模型单价；可与 CC Switch 上报价配合  
 
 ### 3. 桌面宠物（可选）
-- 默认 **像素 Tokcat**（待机 / 工作 / 审阅 / 等待 / 受挫 / 开心 / 低落 / 犯困 / 饥饿 / 趴窝 / 挥手 / 跳跃…）  
-- 也可用方块猫 / 粉猫 / 自定义 USDZ  
+- 默认 **Tokcat V3**（插画风帧动画）  
+- 也可用方块猫 / 自定义 USDZ  
 - 用量驱动成长：等级、聪明 / 稳定 / 手感、掉落、背包与图鉴  
 - 音效默认关闭  
 

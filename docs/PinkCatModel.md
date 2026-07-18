@@ -1,16 +1,14 @@
-# 粉猫模型 — 内置资源与转换
+# 3D 宠物模型（自定义）
 
-## 当前皮肤
-
-> 默认桌宠已切换为 **像素 Tokcat**（见 `docs/PixelPetRoadmap.md`）。以下为 3D 皮肤说明。
+> 默认桌宠为 **高清 2D Tokcat**（见 `docs/PixelPetArtBible.md`）。内置粉猫 USDZ 已移除。
 
 | 皮肤 | 说明 |
 |------|------|
+| **高清 Tokcat** | 128×128 插画帧动画（默认） |
 | **方块猫** | SceneKit 程序化低模 |
-| **粉猫** | 内置 CC0 Chubby Tubby Cat（`App/Resources/Models/Catgirl/Catgirl.usdz`） |
 | **自定义** | 用户导入的 `.usdz` / `.scn` 等 |
 
-历史上资源目录与文件名使用 `Catgirl` 路径以兼容旧构建；UI 与设置中已不再提供「猫娘 / Q 版猫娘」皮肤。旧设置值 `"catgirl"` 会在加载时迁移为 `pinkCat`。
+旧设置值 `"catgirl"` / `"pinkCat"` 会在加载时迁移为高清 Tokcat。
 
 ## 加载管线
 

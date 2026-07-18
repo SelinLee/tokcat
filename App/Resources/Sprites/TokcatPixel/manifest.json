@@ -1,99 +1,416 @@
 {
-  "name": "Tokcat Pixel",
-  "version": 7,
-  "frameSize": 32,
-  "displayScale": 4,
+  "name": "Tokcat HD",
+  "version": 9,
+  "frameSize": 128,
+  "displayScale": 1,
+  "style": "hd_illustration",
+  "layers": {
+    "order": [
+      "scene",
+      "base",
+      "gear_back",
+      "gear_held",
+      "gear_head",
+      "gear_face",
+      "gear_aura",
+      "fx"
+    ],
+    "scene": {
+      "desk": {
+        "file": "scene_desk",
+        "animatedFrames": 2
+      },
+      "bowl": {
+        "file": "scene_bowl",
+        "animatedFrames": 1
+      }
+    },
+    "gearSubdir": "gear"
+  },
+  "anchors": {
+    "sit": {
+      "head": [
+        60,
+        96
+      ],
+      "face": [
+        60,
+        76
+      ],
+      "back": [
+        88,
+        56
+      ],
+      "held": [
+        32,
+        40
+      ],
+      "aura": [
+        60,
+        60
+      ],
+      "compact": false
+    },
+    "desk": {
+      "head": [
+        92,
+        80
+      ],
+      "face": [
+        92,
+        68
+      ],
+      "back": [
+        112,
+        60
+      ],
+      "held": [
+        60,
+        48
+      ],
+      "aura": [
+        80,
+        60
+      ],
+      "compact": true
+    },
+    "loaf": {
+      "head": [
+        48,
+        48
+      ],
+      "face": [
+        48,
+        44
+      ],
+      "back": [
+        96,
+        40
+      ],
+      "held": [
+        36,
+        32
+      ],
+      "aura": [
+        64,
+        40
+      ],
+      "compact": true
+    },
+    "side": {
+      "head": [
+        28,
+        44
+      ],
+      "face": [
+        28,
+        40
+      ],
+      "back": [
+        96,
+        40
+      ],
+      "held": [
+        40,
+        32
+      ],
+      "aura": [
+        64,
+        40
+      ],
+      "compact": true
+    },
+    "flop": {
+      "head": [
+        36,
+        44
+      ],
+      "face": [
+        36,
+        40
+      ],
+      "back": [
+        96,
+        32
+      ],
+      "held": [
+        24,
+        28
+      ],
+      "aura": [
+        64,
+        36
+      ],
+      "compact": true
+    },
+    "walk": {
+      "head": [
+        60,
+        92
+      ],
+      "face": [
+        60,
+        76
+      ],
+      "back": [
+        88,
+        60
+      ],
+      "held": [
+        40,
+        48
+      ],
+      "aura": [
+        60,
+        60
+      ],
+      "compact": false
+    },
+    "stretch": {
+      "head": [
+        40,
+        60
+      ],
+      "face": [
+        40,
+        52
+      ],
+      "back": [
+        100,
+        48
+      ],
+      "held": [
+        32,
+        36
+      ],
+      "aura": [
+        64,
+        48
+      ],
+      "compact": true
+    },
+    "crouch": {
+      "head": [
+        64,
+        84
+      ],
+      "face": [
+        64,
+        72
+      ],
+      "back": [
+        92,
+        52
+      ],
+      "held": [
+        40,
+        56
+      ],
+      "aura": [
+        64,
+        60
+      ],
+      "compact": false
+    }
+  },
+  "gear": {
+    "eq_annotation_quill": {
+      "frames": 1
+    },
+    "eq_beanie": {
+      "frames": 1
+    },
+    "eq_cape": {
+      "frames": 1
+    },
+    "eq_code_badge": {
+      "frames": 1
+    },
+    "eq_compile_aura": {
+      "frames": 4
+    },
+    "eq_debug_crown": {
+      "frames": 1
+    },
+    "eq_diff_cape": {
+      "frames": 1
+    },
+    "eq_fish_rod": {
+      "frames": 1
+    },
+    "eq_focus_ring": {
+      "frames": 1
+    },
+    "eq_focus_visor": {
+      "frames": 1
+    },
+    "eq_golden_token": {
+      "frames": 1
+    },
+    "eq_headphones": {
+      "frames": 1
+    },
+    "eq_keycap_charm": {
+      "frames": 1
+    },
+    "eq_mini_keyboard": {
+      "frames": 1
+    },
+    "eq_monocle": {
+      "frames": 1
+    },
+    "eq_night_hood": {
+      "frames": 1
+    },
+    "eq_night_lantern": {
+      "frames": 1
+    },
+    "eq_origin_seal": {
+      "frames": 1
+    },
+    "eq_paper_hat": {
+      "frames": 1
+    },
+    "eq_pixel_bow": {
+      "frames": 1
+    },
+    "eq_pixel_shades": {
+      "frames": 1
+    },
+    "eq_review_goggles": {
+      "frames": 1
+    },
+    "eq_rubber_duck": {
+      "frames": 1
+    },
+    "eq_signal_cloak": {
+      "frames": 1
+    },
+    "eq_soft_glow": {
+      "frames": 2
+    },
+    "eq_soft_scarf": {
+      "frames": 1
+    },
+    "eq_spark_aura": {
+      "frames": 2
+    },
+    "eq_tablet_slate": {
+      "frames": 1
+    },
+    "eq_tiny_backpack": {
+      "frames": 1
+    }
+  },
   "clips": {
     "idle": {
       "frames": 4,
       "fps": 6,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "working": {
       "frames": 4,
       "fps": 8,
-      "loop": true
+      "loop": true,
+      "scene": "desk"
     },
     "happy": {
       "frames": 3,
       "fps": 6,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "sad": {
       "frames": 3,
       "fps": 5,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "sleepy": {
       "frames": 3,
       "fps": 4,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "hungry": {
       "frames": 3,
       "fps": 5,
-      "loop": true
+      "loop": true,
+      "scene": "bowl"
     },
     "rest": {
       "frames": 4,
       "fps": 3,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "pace": {
       "frames": 8,
       "fps": 5,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "groom": {
       "frames": 4,
       "fps": 4,
-      "loop": false
+      "loop": false,
+      "scene": null
     },
     "look_around": {
       "frames": 6,
       "fps": 4,
-      "loop": false
+      "loop": false,
+      "scene": null
     },
     "waiting": {
       "frames": 4,
       "fps": 4,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "failed": {
       "frames": 4,
       "fps": 5,
-      "loop": true
+      "loop": true,
+      "scene": null
     },
     "review": {
       "frames": 6,
       "fps": 5,
-      "loop": true
+      "loop": true,
+      "scene": "desk"
     },
     "jump": {
       "frames": 5,
       "fps": 10,
-      "loop": false
+      "loop": false,
+      "scene": null
     },
     "wave": {
       "frames": 4,
       "fps": 7,
-      "loop": false
+      "loop": false,
+      "scene": null
     },
     "eating": {
       "frames": 4,
       "fps": 8,
-      "loop": false
+      "loop": false,
+      "scene": "bowl"
     },
     "level_up": {
       "frames": 5,
       "fps": 10,
-      "loop": false
+      "loop": false,
+      "scene": null
     },
     "interact": {
       "frames": 3,
       "fps": 8,
-      "loop": false
+      "loop": false,
+      "scene": null
     }
   },
-  "notes": "v7 refined multi-silhouette poses (cleaner desk/loaf/side/walk/stretch)"
+  "notes": "v9 HD illustration (128\u00d7128, anti-aliased). Not pixel art."
 }

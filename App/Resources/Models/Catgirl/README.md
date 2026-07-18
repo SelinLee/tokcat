@@ -1,11 +1,11 @@
-# Pink cat model drop-in
+# Custom 3D model drop-in (optional)
 
-Place a converted Apple-friendly model here so the **粉猫** desktop-pet skin can load:
+The bundled pink-cat USDZ has been **removed**. Desktop pet default is the HD 2D Tokcat.
 
-- `Catgirl.usdz` (preferred file name for historical path compatibility)
-- or `Catgirl.usda` / `Catgirl.scn`
+To use a custom 3D model:
 
-If none of these files are present, Tokcat falls back to the procedural **方块猫**.
+1. Prefer **Settings → 宠物 → 导入模型** (stored in Application Support), or
+2. Place a converted model here for local testing:
+   - `Catgirl.usdz` / `.usda` / `.scn`
 
-Bundled default is the CC0 Chubby Tubby Cat (see `ATTRIBUTION.md`).  
-For custom imports, prefer Settings → 宠物 → 自定义, or convert with `scripts/convert_pet_model.sh`.
+Then select **自定义 3D** in settings.

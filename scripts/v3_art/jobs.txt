@@ -1,0 +1,76 @@
+interact_0|Clip=interact sitting paw slightly raised friendly. Frame 0.
+interact_1|Clip=interact sitting friendly smile. Frame 1.
+interact_2|Clip=interact sitting settle. Frame 2.
+jump_0|Clip=jump crouch prepare. Excited. Frame 0.
+jump_1|Clip=jump springing up. Excited. Frame 1.
+jump_2|Clip=jump apex highest open mouth. Frame 2.
+jump_3|Clip=jump descending. Frame 3.
+jump_4|Clip=jump land sit. Frame 4.
+level_up_0|Clip=level_up sitting proud start happy. Frame 0.
+level_up_1|Clip=level_up elevated body proud. Frame 1.
+level_up_2|Clip=level_up celebration peak happy. Frame 2.
+level_up_3|Clip=level_up tiny gold hard-edge stars near body NO blue. Frame 3.
+level_up_4|Clip=level_up settle proud. Frame 4.
+waiting_0|Clip=waiting crouch forward paw raised expectant. Frame 0.
+waiting_1|Clip=waiting expectant eyes. Frame 1.
+waiting_2|Clip=waiting paw bob. Frame 2.
+waiting_3|Clip=waiting settle. Frame 3.
+working_0|Clip=working side-sit tiny charcoal desk/laptop right paws keyboard NOT idle. Focused. Frame 0.
+working_1|Clip=working desk slight paw tap. Focused. Frame 1.
+working_2|Clip=working desk head lean. Focused. Frame 2.
+working_3|Clip=working desk micro blink. Focused. Frame 3.
+review_0|Clip=review side-sit desk head tilt. Focused. Frame 0.
+review_1|Clip=review desk look screen. Frame 1.
+review_2|Clip=review desk slight head move. Frame 2.
+review_3|Clip=review desk think. Frame 3.
+review_4|Clip=review desk nod. Frame 4.
+review_5|Clip=review desk settle. Frame 5.
+failed_0|Clip=failed pancake collapsed flat flop head low NOT upright. Sad. Frame 0.
+failed_1|Clip=failed pancake droop tear. Frame 1.
+failed_2|Clip=failed pancake deadpan. Frame 2.
+failed_3|Clip=failed pancake settle. Frame 3.
+sleepy_0|Clip=sleepy lying SIDE horizontally NOT upright closed eyes. Frame 0.
+sleepy_1|Clip=sleepy side zzz black lines. Frame 1.
+sleepy_2|Clip=sleepy side deeper. Frame 2.
+rest_0|Clip=rest loaf flattened round. Peaceful. Frame 0.
+rest_1|Clip=rest loaf breathe. Frame 1.
+rest_2|Clip=rest loaf half lids. Frame 2.
+rest_3|Clip=rest loaf settle. Frame 3.
+hungry_0|Clip=hungry sit stretch forward bowl pleading. Frame 0.
+hungry_1|Clip=hungry lean more bowl. Frame 1.
+hungry_2|Clip=hungry open mouth slight. Frame 2.
+eating_0|Clip=eating head down bowl. Frame 0.
+eating_1|Clip=eating mouth open. Frame 1.
+eating_2|Clip=eating chew content. Frame 2.
+eating_3|Clip=eating settle. Frame 3.
+pace_0|Clip=pace STANDING walk legs visible NOT sitting. Frame 0.
+pace_1|Clip=pace walk step. Frame 1.
+pace_2|Clip=pace walk. Frame 2.
+pace_3|Clip=pace walk. Frame 3.
+pace_4|Clip=pace walk alternate. Frame 4.
+pace_5|Clip=pace walk. Frame 5.
+pace_6|Clip=pace walk. Frame 6.
+pace_7|Clip=pace walk end. Frame 7.
+groom_0|Clip=groom sit paw to face eyes closed. Frame 0.
+groom_1|Clip=groom lick paw. Frame 1.
+groom_2|Clip=groom wipe face. Frame 2.
+groom_3|Clip=groom settle. Frame 3.
+look_around_0|Clip=look_around sit head left alert. Frame 0.
+look_around_1|Clip=look_around head left-center. Frame 1.
+look_around_2|Clip=look_around head center. Frame 2.
+look_around_3|Clip=look_around head right-center. Frame 3.
+look_around_4|Clip=look_around head right. Frame 4.
+look_around_5|Clip=look_around head center settle. Frame 5.
+scene_desk|ASSET ONLY: tiny charcoal desk mini laptop pure white bg NO cat.
+scene_desk_0|ASSET ONLY: desk laptop screen dim NO cat.
+scene_desk_1|ASSET ONLY: desk laptop screen brighter NO cat.
+scene_bowl|ASSET ONLY: small food bowl prop pure white bg NO cat.
+eq_beanie|Same sitting V3. Cream+coral beanie. Layered. No blue.
+eq_soft_scarf|Same sitting V3. Coral orange scarf. Layered. No blue.
+eq_rubber_duck|Same sitting V3. Yellow rubber duck held. No blue.
+eq_headphones|Same sitting V3. Dark gray headphones. No blue.
+eq_monocle|Same sitting V3. Tiny monocle gold/black. No blue.
+eq_cape|Same sitting V3. Short dark cape. No blue.
+eq_spark_aura|Same sitting V3. Gold hard-edge stars near shoulders. No blue glow.
+skin_mint|Sitting V3. Body soft mint green pure fill. White ears Luna eyes black mouth.
+skin_midnight|Sitting V3. Body near-black fill. White ears Luna eyes black mouth.

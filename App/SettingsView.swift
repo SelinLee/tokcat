@@ -237,7 +237,7 @@ struct SettingsView: View {
             } header: {
                 Text("皮肤库")
             } footer: {
-                Text("像素 Tokcat = 原创像素动画（默认）；粉猫/方块猫 = 3D；自定义 = 导入 USDZ。")
+                Text("高清 Tokcat = 默认插画动画；方块猫 = 低模 3D；自定义 = 导入 USDZ。")
             }
 
             Section {
@@ -277,7 +277,7 @@ struct SettingsView: View {
                     model.updateSettings {
                         $0.customPetModelFileName = nil
                         if $0.desktopPetSkin == .custom {
-                            $0.desktopPetSkin = .pixelTokcat
+                            $0.desktopPetSkin = .hdTokcat
                         }
                     }
                 }

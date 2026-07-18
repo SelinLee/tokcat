@@ -22,3 +22,7 @@ App/Resources/Models/Catgirl/_placeholder_skinnie/
 
 # Packaged app artifacts (upload via GitHub Releases only)
 dist/
+
+# Python caches
+__pycache__/
+*.py[cod]

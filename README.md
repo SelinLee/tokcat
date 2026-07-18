@@ -1,8 +1,10 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-pixel.png" alt="Tokcat pixel mascot" width="96" />
+  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 states" width="820" />
 </p>
+
+<p align="center"><sub>Tokcat V3 — idle · working · waiting · review · hungry · eating · happy · wave · jump · level up · interact · groom · look around · pace · rest · sleepy · sad · failed</sub></p>
 
 **Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-only, no upload.**  
 Optional desktop pixel pet fed by the same usage.
@@ -33,7 +35,7 @@ Tokcat **only reads local agent logs** on your Mac (no cloud hook, no API-key up
 | **Who spent it** | Agent · model · optional **provider / relay** (CC Switch) |
 | **Trends** | Day / week / month charts; group by provider, model, or agent |
 | **Local pricing** | Editable rate table + reported real prices when available |
-| **Optional pet** | Pixel Tokcat grows on usage — loot, bag, codex |
+| **Optional pet** | Tokcat V3 grows on usage — loot, bag, codex |
 
 > The pet is an optional shell: **tokens → stats → (optional) feed the cat**.  
 > Monitoring and stats work fully without the pet.

@@ -7,109 +7,128 @@ import TokcatKit
 enum MenuBarCatIcon {
     /// Draws the cat into `rect` (already in pixel coordinates of the target image).
     static func draw(in rect: NSRect) {
-        let bounds = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.14)
-        // Thin native-like stroke
-        let stroke = max(1.0, min(bounds.width, bounds.height) * 0.075)
-
+        // V3 menu-bar glyph: oversized upright ears + huge Luna eyes.
+        // Template monochrome — eye/ear-inner are punched transparent.
+        let bounds = rect.insetBy(dx: rect.width * 0.02, dy: rect.height * 0.02)
         NSColor.black.setStroke()
         NSColor.black.setFill()
 
-        drawEar(left: true, in: bounds, stroke: stroke)
-        drawEar(left: false, in: bounds, stroke: stroke)
-
-        // Wider, shorter head (less vertical bulk)
+        // Head sits in lower ~55%; ears claim the top ~50% (overlap at crown).
         let head = NSRect(
-            x: bounds.minX + bounds.width * 0.10,
-            y: bounds.minY + bounds.height * 0.06,
-            width: bounds.width * 0.80,
-            height: bounds.height * 0.70
+            x: bounds.minX + bounds.width * 0.12,
+            y: bounds.minY + bounds.height * 0.02,
+            width: bounds.width * 0.76,
+            height: bounds.height * 0.58
         )
-        let headPath = NSBezierPath(ovalIn: head)
-        headPath.lineWidth = stroke
-        headPath.stroke()
 
-        // Eyes
-        let eyeW = bounds.width * 0.085
-        let eyeH = bounds.height * 0.10
-        let eyeY = head.minY + head.height * 0.40
-        NSBezierPath(ovalIn: NSRect(
-            x: head.midX - bounds.width * 0.19,
+        drawEar(left: true, in: bounds, head: head)
+        drawEar(left: false, in: bounds, head: head)
+        NSBezierPath(ovalIn: head).fill()
+
+        // Huge Luna eyes (~32% of head width each)
+        let eyeW = head.width * 0.34
+        let eyeH = head.height * 0.38
+        let eyeY = head.minY + head.height * 0.34
+        let gap = head.width * 0.06
+        let leftEye = NSRect(
+            x: head.midX - gap * 0.5 - eyeW,
             y: eyeY,
             width: eyeW,
             height: eyeH
-        )).fill()
-        NSBezierPath(ovalIn: NSRect(
-            x: head.midX + bounds.width * 0.10,
+        )
+        let rightEye = NSRect(
+            x: head.midX + gap * 0.5,
             y: eyeY,
             width: eyeW,
             height: eyeH
-        )).fill()
+        )
+        let ctx = NSGraphicsContext.current
+        ctx?.saveGraphicsState()
+        ctx?.compositingOperation = .destinationOut
+        NSBezierPath(ovalIn: leftEye).fill()
+        NSBezierPath(ovalIn: rightEye).fill()
+        ctx?.restoreGraphicsState()
 
-        // Smile arc
+        NSColor.black.setFill()
+        for eye in [leftEye, rightEye] {
+            let pw = eye.width * 0.42
+            let ph = eye.height * 0.42
+            NSBezierPath(ovalIn: NSRect(
+                x: eye.midX - pw * 0.5,
+                y: eye.midY - ph * 0.48,
+                width: pw,
+                height: ph
+            )).fill()
+        }
+
+        // Small cute mouth
         let mouth = NSBezierPath()
-        let mouthY = head.minY + head.height * 0.26
-        let mouthW = bounds.width * 0.14
-        mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + bounds.height * 0.02))
+        let mouthY = head.minY + head.height * 0.18
+        let mouthW = head.width * 0.22
+        mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + head.height * 0.03))
         mouth.curve(
-            to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY + bounds.height * 0.02),
-            controlPoint1: NSPoint(x: head.midX - mouthW * 0.12, y: mouthY - bounds.height * 0.08),
-            controlPoint2: NSPoint(x: head.midX + mouthW * 0.12, y: mouthY - bounds.height * 0.08)
+            to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY + head.height * 0.03),
+            controlPoint1: NSPoint(x: head.midX - mouthW * 0.15, y: mouthY - head.height * 0.10),
+            controlPoint2: NSPoint(x: head.midX + mouthW * 0.15, y: mouthY - head.height * 0.10)
         )
-        mouth.lineWidth = stroke * 0.9
+        ctx?.saveGraphicsState()
+        ctx?.compositingOperation = .destinationOut
+        mouth.lineWidth = max(1.2, bounds.width * 0.07)
         mouth.lineCapStyle = .round
         mouth.stroke()
-
-        // Short whiskers
-        let whisker = max(0.9, stroke * 0.75)
-        for side in [-1.0 as CGFloat, 1.0] {
-            let baseX = head.midX + side * head.width * 0.40
-            let baseY = head.minY + head.height * 0.34
-            for dy in [-0.025 as CGFloat, 0.04] {
-                let path = NSBezierPath()
-                path.lineWidth = whisker
-                path.lineCapStyle = .round
-                path.move(to: NSPoint(x: baseX, y: baseY + bounds.height * dy))
-                path.line(to: NSPoint(
-                    x: baseX + side * bounds.width * 0.07,
-                    y: baseY + bounds.height * dy
-                ))
-                path.stroke()
-            }
-        }
+        ctx?.restoreGraphicsState()
+        NSColor.black.setStroke()
+        mouth.lineWidth = max(1.0, bounds.width * 0.05)
+        mouth.stroke()
     }
 
-    private static func drawEar(left: Bool, in bounds: NSRect, stroke: CGFloat) {
+    private static func drawEar(left: Bool, in bounds: NSRect, head: NSRect) {
+        // Very tall upright triangles — signature V3 ears.
         let sign: CGFloat = left ? -1 : 1
-        // Shorter ears so overall glyph is less tall
+        let baseOuter = NSPoint(
+            x: head.midX + sign * head.width * 0.42,
+            y: head.maxY - head.height * 0.08
+        )
+        let baseInner = NSPoint(
+            x: head.midX + sign * head.width * 0.08,
+            y: head.maxY - head.height * 0.02
+        )
         let tip = NSPoint(
-            x: bounds.midX + sign * bounds.width * 0.28,
-            y: bounds.maxY - bounds.height * 0.04
-        )
-        let outer = NSPoint(
-            x: bounds.midX + sign * bounds.width * 0.32,
-            y: bounds.minY + bounds.height * 0.55
-        )
-        let inner = NSPoint(
-            x: bounds.midX + sign * bounds.width * 0.10,
-            y: bounds.minY + bounds.height * 0.64
+            x: head.midX + sign * head.width * 0.36,
+            y: bounds.maxY - bounds.height * 0.01
         )
 
         let ear = NSBezierPath()
-        ear.move(to: outer)
+        ear.move(to: baseOuter)
         ear.curve(
             to: tip,
-            controlPoint1: NSPoint(x: outer.x + sign * bounds.width * 0.01, y: outer.y + bounds.height * 0.10),
-            controlPoint2: NSPoint(x: tip.x + sign * bounds.width * 0.015, y: tip.y - bounds.height * 0.04)
+            controlPoint1: NSPoint(x: baseOuter.x + sign * head.width * 0.04, y: baseOuter.y + head.height * 0.25),
+            controlPoint2: NSPoint(x: tip.x + sign * head.width * 0.03, y: tip.y - head.height * 0.08)
         )
         ear.curve(
-            to: inner,
-            controlPoint1: NSPoint(x: tip.x - sign * bounds.width * 0.07, y: tip.y - bounds.height * 0.015),
-            controlPoint2: NSPoint(x: inner.x, y: inner.y + bounds.height * 0.05)
+            to: baseInner,
+            controlPoint1: NSPoint(x: tip.x - sign * head.width * 0.10, y: tip.y - head.height * 0.04),
+            controlPoint2: NSPoint(x: baseInner.x + sign * head.width * 0.02, y: baseInner.y + head.height * 0.10)
         )
-        ear.lineWidth = stroke
+        ear.close()
         ear.lineJoinStyle = .round
-        ear.lineCapStyle = .round
-        ear.stroke()
+        NSColor.black.setFill()
+        ear.fill()
+
+        // Large inner-ear notch (reads as white ear at tiny sizes)
+        let notch = NSBezierPath()
+        let nTip = NSPoint(x: tip.x - sign * head.width * 0.05, y: tip.y - head.height * 0.14)
+        let nOuter = NSPoint(x: baseOuter.x - sign * head.width * 0.10, y: baseOuter.y + head.height * 0.10)
+        let nInner = NSPoint(x: baseInner.x + sign * head.width * 0.06, y: baseInner.y - head.height * 0.02)
+        notch.move(to: nOuter)
+        notch.line(to: nTip)
+        notch.line(to: nInner)
+        notch.close()
+        let ctx = NSGraphicsContext.current
+        ctx?.saveGraphicsState()
+        ctx?.compositingOperation = .destinationOut
+        notch.fill()
+        ctx?.restoreGraphicsState()
     }
 
     static func image(pointSize: CGFloat = 13) -> NSImage {

@@ -303,14 +303,18 @@ enum CatModelLoader {
     // MARK: - Materials
 
     private static func sanitizeMaterials(_ root: SCNNode, modelURL: URL?) {
-        let texture = loadPreferredTexture(near: modelURL)
+        let texture = loadPreferredTexture(near: modelURL).map { forceOpaqueImage($0) }
 
         root.enumerateHierarchy { node, _ in
             guard let geometry = node.geometry else { return }
             for material in geometry.materials {
                 material.lightingModel = .blinn
                 material.isDoubleSided = true
+                // Fully opaque pet: white ear/eye/glass regions must NOT punch through the desktop.
                 material.transparency = 1
+                material.transparencyMode = .aOne
+                material.blendMode = .alpha
+                material.transparent.contents = nil
                 material.writesToDepthBuffer = true
                 material.readsFromDepthBuffer = true
                 material.metalness.contents = 0.0
@@ -323,12 +327,57 @@ enum CatModelLoader {
                     if !contentsLooksTextured(material.diffuse.contents)
                         || isNearWhiteOrFlatPink(material.diffuse.contents) {
                         material.diffuse.contents = texture
+                    } else {
+                        material.diffuse.contents = forceOpaqueContents(material.diffuse.contents)
                     }
                 } else if material.diffuse.contents == nil || isNearWhiteOrFlatPink(material.diffuse.contents) {
                     material.diffuse.contents = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.82, alpha: 1)
+                } else {
+                    material.diffuse.contents = forceOpaqueContents(material.diffuse.contents)
                 }
             }
         }
+    }
+
+    /// Flatten texture alpha so ear-inners / lenses / whites never become see-through over the web page.
+    private static func forceOpaqueImage(_ image: NSImage) -> NSImage {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        let w = cg.width
+        let h = cg.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(
+            data: &data,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        for i in stride(from: 0, to: data.count, by: 4) {
+            // Keep fully empty texels empty; everything with any coverage becomes solid.
+            if data[i + 3] > 8 {
+                data[i + 3] = 255
+            }
+        }
+        guard let out = ctx.makeImage() else { return image }
+        return NSImage(cgImage: out, size: NSSize(width: w, height: h))
+    }
+
+    private static func forceOpaqueContents(_ contents: Any?) -> Any? {
+        if let image = contents as? NSImage {
+            return forceOpaqueImage(image)
+        }
+        // CGImage is a CF type; use CFTypeID instead of `as? CGImage` (always-succeeds error).
+        if let cf = contents as CFTypeRef?, CFGetTypeID(cf) == CGImage.typeID {
+            let cg = unsafeBitCast(cf, to: CGImage.self)
+            return forceOpaqueImage(NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+        }
+        if let color = contents as? NSColor {
+            return color.withAlphaComponent(1)
+        }
+        return contents
     }
 
     private static func isNearWhiteOrFlatPink(_ contents: Any?) -> Bool {

@@ -97,6 +97,14 @@ final class AppModel: ObservableObject {
     /// Shared mutable offset maps must never be touched concurrently.
     private let adapterQueue = DispatchQueue(label: "com.tokcat.adapters", qos: .utility)
     private var historyWorkItem: DispatchWorkItem?
+    /// Consecutive empty historical batches; stop scanning after this threshold.
+    private var historicalIdleStreak = 0
+    private var isHistoricalScanComplete = false
+    /// Last pet state flushed to SQLite (skip no-op writes every poll).
+    private var lastPersistedPetState: PetState?
+    /// Active timer interval (may differ from settings while adaptive idle backoff is on).
+    private var activePollInterval: TimeInterval = 0
+    private var consecutiveQuietPolls = 0
     /// Coalesces rapid settings edits (pricing text fields) into one save/apply.
     private var pendingSettingsCommit: DispatchWorkItem?
     private var settingsCommitBaseline: AppSettings?
@@ -131,6 +139,7 @@ final class AppModel: ObservableObject {
             let unlocked = PetAchievementCatalog.evaluate(state: loadedPet, todayTokensFed: 0)
             loadedPet.unlockedAchievements = Array(Set(loadedPet.unlockedAchievements + unlocked.map(\.id))).sorted()
             try? store?.savePetState(loadedPet)
+            lastPersistedPetState = loadedPet
             try? store?.savePetMeta(key: GrowthBalance.metaKey, value: "\(GrowthBalance.version)")
             // Keep legacy key in sync so older branches do not hard-reset again.
             try? store?.savePetMeta(key: "pet_growth_schema_version", value: "\(GrowthBalance.version)")
@@ -199,6 +208,10 @@ final class AppModel: ObservableObject {
 
     func start() {
         lastTick = Date()
+        lastPersistedPetState = petState
+        isHistoricalScanComplete = false
+        historicalIdleStreak = 0
+        consecutiveQuietPolls = 0
         startMenuBarAnimation()
         poll()
         rescheduleTimer()
@@ -226,6 +239,9 @@ final class AppModel: ObservableObject {
         }
         isAdapterPolling = false
         isHistoryScanning = false
+        historicalIdleStreak = 0
+        consecutiveQuietPolls = 0
+        activePollInterval = 0
     }
 
     func updateSettings(_ mutate: (inout AppSettings) -> Void) {
@@ -281,6 +297,10 @@ final class AppModel: ObservableObject {
 
         if oldValue.enabledAgentSources != settings.enabledAgentSources {
             adapterHub.setEnabled(settings.enabledAgents)
+            // Newly enabled adapters may still have historical work.
+            isHistoricalScanComplete = false
+            historicalIdleStreak = 0
+            scheduleHistoricalScan(after: 2.0)
         }
 
         if oldValue.pricingEntries != settings.pricingEntries
@@ -298,12 +318,63 @@ final class AppModel: ObservableObject {
         petWindowController?.setPetVisible(settings.showDesktopPet)
     }
 
-    private func rescheduleTimer() {
+    private func rescheduleTimer(forceInterval: TimeInterval? = nil) {
         timer?.invalidate()
-        let interval = settings.clampedPollIntervalSeconds
+        let base = settings.clampedPollIntervalSeconds
+        let interval = forceInterval ?? effectivePollInterval(base: base)
+        activePollInterval = interval
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
+    }
+
+    /// Stretch the poll timer while the machine is quiet so idle cost drops
+    /// without making active token streaming feel laggy.
+    private func effectivePollInterval(base: TimeInterval) -> TimeInterval {
+        // Only backoff when the user left the default-ish fast interval.
+        guard base <= 3 else { return base }
+        if consecutiveQuietPolls >= 8 {
+            return min(12, max(base * 4, 8))
+        }
+        if consecutiveQuietPolls >= 3 {
+            return min(8, max(base * 2, 4))
+        }
+        return base
+    }
+
+    private func notePollActivity(hadEvents: Bool, now: Date) {
+        let rates = throughputTracker.rates(now: now)
+        let busy = hadEvents
+            || rates.tokensPerSecond > 0.05
+            || rates.usdPerSecond > 0.000_001
+            || menuBarActivity.mode == .working
+        if busy {
+            consecutiveQuietPolls = 0
+        } else {
+            consecutiveQuietPolls = min(consecutiveQuietPolls + 1, 1_000)
+        }
+        let desired = effectivePollInterval(base: settings.clampedPollIntervalSeconds)
+        if abs(desired - activePollInterval) >= 0.4 {
+            rescheduleTimer(forceInterval: desired)
+        }
+    }
+
+    private func metricsSampleOptions() -> SystemMetricsSampleOptions {
+        let s = settings
+        return SystemMetricsSampleOptions(
+            cpu: s.showCPU || s.menuBarShowCPU,
+            gpu: s.showGPU || s.menuBarShowGPU,
+            memory: s.showMemory || s.menuBarShowMemory,
+            network: s.showNetwork || s.menuBarShowNetwork,
+            thermal: s.showThermal || s.menuBarShowThermal
+        )
+    }
+
+    private func persistPetStateIfNeeded(_ state: PetState? = nil) {
+        let snapshot = state ?? petState
+        if lastPersistedPetState == snapshot { return }
+        try? store?.savePetState(snapshot)
+        lastPersistedPetState = snapshot
     }
 
     private func poll() {
@@ -319,16 +390,19 @@ final class AppModel: ObservableObject {
         nextPet.mood = (nextPet.mood * 200).rounded() / 200
         setIfChanged(\AppModel.petState, nextPet)
 
-        liveMetrics.setSystemMetrics(systemMetricsMonitor.poll())
+        liveMetrics.setSystemMetrics(systemMetricsMonitor.poll(options: metricsSampleOptions()))
         let liveRates = throughputTracker.rates(now: now)
         liveMetrics.setRates(tokensPerSecond: liveRates.tokensPerSecond, usdPerSecond: liveRates.usdPerSecond)
         refreshMenuBarActivity(now: now)
         refreshPetProgress()
-        try? store?.savePetState(petState)
+        persistPetStateIfNeeded()
 
         // Adapter I/O can touch thousands of local log files (esp. WorkBuddy).
         // Run on a serial background queue so the menu bar stays interactive.
-        guard !isAdapterPolling else { return }
+        guard !isAdapterPolling else {
+            notePollActivity(hadEvents: false, now: now)
+            return
+        }
         isAdapterPolling = true
         adapterQueue.async { [weak self] in
             guard let self else { return }
@@ -359,6 +433,7 @@ final class AppModel: ObservableObject {
                 let rates = throughputTracker.rates(now: now)
                 liveMetrics.setRates(tokensPerSecond: rates.tokensPerSecond, usdPerSecond: rates.usdPerSecond)
                 refreshMenuBarActivity(now: now)
+                notePollActivity(hadEvents: false, now: now)
             }
             return
         }
@@ -372,6 +447,7 @@ final class AppModel: ObservableObject {
                 let rates = throughputTracker.rates(now: now)
                 liveMetrics.setRates(tokensPerSecond: rates.tokensPerSecond, usdPerSecond: rates.usdPerSecond)
                 refreshMenuBarActivity(now: now)
+                notePollActivity(hadEvents: false, now: now)
             }
             return
         }
@@ -449,11 +525,14 @@ final class AppModel: ObservableObject {
 
         recordPetEvents(presentation)
         refreshPetProgress(justLeveledUp: applyResult.didLevelUp)
-        try? store?.savePetState(petState)
+        persistPetStateIfNeeded()
         // Soft-invalidate dashboard caches; rebuild only if the stats tab is already showing data.
         invalidateUsageCaches(keepCurrentSnapshot: true)
         if usageSnapshotCache.eventCount > 0 || !usageEvents.isEmpty {
             refreshUsageStats(forceReloadEvents: false)
+        }
+        if !fromHistory {
+            notePollActivity(hadEvents: true, now: now)
         }
     }
 
@@ -464,7 +543,7 @@ final class AppModel: ObservableObject {
         engine.restoreMood(from: petState)
         recordPetEvents([PetEventFactory.interacted()])
         refreshPetProgress()
-        try? store?.savePetState(petState)
+        persistPetStateIfNeeded()
     }
 
     /// Resets pet progression only (keeps usage stats / token history).
@@ -485,7 +564,7 @@ final class AppModel: ObservableObject {
         petPresentationPulse = 0
         lootDropPulse = 0
         refreshPetProgress()
-        try? store?.savePetState(petState)
+        persistPetStateIfNeeded()
         try? store?.clearPetTimelineEvents()
         try? store?.clearInventoryAndLoot()
         ensureDefaultSkinOwned()
@@ -520,7 +599,7 @@ final class AppModel: ObservableObject {
         petState.unlockedAchievements = Array(Set(petState.unlockedAchievements + unlocked.map(\.id))).sorted()
         engine.restoreMood(from: petState)
         refreshPetProgress()
-        try? store?.savePetState(petState)
+        persistPetStateIfNeeded()
         try? store?.savePetMeta(key: GrowthBalance.metaKey, value: "\(GrowthBalance.version)")
         try? store?.savePetMeta(key: "pet_growth_schema_version", value: "\(GrowthBalance.version)")
         if beforeLevel != petState.level {
@@ -753,6 +832,7 @@ final class AppModel: ObservableObject {
     }
 
     private func scheduleHistoricalScan(after delay: TimeInterval) {
+        if isHistoricalScanComplete { return }
         historyWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -767,9 +847,20 @@ final class AppModel: ObservableObject {
                     now: Date(),
                     fromHistory: true
                 )
-                // If nothing changed, back off hard; otherwise keep resuming.
+                // If nothing changed, back off; after enough empty rounds, stop completely.
+                // Live adapters still discover new files via mtime.
                 let idle = events.isEmpty && offsets.isEmpty
-                self.scheduleHistoricalScan(after: idle ? 30.0 : 1.0)
+                if idle {
+                    self.historicalIdleStreak += 1
+                    if self.historicalIdleStreak >= 3 {
+                        self.isHistoricalScanComplete = true
+                        return
+                    }
+                    self.scheduleHistoricalScan(after: min(120.0, 30.0 * Double(self.historicalIdleStreak)))
+                } else {
+                    self.historicalIdleStreak = 0
+                    self.scheduleHistoricalScan(after: 1.0)
+                }
             }
         }
         historyWorkItem = work

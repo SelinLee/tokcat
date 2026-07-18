@@ -1,7 +1,7 @@
 import AppKit
 import TokcatKit
 
-/// Crisp pixel pet view: compose at 32×32, CPU nearest-upscale to device pixels,
+/// Crisp pixel pet view: compose at 128×128, CPU nearest-upscale to device pixels,
 /// then display 1:1 with contentsScale = backingScale (no GPU resampling blur).
 @MainActor
 final class PixelPetView: NSView {
@@ -25,7 +25,7 @@ final class PixelPetView: NSView {
 
     /// Integer scale: each source pixel becomes this many *device* pixels.
     private var pixelScale = 4
-    private let sourcePixelSize = 32
+    private let sourcePixelSize = 128
     /// Cache key for last presented bitmap.
     private var lastPresentationKey: String = ""
     /// Lazy ambient: hold still most of the time; only advance on sparse time ticks.
@@ -112,35 +112,23 @@ final class PixelPetView: NSView {
 
     private func layoutSpriteFrame(forcePresent: Bool) {
         let scaleFactor = backingScale
-        // Aim for a large, readable desktop pet with hard pixels.
-        // Target ~56% of the shorter window side in points, then snap.
-        let idealPoints = min(bounds.width, bounds.height) * 0.82 * stageStyle.scale
-        let idealDevice = idealPoints * scaleFactor
-        // Integer source-pixel scale in *device pixels*.
-        var nextScale = max(3, Int((idealDevice / CGFloat(sourcePixelSize)).rounded()))
-        // Keep point size integral on common Retina factors when possible.
-        if scaleFactor == 2, nextScale % 2 != 0 { nextScale += 1 }
-        if scaleFactor == 3, nextScale % 3 != 0 {
-            nextScale += (3 - nextScale % 3)
-        }
-        // Cap so we don't explode memory: 32 * 16 = 512 device px.
-        nextScale = min(16, nextScale)
-
+        // HD illustration: fill most of the floating window with smooth scaling.
+        let pointSide = (min(bounds.width, bounds.height) * 0.88 * stageStyle.scale)
+            .rounded(.toNearestOrAwayFromZero)
+        // Keep a logical scale for cache keys / retina content.
+        let nextScale = max(1, Int(((pointSide * scaleFactor) / CGFloat(sourcePixelSize)).rounded()))
         let scaleChanged = nextScale != pixelScale
         pixelScale = nextScale
 
-        let deviceSide = CGFloat(pixelScale * sourcePixelSize)
-        let pointSide = deviceSide / scaleFactor
         let rect = NSRect(
             x: ((bounds.width - pointSide) * 0.5).rounded(.toNearestOrAwayFromZero),
-            y: ((bounds.height - pointSide) * 0.5 - bounds.height * 0.03).rounded(.toNearestOrAwayFromZero),
+            y: ((bounds.height - pointSide) * 0.5 - bounds.height * 0.02).rounded(.toNearestOrAwayFromZero),
             width: pointSide,
             height: pointSide
         )
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // contentsScale matches the screen: bitmap device pixels == point * scale.
         spriteLayer.contentsScale = scaleFactor
         spriteLayer.frame = rect
         CATransaction.commit()
@@ -379,29 +367,37 @@ final class PixelPetView: NSView {
         lastPresentationKey = key
 
         let base = currentFrames[frameIndex]
+        let clipFrames = PixelPetSpriteCatalog.frames(for: currentClip)
         let composed = PixelPetOverlayRenderer.composite(
             base: base,
             skinID: skinItemID,
             loadout: loadout,
             stage: stage,
             frameIndex: frameIndex,
-            poseFamily: currentClip.poseFamily
+            poseFamily: currentClip.poseFamily,
+            sceneID: clipFrames.scene
         )
         guard let sourceCG = PixelPetUpscaler.cgImage(from: composed, fallbackSize: sourcePixelSize)
                 ?? PixelPetOverlayRenderer.cgImage(from: composed) else {
             return
         }
 
-        // Pre-scale with pure nearest neighbor so Core Animation never interpolates.
-        guard let sharp = PixelPetUpscaler.upscale(sourceCG, by: pixelScale) else { return }
+        // Smooth upscale for HD illustration. Outer fringe is dark-outline AA
+        // (not pale matte), so bilinear no longer creates a white halo.
+        let displayCG: CGImage
+        if pixelScale > 1, let smooth = PixelPetUpscaler.smoothUpscale(sourceCG, by: pixelScale) {
+            displayCG = smooth
+        } else {
+            displayCG = sourceCG
+        }
 
         let scaleFactor = backingScale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         spriteLayer.contentsScale = scaleFactor
-        spriteLayer.magnificationFilter = .nearest
-        spriteLayer.minificationFilter = .nearest
-        spriteLayer.contents = sharp
+        spriteLayer.magnificationFilter = .linear
+        spriteLayer.minificationFilter = .linear
+        spriteLayer.contents = displayCG
         CATransaction.commit()
         applyStageChrome()
     }

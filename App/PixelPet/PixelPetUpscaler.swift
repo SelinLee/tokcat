@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// Integer nearest-neighbor upscaler for crisp pixel art on Retina displays.
+/// Bitmap helpers for the desktop pet (nearest for legacy, smooth for HD).
 enum PixelPetUpscaler {
     /// Upscale a source bitmap by an integer factor using pure nearest-neighbor copies.
     static func upscale(_ source: CGImage, by factor: Int) -> CGImage? {
@@ -64,8 +64,30 @@ enum PixelPetUpscaler {
         return dstCtx.makeImage()
     }
 
+
+    /// Smooth (bilinear) upscale for HD illustration frames.
+    static func smoothUpscale(_ source: CGImage, by factor: Int) -> CGImage? {
+        let scale = max(1, factor)
+        if scale == 1 { return source }
+        let dstW = source.width * scale
+        let dstH = source.height * scale
+        var data = [UInt8](repeating: 0, count: dstW * dstH * 4)
+        guard let ctx = CGContext(
+            data: &data,
+            width: dstW,
+            height: dstH,
+            bitsPerComponent: 8,
+            bytesPerRow: dstW * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(source, in: CGRect(x: 0, y: 0, width: dstW, height: dstH))
+        return ctx.makeImage()
+    }
+
     /// Extract a CGImage at the image's native pixel dimensions (no point-space redraw).
-    static func cgImage(from image: NSImage, fallbackSize: Int = 32) -> CGImage? {
+    static func cgImage(from image: NSImage, fallbackSize: Int = 128) -> CGImage? {
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             return cg
         }

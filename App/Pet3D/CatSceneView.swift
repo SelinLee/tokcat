@@ -43,14 +43,9 @@ struct CatSceneView: NSViewRepresentable {
                 return
             }
 
-            if (skin == .pinkCat || skin == .custom),
-               let loaded = CatModelLoader.loadPreparedModel(),
-               CatModelLoader.isVisuallyUsable(loaded.root) {
-                let animator = BundledCatgirlAnimator(root: loaded.root, initialLevel: initialLevel)
-                self.scene = loaded.scene
-                self.cameraNode = loaded.cameraNode
-                self.applyState = { animator.apply($0) }
-                return
+            // Bundled pinkCat USDZ removed — only user custom models use the USDZ path.
+            if skin == .custom {
+                // Prefer nothing here; PetWindowController loads custom by file name.
             }
 
             let scene = SCNScene()

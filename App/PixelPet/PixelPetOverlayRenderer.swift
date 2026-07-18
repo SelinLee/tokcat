@@ -1,16 +1,18 @@
 import AppKit
 import TokcatKit
 
-/// Composites base sprite + equipment overlays + optional skin recolor into a
-/// true 32×32 pixel CGImage (no Retina point-space blur).
+/// Composites scene + base sprite + equipment overlays + optional skin recolor.
 ///
-/// ## Appearance contract
-/// - **Skin**: whole-body recolor only (never changes silhouette / props).
-/// - **Equipment**: local slot overlays only (`head` / `face` / `back` / `held` / `aura`).
-/// - Overlays are anchored per `PixelPetPoseFamily` so multi-silhouette poses stay readable.
-/// - Extreme silhouettes hide slots that would float off-body (see `visibleSlots`).
+/// ## Appearance contract (v9 HD)
+/// - Base frames are **128×128** soft-illustration (not pixel art).
+/// - **Scene**: desk / bowl under the cat.
+/// - **Skin**: recolor of base only.
+/// - **Equipment**: PNG overlays from `Sprites/TokcatPixel/gear/` (preferred).
+/// - Procedural fallback is authored on a 32-grid then scaled to canvas.
 enum PixelPetOverlayRenderer {
-    static let canvas = 32
+    static let canvas = 128
+    /// Legacy 32-grid → HD scale factor.
+    static let gridScale = canvas / 32
 
     // MARK: - Pose anchors
 
@@ -36,13 +38,13 @@ enum PixelPetOverlayRenderer {
         }
     }
 
-    /// Sit is the authoring baseline for all procedural overlay shapes.
+    /// Sit is the authoring baseline (HD canvas coords).
     static let sitAnchor = PoseAnchor(
-        head: (15, 24),
-        face: (15, 19),
-        back: (22, 14),
-        held: (8, 10),
-        aura: (15, 15),
+        head: (60, 96),
+        face: (60, 76),
+        back: (88, 56),
+        held: (32, 40),
+        aura: (60, 60),
         compact: false
     )
 
@@ -51,20 +53,19 @@ enum PixelPetOverlayRenderer {
         case .sit:
             return sitAnchor
         case .desk:
-            // Cat sits on the right of the workstation (generator head ~23,11 top-down).
-            return PoseAnchor(head: (23, 20), face: (23, 17), back: (28, 15), held: (15, 12), aura: (20, 15), compact: true)
+            return PoseAnchor(head: (92, 80), face: (92, 68), back: (112, 60), held: (60, 48), aura: (80, 60), compact: true)
         case .loaf:
-            return PoseAnchor(head: (12, 12), face: (12, 11), back: (24, 10), held: (9, 8), aura: (16, 10), compact: true)
+            return PoseAnchor(head: (48, 48), face: (48, 44), back: (96, 40), held: (36, 32), aura: (64, 40), compact: true)
         case .side:
-            return PoseAnchor(head: (7, 11), face: (7, 10), back: (24, 10), held: (10, 8), aura: (16, 10), compact: true)
+            return PoseAnchor(head: (28, 44), face: (28, 40), back: (96, 40), held: (40, 32), aura: (64, 40), compact: true)
         case .flop:
-            return PoseAnchor(head: (9, 11), face: (9, 10), back: (24, 8), held: (6, 7), aura: (16, 9), compact: true)
+            return PoseAnchor(head: (36, 44), face: (36, 40), back: (96, 32), held: (24, 28), aura: (64, 36), compact: true)
         case .walk:
-            return PoseAnchor(head: (15, 23), face: (15, 19), back: (22, 15), held: (10, 12), aura: (15, 15), compact: false)
+            return PoseAnchor(head: (60, 92), face: (60, 76), back: (88, 60), held: (40, 48), aura: (60, 60), compact: false)
         case .stretch:
-            return PoseAnchor(head: (10, 15), face: (10, 13), back: (25, 12), held: (8, 9), aura: (16, 12), compact: true)
+            return PoseAnchor(head: (40, 60), face: (40, 52), back: (100, 48), held: (32, 36), aura: (64, 48), compact: true)
         case .crouch:
-            return PoseAnchor(head: (16, 21), face: (16, 18), back: (23, 13), held: (10, 14), aura: (16, 15), compact: false)
+            return PoseAnchor(head: (64, 84), face: (64, 72), back: (92, 52), held: (40, 56), aura: (64, 60), compact: false)
         }
     }
 
@@ -96,7 +97,8 @@ enum PixelPetOverlayRenderer {
         loadout: EquipmentLoadout,
         stage: PetStage,
         frameIndex: Int,
-        poseFamily: PixelPetPoseFamily = .sit
+        poseFamily: PixelPetPoseFamily = .sit,
+        sceneID: String? = nil
     ) -> NSImage {
         guard let cg = makeCGImage(
             base: base,
@@ -104,7 +106,8 @@ enum PixelPetOverlayRenderer {
             loadout: loadout,
             stage: stage,
             frameIndex: frameIndex,
-            poseFamily: poseFamily
+            poseFamily: poseFamily,
+            sceneID: sceneID
         ) else {
             return base
         }
@@ -122,7 +125,8 @@ enum PixelPetOverlayRenderer {
             loadout: EquipmentLoadout(),
             stage: .adult,
             frameIndex: 0,
-            poseFamily: .sit
+            poseFamily: .sit,
+            sceneID: nil
         )
     }
 
@@ -132,7 +136,8 @@ enum PixelPetOverlayRenderer {
         loadout: EquipmentLoadout,
         stage: PetStage,
         frameIndex: Int,
-        poseFamily: PixelPetPoseFamily
+        poseFamily: PixelPetPoseFamily,
+        sceneID: String?
     ) -> CGImage? {
         let width = canvas
         let height = canvas
@@ -151,16 +156,39 @@ enum PixelPetOverlayRenderer {
         ) else { return nil }
 
         ctx.interpolationQuality = .none
-        if let baseCG = baseCGImage(base) {
-            ctx.draw(baseCG, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        // 1) Scene under the cat (desk / bowl). Not recolored with skin.
+        let scenes = PixelPetSpriteCatalog.sceneFrames(id: sceneID)
+        if !scenes.isEmpty {
+            let sceneImage = scenes[frameIndex % scenes.count]
+            if let sceneCG = baseCGImage(sceneImage) {
+                ctx.draw(sceneCG, in: CGRect(x: 0, y: 0, width: width, height: height))
+            }
         }
 
-        // Skin = recolor only (never draws new geometry).
-        if skinID != PetAppearanceState.defaultSkinID {
-            recolorBuffer(&data, width: width, height: height, bytesPerRow: bytesPerRow, skinID: skinID)
-            if let recolored = contextImage(from: &data, width: width, height: height, bytesPerRow: bytesPerRow) {
-                ctx.clear(CGRect(x: 0, y: 0, width: width, height: height))
-                ctx.draw(recolored, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // 2) Base cat (may be recolored).
+        if let baseCG = baseCGImage(base) {
+            // Draw base into a temp buffer for optional skin remap, then composite.
+            var baseData = [UInt8](repeating: 0, count: height * bytesPerRow)
+            if let baseCtx = CGContext(
+                data: &baseData,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) {
+                baseCtx.interpolationQuality = .none
+                baseCtx.draw(baseCG, in: CGRect(x: 0, y: 0, width: width, height: height))
+                if skinID != PetAppearanceState.defaultSkinID {
+                    recolorBuffer(&baseData, width: width, height: height, bytesPerRow: bytesPerRow, skinID: skinID)
+                }
+                if let recolored = contextImage(from: &baseData, width: width, height: height, bytesPerRow: bytesPerRow) {
+                    ctx.draw(recolored, in: CGRect(x: 0, y: 0, width: width, height: height))
+                }
+            } else {
+                ctx.draw(baseCG, in: CGRect(x: 0, y: 0, width: width, height: height))
             }
         }
 
@@ -170,7 +198,7 @@ enum PixelPetOverlayRenderer {
             pose.offset(from: sitAnchor, slot: slot)
         }
 
-        // Layer order: back → held → head → face → aura (readable stacking).
+        // 3) Gear: back → held → head → face → aura
         if visible.contains(.back), let id = loadout.itemID(for: .back), let item = ItemCatalog.item(id: id) {
             drawOverlay(item, frameIndex: frameIndex, in: ctx, dx: drawOffset(.back).0, dy: drawOffset(.back).1, compact: pose.compact)
         }
@@ -299,6 +327,54 @@ enum PixelPetOverlayRenderer {
     private static let spark = CGColor(srgbRed: 255 / 255, green: 226 / 255, blue: 138 / 255, alpha: 1)
 
     private static func drawOverlay(
+        _ item: ItemDefinition,
+        frameIndex: Int,
+        in ctx: CGContext,
+        dx: Int,
+        dy: Int,
+        compact: Bool
+    ) {
+        // Prefer authored PNG gear (sit-anchored); fall back to procedural shapes.
+        if drawPixelGear(itemID: item.id, frameIndex: frameIndex, in: ctx, dx: dx, dy: dy) {
+            return
+        }
+        // Procedural shapes are authored on a 32-grid; scale into HD canvas.
+        drawProceduralScaled(item, frameIndex: frameIndex, in: ctx, dx: dx, dy: dy, compact: compact)
+    }
+
+    private static func drawProceduralScaled(
+        _ item: ItemDefinition,
+        frameIndex: Int,
+        in ctx: CGContext,
+        dx: Int,
+        dy: Int,
+        compact: Bool
+    ) {
+        let unit = 32
+        let bytesPerRow = unit * 4
+        var data = [UInt8](repeating: 0, count: unit * unit * 4)
+        guard let small = CGContext(
+            data: &data,
+            width: unit,
+            height: unit,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+        small.interpolationQuality = .none
+        // Map HD offsets back to 32-grid for procedural authoring.
+        let sdx = dx / max(1, gridScale)
+        let sdy = dy / max(1, gridScale)
+        drawProceduralOverlay(item, frameIndex: frameIndex, in: small, dx: sdx, dy: sdy, compact: compact)
+        guard let img = small.makeImage() else { return }
+        ctx.saveGState()
+        ctx.interpolationQuality = .high
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: canvas, height: canvas))
+        ctx.restoreGState()
+    }
+
+    private static func drawProceduralOverlay(
         _ item: ItemDefinition,
         frameIndex: Int,
         in ctx: CGContext,
@@ -476,18 +552,44 @@ enum PixelPetOverlayRenderer {
         }
     }
 
+    /// Blit a sit-authored gear PNG with pose offset. `dx/dy` are CG bottom-left deltas from sit.
+    @discardableResult
+    private static func drawPixelGear(
+        itemID: String,
+        frameIndex: Int,
+        in ctx: CGContext,
+        dx: Int,
+        dy: Int
+    ) -> Bool {
+        let frames = PixelPetSpriteCatalog.gearFrames(itemID: itemID)
+        guard !frames.isEmpty else { return false }
+        let image = frames[frameIndex % frames.count]
+        guard let cg = baseCGImage(image) else { return false }
+        // Gear PNGs use top-left bitmap origin (same as base frames). CGContext is bottom-left;
+        // drawing the full canvas image with a pixel translation matches procedural offsets.
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.translateBy(x: CGFloat(dx), y: CGFloat(dy))
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: canvas, height: canvas))
+        ctx.restoreGState()
+        return true
+    }
+
+    /// 32-grid anchors for procedural fallback drawing only.
     private static func sitAnchorPoint(for slot: EquipSlot) -> (x: Int, y: Int) {
         switch slot {
-        case .head: return sitAnchor.head
-        case .face: return sitAnchor.face
-        case .back: return sitAnchor.back
-        case .held: return sitAnchor.held
-        case .aura: return sitAnchor.aura
+        case .head: return (15, 24)
+        case .face: return (15, 19)
+        case .back: return (22, 14)
+        case .held: return (8, 10)
+        case .aura: return (15, 15)
         }
     }
 
     private static func setPixel(_ ctx: CGContext, x: Int, y: Int, color: CGColor) {
-        guard (0..<canvas).contains(x), (0..<canvas).contains(y) else { return }
+        let w = ctx.width
+        let h = ctx.height
+        guard (0..<w).contains(x), (0..<h).contains(y) else { return }
         ctx.setFillColor(color)
         ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
     }
