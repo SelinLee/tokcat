@@ -71,27 +71,100 @@ public enum ThermalPressure: String, Sendable, Codable, CaseIterable, Equatable 
     }
 }
 
+/// Which host metrics a poll should actually sample.
+/// Skipping expensive probes (especially GPU via IOKit) when the UI does not
+/// display them is the main win for menu-bar idle cost.
+public struct SystemMetricsSampleOptions: Sendable, Equatable {
+    public var cpu: Bool
+    public var gpu: Bool
+    public var memory: Bool
+    public var network: Bool
+    public var thermal: Bool
+
+    public init(
+        cpu: Bool = true,
+        gpu: Bool = true,
+        memory: Bool = true,
+        network: Bool = true,
+        thermal: Bool = true
+    ) {
+        self.cpu = cpu
+        self.gpu = gpu
+        self.memory = memory
+        self.network = network
+        self.thermal = thermal
+    }
+
+    public static let all = SystemMetricsSampleOptions()
+    public static let none = SystemMetricsSampleOptions(
+        cpu: false, gpu: false, memory: false, network: false, thermal: false
+    )
+
+    public var samplesAnything: Bool {
+        cpu || gpu || memory || network || thermal
+    }
+}
+
 /// Polls whole-machine CPU, GPU, memory, network throughput, and thermal pressure.
 public final class SystemMetricsMonitor {
     private var previousCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
     private var previousNetwork: (inbound: UInt64, outbound: UInt64, sampledAt: Date)?
     private var previousGPUBusy: (value: Double, sampledAt: Date)?
+    /// Last fully assembled snapshot so skipped probes keep stable values.
+    private var lastMetrics = SystemMetrics()
+    private var lastGPUSampleAt: Date = .distantPast
+    /// GPU IOKit walk is relatively expensive; throttle even when enabled.
+    public var gpuMinSampleInterval: TimeInterval = 5
 
     public init() {}
 
     public func poll() -> SystemMetrics {
+        poll(options: .all)
+    }
+
+    public func poll(options: SystemMetricsSampleOptions) -> SystemMetrics {
         let now = Date()
-        let network = sampleNetworkRates(now: now)
-        return SystemMetrics(
-            cpuPercent: sampleCPUPercent(),
-            gpuPercent: sampleGPUPercent(now: now),
-            memoryUsedBytes: sampleMemoryUsedBytes(),
-            memoryTotalBytes: sampleMemoryTotalBytes(),
-            networkInBytesPerSecond: network.inbound,
-            networkOutBytesPerSecond: network.outbound,
-            thermalState: ThermalPressure(processInfoState: ProcessInfo.processInfo.thermalState),
-            sampledAt: now
-        )
+        guard options.samplesAnything else {
+            var idle = lastMetrics
+            idle.sampledAt = now
+            lastMetrics = idle
+            return idle
+        }
+
+        var next = lastMetrics
+        next.sampledAt = now
+
+        if options.cpu {
+            next.cpuPercent = sampleCPUPercent()
+        }
+        if options.gpu {
+            if now.timeIntervalSince(lastGPUSampleAt) >= gpuMinSampleInterval
+                || lastGPUSampleAt == .distantPast {
+                next.gpuPercent = sampleGPUPercent(now: now)
+                lastGPUSampleAt = now
+            }
+        } else {
+            next.gpuPercent = 0
+        }
+        if options.memory {
+            next.memoryUsedBytes = sampleMemoryUsedBytes()
+            next.memoryTotalBytes = sampleMemoryTotalBytes()
+        }
+        if options.network {
+            let network = sampleNetworkRates(now: now)
+            next.networkInBytesPerSecond = network.inbound
+            next.networkOutBytesPerSecond = network.outbound
+        } else {
+            next.networkInBytesPerSecond = 0
+            next.networkOutBytesPerSecond = 0
+            previousNetwork = nil
+        }
+        if options.thermal {
+            next.thermalState = ThermalPressure(processInfoState: ProcessInfo.processInfo.thermalState)
+        }
+
+        lastMetrics = next
+        return next
     }
 
     // MARK: - CPU

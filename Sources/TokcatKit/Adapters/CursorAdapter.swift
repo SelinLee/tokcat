@@ -45,7 +45,8 @@ public final class CursorAdapter: AgentAdapter {
     public func pollNewEvents() -> [TokenEvent] {
         var events: [TokenEvent] = []
         for root in searchRoots {
-            let files = reader.enumerateJSONLFiles(under: root, recursive: true)
+            let candidates = reader.candidateFileInfos(under: root, recursive: true)
+            let files = reader.filesNeedingRead(from: candidates)
             for fileURL in files {
                 for line in reader.readNewCompleteLines(from: fileURL) {
                     if let event = parseLine(line) {

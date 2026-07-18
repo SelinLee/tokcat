@@ -36,11 +36,11 @@ public final class GeminiCLIAdapter: AgentAdapter {
     }
 
     public func pollNewEvents() -> [TokenEvent] {
-        let files = reader.enumerateJSONLFiles(under: rootDirectory, recursive: true)
+        let candidates = reader.candidateFileInfos(under: rootDirectory, recursive: true)
+            .filter { !$0.url.path.contains("antigravity-browser-profile") }
+        let files = reader.filesNeedingRead(from: candidates)
         var events: [TokenEvent] = []
         for fileURL in files {
-            // Skip browser profile noise.
-            if fileURL.path.contains("antigravity-browser-profile") { continue }
             for line in reader.readNewCompleteLines(from: fileURL) {
                 if let event = parseLine(line) {
                     events.append(event)

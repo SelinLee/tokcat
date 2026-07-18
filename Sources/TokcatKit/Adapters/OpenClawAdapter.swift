@@ -39,12 +39,16 @@ public final class OpenClawAdapter: AgentAdapter {
     }
 
     public func pollNewEvents() -> [TokenEvent] {
-        let logFiles = reader.enumerateJSONLFiles(under: agentsDirectory, recursive: true)
-            .filter { $0.lastPathComponent.hasSuffix(".trajectory.jsonl") || $0.pathExtension == "jsonl" }
+        // OpenClaw trees can hold 10k+ files; bootstrap-at-end + live window.
+        let candidates = reader.candidateFileInfos(under: agentsDirectory, recursive: true)
+            .filter {
+                $0.url.lastPathComponent.contains("trajectory")
+                    && ($0.url.lastPathComponent.hasSuffix(".trajectory.jsonl")
+                        || $0.url.pathExtension == "jsonl")
+            }
+        let logFiles = reader.filesNeedingRead(from: candidates)
         var events: [TokenEvent] = []
         for fileURL in logFiles {
-            // Prefer trajectory files; plain session jsonl rarely has usage.
-            if !fileURL.lastPathComponent.contains("trajectory") { continue }
             let path = fileURL.path
             for line in reader.readNewCompleteLines(from: fileURL) {
                 guard let data = line.data(using: .utf8),

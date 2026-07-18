@@ -130,7 +130,7 @@ final class AppSettingsTests: XCTestCase {
         // New fields get defaults when absent.
         XCTAssertTrue(loaded.menuBarShowCatIcon)
         XCTAssertEqual(loaded.menuBarCatIconScale, AppSettings.defaultCatIconScale)
-        XCTAssertEqual(loaded.menuBarIconStyle, .tokcat)
+        XCTAssertEqual(loaded.menuBarIconStyle, .rainTokcat)
     }
 
     func testVerticalOffsetClamping() {
@@ -170,14 +170,14 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.default.showDesktopPet)
     }
 
-    func testDesktopPetSkinDefaultIsPixelTokcat() {
+    func testDesktopPetSkinDefaultIsHDTokcat() {
         XCTAssertEqual(AppSettings.default.desktopPetSkin, .pixelTokcat)
-        XCTAssertEqual(DesktopPetSkin.allCases.count, 4)
-        XCTAssertEqual(DesktopPetSkin.pixelTokcat.displayName, "像素 Tokcat")
+        XCTAssertEqual(DesktopPetSkin.allCases.count, 3)
+        XCTAssertEqual(DesktopPetSkin.pixelTokcat.displayName, "高清 Tokcat")
         XCTAssertTrue(DesktopPetSkin.pixelTokcat.isPixel)
         XCTAssertEqual(DesktopPetSkin.procedural.displayName, "方块猫")
-        XCTAssertEqual(DesktopPetSkin.pinkCat.displayName, "粉猫")
-        XCTAssertEqual(DesktopPetSkin.custom.displayName, "自定义")
+        XCTAssertEqual(DesktopPetSkin.custom.displayName, "自定义 3D")
+        XCTAssertEqual(DesktopPetSkin.hdTokcat, .pixelTokcat)
     }
 
     func testDesktopPetSkinPersistsAndLegacyDefaultsToPixelTokcat() throws {
@@ -209,7 +209,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .pixelTokcat)
     }
 
-    func testLegacyCatgirlSkinMigratesToPinkCat() throws {
+    func testLegacyCatgirlSkinMigratesToHDTokcat() throws {
         let suite = "tokcat.tests.catgirl-migrate.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -242,7 +242,7 @@ final class AppSettingsTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: payload)
         defaults.set(data, forKey: AppSettingsStore.defaultsKey)
         let loaded = AppSettingsStore(defaults: defaults).load()
-        XCTAssertEqual(loaded.desktopPetSkin, .pinkCat)
+        XCTAssertEqual(loaded.desktopPetSkin, .pixelTokcat)
     }
 
 
@@ -278,10 +278,10 @@ final class AppSettingsTests: XCTestCase {
         store.save(settings)
         XCTAssertEqual(store.load().desktopPetSkin, .pixelTokcat)
 
-        settings.desktopPetSkin = .pinkCat
+        settings.desktopPetSkin = .custom
         store.save(settings)
-        XCTAssertEqual(store.load().desktopPetSkin, .pinkCat)
-        XCTAssertFalse(DesktopPetSkin.pinkCat.isPixel)
+        XCTAssertEqual(store.load().desktopPetSkin, .custom)
+        XCTAssertFalse(DesktopPetSkin.custom.isPixel)
     }
 
 }

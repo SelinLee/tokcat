@@ -341,7 +341,7 @@
     },
     "rest": {
       "frames": 4,
-      "fps": 3,
+      "fps": 4,
       "loop": true,
       "scene": null
     },

@@ -156,7 +156,7 @@ struct SettingsView: View {
                         activity: model.menuBarActivity,
             hatID: nil
                     ))
-                    .renderingMode(.template)
+                    .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
                 }
             } header: {
                 Text("图标旁指标")

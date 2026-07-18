@@ -16,10 +16,10 @@
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
 <p align="center">
-  <img src="docs/assets/screenshots/menubar.png" alt="Tokcat 菜单栏实时条" width="420" />
+  <img src="docs/assets/screenshots/menubar-cathead.png" alt="Tokcat 菜单栏 — 猫头图标" width="520" />
 </p>
 
-<p align="center"><sub>菜单栏实时条：网速 · Token 速率 · 费用速率，贴在猫头旁。</sub></p>
+<p align="center"><sub>菜单栏实时条：猫头图标 + 状态浮动（zzz · 蒸汽灯泡 · ✓）、网速 · Token 速率 · 费用速率。</sub></p>
 
 ---
 
@@ -111,7 +111,8 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 ## 功能一览
 
 ### 1. 实时监控（菜单栏）
-- 自绘 Tokcat 图标；表情随 agent 吞吐 / 宠物状态变化  
+- **两种图标风格**：代码绘制表情脸（带状态浮动）或 AI 生成猫头肖像（template 自适应深浅模式）
+- 状态浮动图标：`zzz`（睡觉）· `💡+蒸汽`（工作中）· `✓`（完成）
 - 可选旁路：CPU、GPU、内存、网速、温度压力、**Token 速率**、**费用速率**  
 - 下拉：Agent + 模型、速度、今日 / 累计费用、最近事件、宠物状态  
 
@@ -122,6 +123,9 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 
 ### 3. 桌面宠物（可选）
 - 默认 **Tokcat V3**（插画风帧动画）  
+  - **rest 状态**改为站立转圈踱步（不再趴窝）
+  - 全部 90 帧精灵经 AI 精修外轮廓，去除白边残留
+  - 长尖耳、大眼睛、干净剪影
 - 也可用方块猫 / 自定义 USDZ  
 - 用量驱动成长：等级、聪明 / 稳定 / 手感、掉落、背包与图鉴  
 - 音效默认关闭  

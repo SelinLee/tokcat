@@ -8,6 +8,7 @@ import Foundation
 /// SF Symbols + the hand-drawn Tokcat face. No third-party assets.
 public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifiable {
     case tokcat
+    case rainTokcat
     case lineCPU
     case lineMemory
     case lineNetwork
@@ -32,7 +33,8 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 
     public var displayName: String {
         switch self {
-        case .tokcat: return "Tokcat 猫头"
+        case .tokcat: return "Tokcat 表情"
+        case .rainTokcat: return "Tokcat 猫头"
         case .lineCPU: return "CPU 线稿"
         case .lineMemory: return "内存线稿"
         case .lineNetwork: return "网速线稿"
@@ -58,7 +60,7 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
     /// SF Symbol name when applicable. Custom-drawn styles return nil.
     public var systemSymbolName: String? {
         switch self {
-        case .tokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
+        case .tokcat, .rainTokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
             return nil
         case .catFill: return "cat.fill"
         case .cat: return "cat"
@@ -80,7 +82,7 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 
     public var isCustomDrawn: Bool {
         switch self {
-        case .tokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
+        case .tokcat, .rainTokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
             return true
         default:
             return false
@@ -92,30 +94,27 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 /// Desktop pet visual style / skin library entry.
 /// Built-ins ship with the app; `custom` loads a user-imported USDZ/SCN.
 public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiable {
+    /// High-definition 2D illustrated Tokcat (sprite atlas). Raw value kept for settings compat.
     case pixelTokcat
     case procedural
-    case pinkCat
     case custom
 
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
-        case .pixelTokcat: return "像素 Tokcat"
+        case .pixelTokcat: return "高清 Tokcat"
         case .procedural: return "方块猫"
-        case .pinkCat: return "粉猫"
-        case .custom: return "自定义"
+        case .custom: return "自定义 3D"
         }
     }
 
     public var detail: String {
         switch self {
         case .pixelTokcat:
-            return "原创像素风 Tokcat：事件驱动帧动画，后续可扩展皮肤/道具/装备。"
+            return "高清插画风 Tokcat：128×128 平滑帧动画，支持皮肤/道具/装备叠层。"
         case .procedural:
-            return "原始低多边形方块猫，由 SceneKit 几何体拼装。"
-        case .pinkCat:
-            return "内置 CC0 粉猫（Chubby Tubby Cat），支持更自然的待机与表情动画。"
+            return "低多边形方块猫，由 SceneKit 几何体拼装。"
         case .custom:
             return "使用你导入的 .usdz / .scn / .reality 模型。可在设置中导入或清除。"
         }
@@ -124,15 +123,18 @@ public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiabl
     /// Whether this skin expects an external 3D model file.
     public var usesExternalModel: Bool {
         switch self {
-        case .pinkCat, .custom: return true
+        case .custom: return true
         case .pixelTokcat, .procedural: return false
         }
     }
 
-    /// 2D pixel atlas path (SceneKit not used).
+    /// 2D sprite atlas path (SceneKit not used). Name kept for call sites.
     public var isPixel: Bool {
         self == .pixelTokcat
     }
+
+    /// Preferred high-definition 2D Tokcat skin.
+    public static var hdTokcat: DesktopPetSkin { .pixelTokcat }
 }
 
 public struct AppSettings: Codable, Equatable, Sendable {
@@ -230,7 +232,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowGPU: Bool = false,
         menuBarShowCatIcon: Bool = true,
         menuBarCatIconScale: Double = AppSettings.defaultCatIconScale,
-        menuBarIconStyle: MenuBarIconStyle = .tokcat,
+        menuBarIconStyle: MenuBarIconStyle = .rainTokcat,
         menuBarTextScale: Double = AppSettings.defaultTextScale,
         menuBarVerticalOffset: Double = AppSettings.defaultVerticalOffset,
         showTokenSummary: Bool = true,
@@ -394,10 +396,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showPetSummary = try container.decodeIfPresent(Bool.self, forKey: .showPetSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
         enablePetSoundEffects = try container.decodeIfPresent(Bool.self, forKey: .enablePetSoundEffects) ?? false
-        // Default is pixelTokcat. Legacy "catgirl" migrates to pinkCat.
+        // Default is HD Tokcat (pixelTokcat raw value). Legacy pinkCat/catgirl → HD 2D.
         if let raw = try container.decodeIfPresent(String.self, forKey: .desktopPetSkin) {
-            if raw == "catgirl" {
-                desktopPetSkin = .pinkCat
+            if raw == "catgirl" || raw == "pinkCat" {
+                desktopPetSkin = .pixelTokcat
             } else {
                 desktopPetSkin = DesktopPetSkin(rawValue: raw) ?? .pixelTokcat
             }
@@ -426,7 +428,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         } else {
             menuBarCatIconScale = AppSettings.defaultCatIconScale
         }
-        menuBarIconStyle = try container.decodeIfPresent(MenuBarIconStyle.self, forKey: .menuBarIconStyle) ?? .tokcat
+        menuBarIconStyle = try container.decodeIfPresent(MenuBarIconStyle.self, forKey: .menuBarIconStyle) ?? .rainTokcat
         menuBarTextScale = try container.decodeIfPresent(Double.self, forKey: .menuBarTextScale) ?? AppSettings.defaultTextScale
         menuBarVerticalOffset = try container.decodeIfPresent(Double.self, forKey: .menuBarVerticalOffset) ?? AppSettings.defaultVerticalOffset
 
@@ -528,9 +530,28 @@ public final class AppSettingsStore {
         defaults.set(data, forKey: Self.defaultsKey)
     }
 
+    public static let migratedPinkCatToHDKey = "tokcat.migrated.pinkCatToHD.v1"
+    public static let migratedRainMenuIconKey = "tokcat.migrated.rainMenuIcon.v1"
+
     private func migrateSettings(_ settings: AppSettings) -> AppSettings {
         var next = settings
         var changed = false
+
+        // Retired bundled pinkCat USDZ → default HD 2D Tokcat once.
+        if !defaults.bool(forKey: Self.migratedPinkCatToHDKey) {
+            // pinkCat raw may still appear only via legacy decode path; keep flag for future.
+            defaults.set(true, forKey: Self.migratedPinkCatToHDKey)
+        }
+
+        // One-time: promote the generated rain Tokcat menu-bar icon to the
+        // default for users who were still on the old drawn cat.
+        if !defaults.bool(forKey: Self.migratedRainMenuIconKey) {
+            if next.menuBarIconStyle == .tokcat {
+                next.menuBarIconStyle = .rainTokcat
+                changed = true
+            }
+            defaults.set(true, forKey: Self.migratedRainMenuIconKey)
+        }
 
         if !defaults.bool(forKey: Self.migratedCCSwitchKey) {
             if !next.enabledAgentSources.contains(AgentSource.ccSwitch.rawValue) {

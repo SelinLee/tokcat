@@ -83,8 +83,9 @@ public final class CCSwitchAdapter: AgentAdapter {
     }
 
     public func pollHistoricalBatch(maxFiles: Int) -> [TokenEvent] {
+        // Live path already tails by created_at watermark; historical resume is a no-op.
         _ = maxFiles
-        return pollNewEvents()
+        return []
     }
 
     /// Snapshot used to attribute agent-native events to origin providers.

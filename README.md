@@ -16,10 +16,10 @@ Optional desktop pixel pet fed by the same usage.
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
 <p align="center">
-  <img src="docs/assets/screenshots/menubar.png" alt="Tokcat menu bar strip" width="420" />
+  <img src="docs/assets/screenshots/menubar-cathead.png" alt="Tokcat menu bar — cat head icon" width="520" />
 </p>
 
-<p align="center"><sub>Menu bar live strip — network · token rate · spend rate, next to the cat icon.</sub></p>
+<p align="center"><sub>Menu bar live strip — cat head icon with status glyphs (zzz · steam · ✓), network · token rate · spend rate.</sub></p>
 
 ---
 
@@ -111,7 +111,8 @@ Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
 ## Feature map
 
 ### 1. Live monitoring (menu bar)
-- Custom Tokcat icon; expressions track agent throughput / pet mood  
+- **Two icon styles**: code-drawn expressive face (with state glyphs) or AI-generated cat-head portrait (template-friendly, auto light/dark)
+- Status glyphs float beside the icon: `zzz` (sleeping) · `💡+steam` (working) · `✓` (completed)
 - Optional metrics: CPU, GPU, memory, network, thermal, **token rate**, **spend rate**  
 - Dropdown: agent + model, speed, today & total cost, recent events, pet vitals  
 
@@ -121,7 +122,8 @@ Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
 - **Settings → Rates**: model unit prices; pairs with CC Switch reported prices  
 
 ### 3. Desktop pet (optional)
-- Default **pixel Tokcat** (idle / work / review / wait / fail / happy / sad / sleepy / hungry / rest / wave / jump…)  
+- Default **pixel Tokcat V3** (idle / work / review / wait / fail / happy / sad / sleepy / hungry / **rest (pacing & turning)** / wave / jump…)  
+- V3 sprites: refined silhouettes with clean edges, tall ears, big expressive eyes; all 90 frames AI-polished
 - Also: block cat / pink cat / custom USDZ  
 - Usage-driven growth: level, smarts / stability / feel, loot drops, bag & codex  
 - SFX **off by default**  

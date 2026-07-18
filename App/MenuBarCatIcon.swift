@@ -2,122 +2,105 @@ import AppKit
 import SwiftUI
 import TokcatKit
 
-/// Compact monochrome cat face — thin strokes, short vertical height,
-/// template-tinted like native macOS status items.
+/// Tokcat V3 menu-bar glyph: a compact black cat head with proportional
+/// pointed ears, white inner-ear cutouts, and big Luna eyes. Rendered as
+/// a template so macOS tints it for the menu bar.
 enum MenuBarCatIcon {
     /// Draws the cat into `rect` (already in pixel coordinates of the target image).
     static func draw(in rect: NSRect) {
-        // V3 menu-bar glyph: oversized upright ears + huge Luna eyes.
-        // Template monochrome — eye/ear-inner are punched transparent.
         let bounds = rect.insetBy(dx: rect.width * 0.02, dy: rect.height * 0.02)
         NSColor.black.setStroke()
         NSColor.black.setFill()
 
-        // Head sits in lower ~55%; ears claim the top ~50% (overlap at crown).
+        // Round head, lower and smaller so the ears and eyes dominate the icon.
         let head = NSRect(
-            x: bounds.minX + bounds.width * 0.12,
-            y: bounds.minY + bounds.height * 0.02,
-            width: bounds.width * 0.76,
-            height: bounds.height * 0.58
+            x: bounds.minX + bounds.width * 0.18,
+            y: bounds.minY + bounds.height * 0.28,
+            width: bounds.width * 0.64,
+            height: bounds.height * 0.55
         )
 
         drawEar(left: true, in: bounds, head: head)
         drawEar(left: false, in: bounds, head: head)
         NSBezierPath(ovalIn: head).fill()
 
-        // Huge Luna eyes (~32% of head width each)
-        let eyeW = head.width * 0.34
-        let eyeH = head.height * 0.38
-        let eyeY = head.minY + head.height * 0.34
-        let gap = head.width * 0.06
-        let leftEye = NSRect(
-            x: head.midX - gap * 0.5 - eyeW,
-            y: eyeY,
-            width: eyeW,
-            height: eyeH
-        )
-        let rightEye = NSRect(
-            x: head.midX + gap * 0.5,
-            y: eyeY,
-            width: eyeW,
-            height: eyeH
-        )
+        // Luna eyes: two large white ovals with black pupils.
+        let (leftEye, rightEye) = lunaEyePair(head: head)
+        punchLunaEyes(left: leftEye, right: rightEye, pupilScale: 0.36)
+
+        // Small muzzle.
+        drawMuzzle(head: head)
+    }
+
+    private static func lunaEyePair(head: NSRect) -> (NSRect, NSRect) {
+        // Big round Luna eyes, matching the reference cat.
+        let eyeW = head.width * 0.30
+        let eyeH = head.height * 0.32
+        let eyeY = head.minY + head.height * 0.48
+        let gap = head.width * 0.12
+        let left = NSRect(x: head.midX - gap * 0.5 - eyeW, y: eyeY, width: eyeW, height: eyeH)
+        let right = NSRect(x: head.midX + gap * 0.5, y: eyeY, width: eyeW, height: eyeH)
+        return (left, right)
+    }
+
+    private static func punchLunaEyes(left: NSRect, right: NSRect, pupilScale: CGFloat) {
         let ctx = NSGraphicsContext.current
         ctx?.saveGraphicsState()
         ctx?.compositingOperation = .destinationOut
-        NSBezierPath(ovalIn: leftEye).fill()
-        NSBezierPath(ovalIn: rightEye).fill()
+        NSBezierPath(ovalIn: left).fill()
+        NSBezierPath(ovalIn: right).fill()
         ctx?.restoreGraphicsState()
 
         NSColor.black.setFill()
-        for eye in [leftEye, rightEye] {
-            let pw = eye.width * 0.42
-            let ph = eye.height * 0.42
-            NSBezierPath(ovalIn: NSRect(
+        for eye in [left, right] {
+            let pw = eye.width * pupilScale
+            let ph = eye.height * pupilScale
+            let pupil = NSRect(
                 x: eye.midX - pw * 0.5,
                 y: eye.midY - ph * 0.48,
                 width: pw,
                 height: ph
-            )).fill()
+            )
+            NSBezierPath(ovalIn: pupil).fill()
         }
-
-        // Small cute mouth
-        let mouth = NSBezierPath()
-        let mouthY = head.minY + head.height * 0.18
-        let mouthW = head.width * 0.22
-        mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + head.height * 0.03))
-        mouth.curve(
-            to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY + head.height * 0.03),
-            controlPoint1: NSPoint(x: head.midX - mouthW * 0.15, y: mouthY - head.height * 0.10),
-            controlPoint2: NSPoint(x: head.midX + mouthW * 0.15, y: mouthY - head.height * 0.10)
-        )
-        ctx?.saveGraphicsState()
-        ctx?.compositingOperation = .destinationOut
-        mouth.lineWidth = max(1.2, bounds.width * 0.07)
-        mouth.lineCapStyle = .round
-        mouth.stroke()
-        ctx?.restoreGraphicsState()
-        NSColor.black.setStroke()
-        mouth.lineWidth = max(1.0, bounds.width * 0.05)
-        mouth.stroke()
     }
 
     private static func drawEar(left: Bool, in bounds: NSRect, head: NSRect) {
-        // Very tall upright triangles — signature V3 ears.
+        // Tall, wide pointed ears like the reference cat.
         let sign: CGFloat = left ? -1 : 1
         let baseOuter = NSPoint(
-            x: head.midX + sign * head.width * 0.42,
-            y: head.maxY - head.height * 0.08
-        )
-        let baseInner = NSPoint(
-            x: head.midX + sign * head.width * 0.08,
+            x: head.midX + sign * head.width * 0.45,
             y: head.maxY - head.height * 0.02
         )
+        let baseInner = NSPoint(
+            x: head.midX + sign * head.width * 0.10,
+            y: head.maxY + head.height * 0.05
+        )
         let tip = NSPoint(
-            x: head.midX + sign * head.width * 0.36,
-            y: bounds.maxY - bounds.height * 0.01
+            x: head.midX + sign * head.width * 0.35,
+            y: bounds.maxY - bounds.height * 0.02
         )
 
         let ear = NSBezierPath()
         ear.move(to: baseOuter)
         ear.curve(
             to: tip,
-            controlPoint1: NSPoint(x: baseOuter.x + sign * head.width * 0.04, y: baseOuter.y + head.height * 0.25),
-            controlPoint2: NSPoint(x: tip.x + sign * head.width * 0.03, y: tip.y - head.height * 0.08)
+            controlPoint1: NSPoint(x: baseOuter.x + sign * head.width * 0.05, y: baseOuter.y + head.height * 0.35),
+            controlPoint2: NSPoint(x: tip.x + sign * head.width * 0.04, y: tip.y - head.height * 0.10)
         )
         ear.curve(
             to: baseInner,
-            controlPoint1: NSPoint(x: tip.x - sign * head.width * 0.10, y: tip.y - head.height * 0.04),
-            controlPoint2: NSPoint(x: baseInner.x + sign * head.width * 0.02, y: baseInner.y + head.height * 0.10)
+            controlPoint1: NSPoint(x: tip.x - sign * head.width * 0.12, y: tip.y - head.height * 0.05),
+            controlPoint2: NSPoint(x: baseInner.x + sign * head.width * 0.02, y: baseInner.y + head.height * 0.14)
         )
         ear.close()
         ear.lineJoinStyle = .round
         NSColor.black.setFill()
         ear.fill()
 
-        // Large inner-ear notch (reads as white ear at tiny sizes)
+        // Prominent inner-ear notch (reads as white/background at tiny sizes).
         let notch = NSBezierPath()
-        let nTip = NSPoint(x: tip.x - sign * head.width * 0.05, y: tip.y - head.height * 0.14)
+        let nTip = NSPoint(x: tip.x - sign * head.width * 0.06, y: tip.y - head.height * 0.16)
         let nOuter = NSPoint(x: baseOuter.x - sign * head.width * 0.10, y: baseOuter.y + head.height * 0.10)
         let nInner = NSPoint(x: baseInner.x + sign * head.width * 0.06, y: baseInner.y - head.height * 0.02)
         notch.move(to: nOuter)
@@ -129,6 +112,20 @@ enum MenuBarCatIcon {
         ctx?.compositingOperation = .destinationOut
         notch.fill()
         ctx?.restoreGraphicsState()
+    }
+
+    private static func drawMuzzle(head: NSRect) {
+        // Tiny inverted-triangle nose, mirroring the V3 face.
+        let noseW = head.width * 0.08
+        let noseH = head.height * 0.06
+        let noseY = head.minY + head.height * 0.28
+        let nose = NSBezierPath()
+        nose.move(to: NSPoint(x: head.midX, y: noseY))
+        nose.line(to: NSPoint(x: head.midX - noseW * 0.5, y: noseY + noseH))
+        nose.line(to: NSPoint(x: head.midX + noseW * 0.5, y: noseY + noseH))
+        nose.close()
+        NSColor.black.setFill()
+        nose.fill()
     }
 
     static func image(pointSize: CGFloat = 13) -> NSImage {
@@ -219,7 +216,7 @@ enum MenuBarStatusRenderer {
                 let iconSide = min(iconPointSize * scale, rect.height - 2 * scale)
                 // Tokcat expression reserves horizontal room for floating glyphs.
                 let iconWidth: CGFloat
-                if settings.menuBarIconStyle == .tokcat {
+                if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
                     iconWidth = iconSide + MenuBarCatExpression.badgePointWidth * scale
                 } else {
                     iconWidth = iconSide
@@ -349,7 +346,7 @@ enum MenuBarStatusRenderer {
         paragraph.lineBreakMode = .byClipping
         return [
             .font: font,
-            .foregroundColor: NSColor.black,
+            .foregroundColor: NSColor.labelColor,
             .paragraphStyle: paragraph
         ]
     }

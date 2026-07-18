@@ -53,8 +53,12 @@ public final class KimiAdapter: AgentAdapter {
     public func pollNewEvents() -> [TokenEvent] {
         var events: [TokenEvent] = []
         for root in searchRoots {
-            let files = reader.enumerateJSONLFiles(under: root, recursive: true)
-                .filter { $0.lastPathComponent == "wire.jsonl" || $0.lastPathComponent.hasSuffix("wire.jsonl") }
+            let candidates = reader.candidateFileInfos(under: root, recursive: true)
+                .filter {
+                    $0.url.lastPathComponent == "wire.jsonl"
+                        || $0.url.lastPathComponent.hasSuffix("wire.jsonl")
+                }
+            let files = reader.filesNeedingRead(from: candidates)
             for fileURL in files {
                 for line in reader.readNewCompleteLines(from: fileURL) {
                     if let event = parseLine(line) {

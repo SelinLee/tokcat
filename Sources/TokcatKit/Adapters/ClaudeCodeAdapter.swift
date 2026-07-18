@@ -38,7 +38,9 @@ public final class ClaudeCodeAdapter: AgentAdapter {
     }
 
     public func pollNewEvents() -> [TokenEvent] {
-        let logFiles = reader.enumerateJSONLFiles(under: projectsDirectory, recursive: true)
+        // Full catalog (cached) + size skip: Claude imports history on first sight.
+        let candidates = reader.candidateFileInfos(under: projectsDirectory, recursive: true)
+        let logFiles = reader.filesNeedingRead(from: candidates)
         var events: [TokenEvent] = []
         for fileURL in logFiles {
             let sessionId = fileURL.deletingPathExtension().lastPathComponent

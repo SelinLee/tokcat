@@ -48,7 +48,7 @@ enum PixelPetClip: String, CaseIterable, Hashable, Sendable {
         case .sad: return "低落"
         case .sleepy: return "犯困"
         case .hungry: return "饥饿"
-        case .rest: return "趴窝"
+        case .rest: return "转圈踱步"
         case .pace: return "踱步"
         case .groom: return "理毛"
         case .lookAround: return "张望"
@@ -92,7 +92,7 @@ enum PixelPetClip: String, CaseIterable, Hashable, Sendable {
         case .working, .review:
             return .desk
         case .rest:
-            return .loaf
+            return .walk
         case .sleepy:
             return .side
         case .failed:
@@ -149,7 +149,7 @@ enum PixelPetClip: String, CaseIterable, Hashable, Sendable {
     var defaultFPS: Double {
         switch self {
         case .idle, .happy: return 3
-        case .rest: return 2
+        case .rest: return 4
         case .working, .review: return 3.5
         case .pace: return 4
         case .groom, .lookAround, .waiting: return 3.5
@@ -167,7 +167,7 @@ enum PixelPetClip: String, CaseIterable, Hashable, Sendable {
     var ambientIntervalRange: ClosedRange<TimeInterval> {
         switch self {
         case .idle: return 4.5...9.0
-        case .rest: return 8.0...16.0
+        case .rest: return 3.0...6.0
         case .happy: return 5.0...10.0
         case .working, .review: return 6.0...12.0
         case .waiting: return 5.5...11.0

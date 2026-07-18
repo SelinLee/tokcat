@@ -2,7 +2,8 @@ import AppKit
 import TokcatKit
 
 /// Draws Tokcat menu-bar face variants + floating status glyphs (zzz / steam / OK).
-/// Always pure black for template rendering.
+/// The face is rendered as a template glyph: a black cat head with white
+/// inner-ear cutouts and big Luna eyes, matching the V3 character.
 enum MenuBarCatExpression {
     /// Extra point width reserved to the right of the face for floating glyphs.
     static let badgePointWidth: CGFloat = 11
@@ -41,8 +42,8 @@ enum MenuBarCatExpression {
         NSColor.black.setStroke()
         NSColor.black.setFill()
 
-        // Align with V3 head crown (head height ~56% from bottom inset)
-        let headTopY = bounds.minY + bounds.height * 0.58
+        // Crown of the new V3 head sits near the top of the face rect.
+        let headTopY = bounds.minY + bounds.height * 0.85
         let midX = bounds.midX
 
         switch hatID {
@@ -155,17 +156,17 @@ enum MenuBarCatExpression {
     // MARK: - Face
 
     private static func drawFace(in rect: NSRect, activity: MenuBarAgentActivity) {
-        // V3: oversized upright ears + huge Luna eyes on solid black head.
+        // V3 head: round, compact, with tall wide ears dominating the top.
         let bounds = rect.insetBy(dx: rect.width * 0.01, dy: rect.height * 0.01)
         let stroke = max(1.0, min(bounds.width, bounds.height) * 0.065)
         NSColor.black.setStroke()
         NSColor.black.setFill()
 
         let head = NSRect(
-            x: bounds.minX + bounds.width * 0.10,
-            y: bounds.minY + bounds.height * 0.02,
-            width: bounds.width * 0.80,
-            height: bounds.height * 0.56
+            x: bounds.minX + bounds.width * 0.12,
+            y: bounds.minY + bounds.height * 0.30,
+            width: bounds.width * 0.76,
+            height: bounds.height * 0.55
         )
 
         drawEar(left: true, in: bounds, head: head)
@@ -186,6 +187,23 @@ enum MenuBarCatExpression {
         case .completed:
             drawCompletedFace(head: head, bounds: bounds, stroke: stroke)
         }
+
+        // Shared muzzle for all states.
+        drawMuzzle(head: head)
+    }
+
+    private static func drawMuzzle(head: NSRect) {
+        // Tiny inverted-triangle nose, matching the V3 character.
+        let noseW = head.width * 0.08
+        let noseH = head.height * 0.06
+        let noseY = head.minY + head.height * 0.26
+        let nose = NSBezierPath()
+        nose.move(to: NSPoint(x: head.midX, y: noseY))
+        nose.line(to: NSPoint(x: head.midX - noseW * 0.5, y: noseY + noseH))
+        nose.line(to: NSPoint(x: head.midX + noseW * 0.5, y: noseY + noseH))
+        nose.close()
+        NSColor.black.setFill()
+        nose.fill()
     }
 
     /// Punch transparent eye-white ovals, then paint black pupils (Luna V3).
@@ -217,10 +235,10 @@ enum MenuBarCatExpression {
     }
 
     private static func lunaEyePair(head: NSRect, scale: CGFloat = 1.0) -> (NSRect, NSRect) {
-        let eyeW = head.width * 0.34 * scale
-        let eyeH = head.height * 0.40 * scale
-        let eyeY = head.minY + head.height * 0.32
-        let gap = head.width * 0.06
+        let eyeW = head.width * 0.30 * scale
+        let eyeH = head.height * 0.32 * scale
+        let eyeY = head.minY + head.height * 0.48
+        let gap = head.width * 0.12
         let left = NSRect(x: head.midX - gap * 0.5 - eyeW, y: eyeY, width: eyeW, height: eyeH)
         let right = NSRect(x: head.midX + gap * 0.5, y: eyeY, width: eyeW, height: eyeH)
         return (left, right)
@@ -232,57 +250,39 @@ enum MenuBarCatExpression {
         stroke: CGFloat,
         phase: TimeInterval
     ) {
-        // Closed lids — wide arcs under big-eye positions
-        let eyeY = head.minY + head.height * 0.48
-        let eyeSpan = head.width * 0.28
+        // Closed lids: gentle downward arcs at the eye positions.
+        let eyeY = head.minY + head.height * 0.55
+        let eyeSpan = head.width * 0.24
         for side in [-1.0 as CGFloat, 1.0] {
-            let cx = head.midX + side * (head.width * 0.20)
+            let cx = head.midX + side * (head.width * 0.15)
             let lid = NSBezierPath()
             lid.move(to: NSPoint(x: cx - eyeSpan * 0.5, y: eyeY))
             lid.curve(
                 to: NSPoint(x: cx + eyeSpan * 0.5, y: eyeY),
-                controlPoint1: NSPoint(x: cx - eyeSpan * 0.15, y: eyeY - head.height * 0.10),
-                controlPoint2: NSPoint(x: cx + eyeSpan * 0.15, y: eyeY - head.height * 0.10)
+                controlPoint1: NSPoint(x: cx - eyeSpan * 0.15, y: eyeY - head.height * 0.08),
+                controlPoint2: NSPoint(x: cx + eyeSpan * 0.15, y: eyeY - head.height * 0.08)
             )
             let ctx = NSGraphicsContext.current
             ctx?.saveGraphicsState()
             ctx?.compositingOperation = .destinationOut
-            lid.lineWidth = stroke * 1.6
+            lid.lineWidth = stroke * 1.5
             lid.lineCapStyle = .round
             lid.stroke()
             ctx?.restoreGraphicsState()
             NSColor.black.setStroke()
-            lid.lineWidth = stroke * 1.05
+            lid.lineWidth = stroke * 0.95
             lid.stroke()
         }
 
-        let mouth = NSBezierPath()
-        let mouthY = head.minY + head.height * 0.22
-        let mouthW = head.width * 0.20
-        mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + head.height * 0.02))
-        mouth.curve(
-            to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY + head.height * 0.02),
-            controlPoint1: NSPoint(x: head.midX - mouthW * 0.12, y: mouthY - head.height * 0.08),
-            controlPoint2: NSPoint(x: head.midX + mouthW * 0.12, y: mouthY - head.height * 0.08)
-        )
-        let ctx = NSGraphicsContext.current
-        ctx?.saveGraphicsState()
-        ctx?.compositingOperation = .destinationOut
-        mouth.lineWidth = stroke * 1.3
-        mouth.lineCapStyle = .round
-        mouth.stroke()
-        ctx?.restoreGraphicsState()
-        NSColor.black.setStroke()
-        mouth.lineWidth = stroke * 0.95
-        mouth.stroke()
-
+        // Small cheek blush bobbing with the phase.
         let bob = CGFloat(sin(phase * 2.2)) * head.height * 0.015
         let cheek = NSRect(
             x: head.midX + head.width * 0.28,
-            y: head.minY + head.height * 0.28 + bob,
+            y: head.minY + head.height * 0.32 + bob,
             width: head.width * 0.06,
             height: head.height * 0.05
         )
+        let ctx = NSGraphicsContext.current
         ctx?.saveGraphicsState()
         ctx?.compositingOperation = .destinationOut
         NSBezierPath(ovalIn: cheek).fill()
@@ -296,12 +296,12 @@ enum MenuBarCatExpression {
         intensity: Double,
         phase: TimeInterval
     ) {
-        let open = CGFloat(0.85 + 0.20 * intensity)
+        let open = CGFloat(0.85 + 0.15 * intensity)
         let (leftEye, rightEye) = lunaEyePair(head: head, scale: open)
         punchLunaEyes(left: leftEye, right: rightEye, pupilScale: 0.40 + 0.06 * CGFloat(1 - intensity), stroke: stroke)
 
         if intensity > 0.2 {
-            let browLift = CGFloat(intensity) * head.height * 0.05
+            let browLift = CGFloat(intensity) * head.height * 0.04
             NSColor.black.setStroke()
             for side in [-1.0 as CGFloat, 1.0] {
                 let eye = side < 0 ? leftEye : rightEye
@@ -328,14 +328,15 @@ enum MenuBarCatExpression {
             }
         }
 
-        let mouthY = head.minY + head.height * 0.16
-        let mouthW = head.width * (0.16 + 0.06 * CGFloat(intensity))
+        // Focused mouth: straight line, slightly open when intensity is high.
+        let mouthY = head.minY + head.height * 0.22
+        let mouthW = head.width * (0.14 + 0.04 * CGFloat(intensity))
         let mouth = NSBezierPath()
         if intensity < 0.45 {
             mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY))
             mouth.line(to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY))
         } else {
-            let drop = head.height * 0.04 * CGFloat(intensity)
+            let drop = head.height * 0.03 * CGFloat(intensity)
             mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + drop * 0.2))
             mouth.curve(
                 to: NSPoint(x: head.midX + mouthW * 0.5, y: mouthY + drop * 0.2),
@@ -358,7 +359,7 @@ enum MenuBarCatExpression {
             let hatchCount = intensity > 0.75 ? 3 : 2
             for side in [-1.0 as CGFloat, 1.0] {
                 let baseX = head.midX + side * head.width * 0.38
-                let baseY = head.minY + head.height * 0.26
+                let baseY = head.minY + head.height * 0.28
                 for i in 0..<hatchCount {
                     let path = NSBezierPath()
                     path.lineWidth = max(0.8, stroke * 0.7)
@@ -389,23 +390,33 @@ enum MenuBarCatExpression {
         bounds: NSRect,
         stroke: CGFloat
     ) {
-        let (leftEye, rightEye) = lunaEyePair(head: head, scale: 1.05)
-        punchLunaEyes(left: leftEye, right: rightEye, pupilScale: 0.36, stroke: stroke)
-
-        let spark = NSRect(
-            x: head.midX + head.width * 0.34,
-            y: head.minY + head.height * 0.62,
-            width: head.width * 0.06,
-            height: head.height * 0.06
-        )
         let ctx = NSGraphicsContext.current
-        ctx?.saveGraphicsState()
-        ctx?.compositingOperation = .destinationOut
-        NSBezierPath(ovalIn: spark).fill()
-        ctx?.restoreGraphicsState()
+        // Happy closed eyes: upward arcs.
+        let eyeY = head.minY + head.height * 0.55
+        let eyeSpan = head.width * 0.24
+        for side in [-1.0 as CGFloat, 1.0] {
+            let cx = head.midX + side * (head.width * 0.15)
+            let eye = NSBezierPath()
+            eye.move(to: NSPoint(x: cx - eyeSpan * 0.5, y: eyeY - head.height * 0.04))
+            eye.curve(
+                to: NSPoint(x: cx + eyeSpan * 0.5, y: eyeY - head.height * 0.04),
+                controlPoint1: NSPoint(x: cx - eyeSpan * 0.15, y: eyeY + head.height * 0.08),
+                controlPoint2: NSPoint(x: cx + eyeSpan * 0.15, y: eyeY + head.height * 0.08)
+            )
+            ctx?.saveGraphicsState()
+            ctx?.compositingOperation = .destinationOut
+            eye.lineWidth = stroke * 1.5
+            eye.lineCapStyle = .round
+            eye.stroke()
+            ctx?.restoreGraphicsState()
+            NSColor.black.setStroke()
+            eye.lineWidth = stroke * 0.95
+            eye.stroke()
+        }
 
+        // Big happy smile (upside-down U).
         let mouth = NSBezierPath()
-        let mouthY = head.minY + head.height * 0.14
+        let mouthY = head.minY + head.height * 0.16
         let mouthW = head.width * 0.28
         mouth.move(to: NSPoint(x: head.midX - mouthW * 0.5, y: mouthY + head.height * 0.04))
         mouth.curve(
@@ -425,32 +436,32 @@ enum MenuBarCatExpression {
     }
 
     private static func drawEar(left: Bool, in bounds: NSRect, head: NSRect) {
-        // Signature V3: very tall upright ears with large inner notch.
+        // Tall, wide pointed ears matching the reference cat.
         let sign: CGFloat = left ? -1 : 1
         let baseOuter = NSPoint(
-            x: head.midX + sign * head.width * 0.44,
-            y: head.maxY - head.height * 0.06
+            x: head.midX + sign * head.width * 0.45,
+            y: head.maxY - head.height * 0.02
         )
         let baseInner = NSPoint(
-            x: head.midX + sign * head.width * 0.06,
-            y: head.maxY - head.height * 0.01
+            x: head.midX + sign * head.width * 0.10,
+            y: head.maxY + head.height * 0.05
         )
         let tip = NSPoint(
-            x: head.midX + sign * head.width * 0.38,
-            y: bounds.maxY - bounds.height * 0.005
+            x: head.midX + sign * head.width * 0.35,
+            y: bounds.maxY - bounds.height * 0.02
         )
 
         let ear = NSBezierPath()
         ear.move(to: baseOuter)
         ear.curve(
             to: tip,
-            controlPoint1: NSPoint(x: baseOuter.x + sign * head.width * 0.05, y: baseOuter.y + head.height * 0.28),
+            controlPoint1: NSPoint(x: baseOuter.x + sign * head.width * 0.05, y: baseOuter.y + head.height * 0.35),
             controlPoint2: NSPoint(x: tip.x + sign * head.width * 0.04, y: tip.y - head.height * 0.10)
         )
         ear.curve(
             to: baseInner,
             controlPoint1: NSPoint(x: tip.x - sign * head.width * 0.12, y: tip.y - head.height * 0.05),
-            controlPoint2: NSPoint(x: baseInner.x + sign * head.width * 0.03, y: baseInner.y + head.height * 0.12)
+            controlPoint2: NSPoint(x: baseInner.x + sign * head.width * 0.02, y: baseInner.y + head.height * 0.14)
         )
         ear.close()
         ear.lineJoinStyle = .round
@@ -459,8 +470,8 @@ enum MenuBarCatExpression {
 
         let notch = NSBezierPath()
         let nTip = NSPoint(x: tip.x - sign * head.width * 0.06, y: tip.y - head.height * 0.16)
-        let nOuter = NSPoint(x: baseOuter.x - sign * head.width * 0.12, y: baseOuter.y + head.height * 0.12)
-        let nInner = NSPoint(x: baseInner.x + sign * head.width * 0.08, y: baseInner.y - head.height * 0.02)
+        let nOuter = NSPoint(x: baseOuter.x - sign * head.width * 0.10, y: baseOuter.y + head.height * 0.10)
+        let nInner = NSPoint(x: baseInner.x + sign * head.width * 0.06, y: baseInner.y - head.height * 0.02)
         notch.move(to: nOuter)
         notch.line(to: nTip)
         notch.line(to: nInner)
@@ -474,7 +485,7 @@ enum MenuBarCatExpression {
 
     // MARK: - Floating badge
 
-    private static func drawBadge(in rect: NSRect, activity: MenuBarAgentActivity) {
+    static func drawBadge(in rect: NSRect, activity: MenuBarAgentActivity) {
         guard rect.width > 1, rect.height > 1 else { return }
         NSColor.black.setStroke()
         NSColor.black.setFill()

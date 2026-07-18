@@ -14,6 +14,8 @@ enum MenuBarIconLibrary {
         case .tokcat:
             // Expression face + floating glyphs (zzz / steam / OK).
             MenuBarCatExpression.draw(in: rect, activity: activity, hatID: hatID)
+        case .rainTokcat:
+            RainMenuBarIcon.draw(in: rect, activity: activity, hatID: hatID)
         case .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
             MenuBarLineIcons.draw(style, in: rect)
             drawHatBadgeIfNeeded(hatID, in: rect, compact: true)
@@ -56,7 +58,7 @@ enum MenuBarIconLibrary {
         hatID: String? = nil
     ) -> NSImage {
         // Tokcat expressions need a bit of horizontal room for badges.
-        let widthMul: CGFloat = style == .tokcat ? 1.55 : 1.0
+        let widthMul: CGFloat = (style == .tokcat || style == .rainTokcat) ? 1.55 : 1.0
         let pixelW = ceil(pointSize * 2 * widthMul)
         let pixelH = ceil(pointSize * 2)
         let image = NSImage(size: NSSize(width: pixelW, height: pixelH), flipped: false) { rect in
@@ -71,7 +73,7 @@ enum MenuBarIconLibrary {
     /// Ordered SF Symbol fallbacks so older macOS still shows something sensible.
     private static func symbolCandidates(for style: MenuBarIconStyle) -> [String] {
         switch style {
-        case .tokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
+        case .tokcat, .rainTokcat, .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
             return []
         case .catFill:
             return ["cat.fill", "cat", "pawprint.fill"]
@@ -159,8 +161,8 @@ struct MenuBarIconStylePicker: View {
                                 .fill(selection == style ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08))
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(selection == style ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                            Image(nsImage: MenuBarIconLibrary.templateImage(style: style, pointSize: 18))
-                                .renderingMode(.template)
+                        Image(nsImage: MenuBarIconLibrary.templateImage(style: style, pointSize: 18))
+                            .renderingMode(.template)
                                 .foregroundStyle(.primary)
                         }
                         .frame(width: 44, height: 36)

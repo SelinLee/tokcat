@@ -72,7 +72,8 @@ public final class CodexCLIAdapter: AgentAdapter {
     }
 
     public func pollNewEvents() -> [TokenEvent] {
-        let logFiles = reader.enumerateJSONLFiles(under: sessionsDirectory, recursive: true)
+        let candidates = reader.candidateFileInfos(under: sessionsDirectory, recursive: true)
+        let logFiles = reader.filesNeedingRead(from: candidates)
         var events: [TokenEvent] = []
         for fileURL in logFiles {
             let path = JSONLOffsetReader.normalizePath(fileURL.path)

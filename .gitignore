@@ -26,3 +26,9 @@ dist/
 # Python caches
 __pycache__/
 *.py[cod]
+
+# AI generation raw outputs (large, local only)
+docs/assets/ai_gen_test/
+
+# WorkBuddy workspace memory
+.workbuddy/
