@@ -1,10 +1,10 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 状态一览" width="820" />
+  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 状态一览" width="720" />
 </p>
 
-<p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 等待 · 审阅 · 饥饿 · 进食 · 开心 · 招手 · 跳跃 · 升级 · 互动 · 理毛 · 张望 · 踱步 · 休息 · 困倦 · 难过 · 失败</sub></p>
+<p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 饥饿 · 开心 · 招手 · 休息</sub></p>
 
 **在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用，并提供本地统计。**  
 可选桌面像素宠物由同一批用量喂养。默认离线：不联网、不上传。

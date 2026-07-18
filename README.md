@@ -1,10 +1,10 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 states" width="820" />
+  <img src="docs/assets/screenshots/tokcat-states.png" alt="Tokcat V3 states" width="720" />
 </p>
 
-<p align="center"><sub>Tokcat V3 — idle · working · waiting · review · hungry · eating · happy · wave · jump · level up · interact · groom · look around · pace · rest · sleepy · sad · failed</sub></p>
+<p align="center"><sub>Tokcat V3 — idle · working · hungry · happy · wave · rest</sub></p>
 
 **Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-only, no upload.**  
 Optional desktop pixel pet fed by the same usage.
