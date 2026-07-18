@@ -1,7 +1,7 @@
 # Tokcat
 
 <p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png" alt="Tokcat V3 状态一览" width="720" />
+  <img src="docs/assets/screenshots/tokcat-states-row.png?v=2" alt="Tokcat V3 状态一览" width="720" />
 </p>
 
 <p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 饥饿 · 开心 · 招手 · 休息</sub></p>
