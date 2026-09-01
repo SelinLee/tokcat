@@ -172,6 +172,7 @@ final class AppModel: ObservableObject {
             OpenClawAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             WorkBuddyAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             KimiAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
+            DeepSeekHarnessAdapter(pricingTable: pricing),
             CursorAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             GeminiCLIAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             ccSwitchAdapter

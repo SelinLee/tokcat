@@ -27,6 +27,16 @@ extension KnownTool {
     public static let geminiCLI = KnownTool(
         id: "gemini-cli", displayName: "Gemini CLI", processNameMatches: ["gemini"]
     )
+    /// Electron shell that hosts the DSH web UI (`DSH Desktop.app`).
+    public static let dshDesktop = KnownTool(
+        id: "dsh-desktop", displayName: "DSH Desktop",
+        processNameMatches: ["dsh desktop", "dshdesktop", "deepseek-harness-desktop"]
+    )
+    /// `dsh` CLI / the web UI it serves. Listed after `.dshDesktop` so the
+    /// Electron shell keeps its own identity.
+    public static let deepseekHarness = KnownTool(
+        id: "deepseek-harness", displayName: "DeepSeek Harness", processNameMatches: ["dsh"]
+    )
     public static let vscode = KnownTool(
         id: "vscode", displayName: "VS Code", processNameMatches: ["code helper", "code"]
     )
@@ -38,6 +48,7 @@ extension KnownTool {
     )
 
     public static let allDefaults: [KnownTool] = [
-        .claudeCode, .codexCLI, .cursor, .geminiCLI, .vscode, .xcode, .terminal
+        .claudeCode, .codexCLI, .cursor, .geminiCLI, .dshDesktop, .deepseekHarness,
+        .vscode, .xcode, .terminal
     ]
 }

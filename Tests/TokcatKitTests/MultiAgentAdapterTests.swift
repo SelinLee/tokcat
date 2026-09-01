@@ -488,6 +488,7 @@ final class DomesticAgentAdapterTests: XCTestCase {
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.workBuddy))
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.kimi))
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.ccSwitch))
-        XCTAssertEqual(AgentSource.allCases.count, 8)
+        XCTAssertTrue(AgentSource.defaultEnabled.contains(.deepseekHarness))
+        XCTAssertEqual(AgentSource.allCases.count, 9)
     }
 }

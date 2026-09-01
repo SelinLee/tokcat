@@ -488,6 +488,7 @@ struct MenuBarContentView: View {
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
         case .geminiCLI: return "Gemini"
+        case .deepseekHarness: return "DSH"
         case .ccSwitch: return "CC Switch"
         }
     }

@@ -9,6 +9,10 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
     case kimi
     case cursor
     case geminiCLI
+    /// DeepSeek Harness (DSH). The `dsh web` web UI and the community
+    /// **DSH Desktop** shell run the same harness runtime and therefore share
+    /// the same local state root (`~/.dsh`), so both are covered by one source.
+    case deepseekHarness
     /// CC Switch local proxy / usage database (`~/.cc-switch/cc-switch.db`).
     /// Used as an adapter enablement key; emitted events usually remap
     /// `app_type` onto a concrete agent source when possible.
@@ -25,6 +29,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
         case .geminiCLI: return "Gemini CLI"
+        case .deepseekHarness: return "DeepSeek Harness"
         case .ccSwitch: return "CC Switch"
         }
     }
@@ -45,6 +50,8 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
             return "探测 Cursor 本地状态库 / 日志（有数据才显示）。"
         case .geminiCLI:
             return "探测 ~/.gemini 下的会话日志（有数据才显示）。"
+        case .deepseekHarness:
+            return "读取 ~/.dsh 会话用量快照：网页版（npx @deepseek-ai/dsh web）与 DSH Desktop 共用同一数据根。"
         case .ccSwitch:
             return "读取 ~/.cc-switch/cc-switch.db 的 proxy 请求日志：中转站 / 真实费用 / 倍率。"
         }
@@ -52,6 +59,6 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
 
     /// Sources enabled by default for a fresh install.
     public static var defaultEnabled: Set<AgentSource> {
-        [.claudeCode, .codexCLI, .openClaw, .workBuddy, .kimi, .ccSwitch]
+        [.claudeCode, .codexCLI, .openClaw, .workBuddy, .kimi, .deepseekHarness, .ccSwitch]
     }
 }
