@@ -192,6 +192,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Polling interval for monitors and pet ticks, in seconds.
     public var pollIntervalSeconds: Double
 
+    /// Status bar (menu bar) metric refresh interval, in seconds. Drives the
+    /// dedicated network re-sampling cadence so the menu-bar network readout
+    /// updates at this rate independent of the heavier general poll.
+    public var menuBarRefreshIntervalSeconds: Double
+
     /// Enabled agent adapters (raw AgentSource values).
     public var enabledAgentSources: [String]
 
@@ -217,6 +222,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Default -2.5 pt is the preferred optical center.
     public static let verticalOffsetRange: ClosedRange<Double> = -8.5...3.5
     public static let defaultVerticalOffset: Double = -2.5
+
+    /// Status-bar refresh slider range (seconds). Default 1s matches mature
+    /// network monitors; 0.5s for snappier updates, up to 10s to cut wakeups.
+    public static let menuBarRefreshRange: ClosedRange<Double> = 0.5...10.0
+    public static let defaultMenuBarRefreshInterval: Double = 1.0
 
     public init(
         showCPU: Bool = true,
@@ -245,6 +255,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         desktopPetWindowX: Double? = nil,
         desktopPetWindowY: Double? = nil,
         pollIntervalSeconds: Double = 2,
+        menuBarRefreshIntervalSeconds: Double = AppSettings.defaultMenuBarRefreshInterval,
         enabledAgentSources: [String] = AgentSource.defaultEnabled.map(\.rawValue).sorted(),
         pricingEntries: [PricingEntry] = PricingTable.catalogDefault.entries,
         fallbackPricing: ModelPricing = .sonnetLike
@@ -275,6 +286,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.desktopPetWindowX = desktopPetWindowX
         self.desktopPetWindowY = desktopPetWindowY
         self.pollIntervalSeconds = pollIntervalSeconds
+        self.menuBarRefreshIntervalSeconds = menuBarRefreshIntervalSeconds
         self.enabledAgentSources = enabledAgentSources
         self.pricingEntries = pricingEntries
         self.fallbackPricing = fallbackPricing
@@ -284,6 +296,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public var clampedPollIntervalSeconds: Double {
         min(30, max(1, pollIntervalSeconds))
+    }
+
+    public var clampedMenuBarRefreshIntervalSeconds: Double {
+        min(Self.menuBarRefreshRange.upperBound, max(Self.menuBarRefreshRange.lowerBound, menuBarRefreshIntervalSeconds))
     }
 
     public var clampedCatIconScale: Double {
@@ -379,7 +395,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
         case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, enablePetSoundEffects, desktopPetSkin, customPetModelFileName, desktopPetWindowX, desktopPetWindowY
-        case pollIntervalSeconds
+        case pollIntervalSeconds, menuBarRefreshIntervalSeconds
         case enabledAgentSources, pricingEntries, fallbackPricing
         case menuBarAccessory // legacy
     }
@@ -410,6 +426,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         desktopPetWindowX = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowX)
         desktopPetWindowY = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowY)
         pollIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 2
+        menuBarRefreshIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .menuBarRefreshIntervalSeconds)
+            ?? AppSettings.defaultMenuBarRefreshInterval
         enabledAgentSources = try container.decodeIfPresent([String].self, forKey: .enabledAgentSources)
             ?? AgentSource.defaultEnabled.map(\.rawValue).sorted()
         pricingEntries = try container.decodeIfPresent([PricingEntry].self, forKey: .pricingEntries)
@@ -491,6 +509,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encodeIfPresent(desktopPetWindowX, forKey: .desktopPetWindowX)
         try container.encodeIfPresent(desktopPetWindowY, forKey: .desktopPetWindowY)
         try container.encode(pollIntervalSeconds, forKey: .pollIntervalSeconds)
+        try container.encode(menuBarRefreshIntervalSeconds, forKey: .menuBarRefreshIntervalSeconds)
         try container.encode(enabledAgentSources, forKey: .enabledAgentSources)
         try container.encode(pricingEntries, forKey: .pricingEntries)
         try container.encode(fallbackPricing, forKey: .fallbackPricing)
@@ -503,6 +522,9 @@ public final class AppSettingsStore {
     /// One-shot flag so newly added default adapters can be enabled without
     /// re-enabling adapters the user deliberately turned off later.
     public static let migratedCCSwitchKey = "tokcat.migrated.ccSwitch.v1"
+    /// Enables the DeepSeek Harness adapter for users who saved their source
+    /// list before DSH support shipped (default-on, so it must be backfilled).
+    public static let migratedDeepSeekHarnessKey = "tokcat.migrated.deepSeekHarness.v1"
     /// Ensures botcf / provider-scoped catalog rows are imported into saved settings.
     public static let migratedProviderPricingKey = "tokcat.migrated.providerPricing.v3"
 
@@ -560,6 +582,15 @@ public final class AppSettingsStore {
                 changed = true
             }
             defaults.set(true, forKey: Self.migratedCCSwitchKey)
+        }
+
+        if !defaults.bool(forKey: Self.migratedDeepSeekHarnessKey) {
+            if !next.enabledAgentSources.contains(AgentSource.deepseekHarness.rawValue) {
+                next.enabledAgentSources.append(AgentSource.deepseekHarness.rawValue)
+                next.enabledAgentSources.sort()
+                changed = true
+            }
+            defaults.set(true, forKey: Self.migratedDeepSeekHarnessKey)
         }
 
         // Always merge missing catalog rows once per version so botcf rates land

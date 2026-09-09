@@ -81,6 +81,9 @@ final class AppModel: ObservableObject {
     private var menuBarActivityTracker = MenuBarAgentActivityTracker()
     private var timer: Timer?
     private var menuBarAnimTimer: Timer?
+    /// Dedicated cadence for network sampling + status-bar metric refresh,
+    /// independent of the general poll (which adaptively backs off when idle).
+    private var networkTimer: Timer?
     private var lastTick = Date()
     private weak var petWindowController: PetWindowController?
     /// Last offsets written to SQLite so polls only flush deltas.
@@ -214,6 +217,7 @@ final class AppModel: ObservableObject {
         historicalIdleStreak = 0
         consecutiveQuietPolls = 0
         startMenuBarAnimation()
+        rescheduleNetworkTimer(resetSampling: true)
         poll()
         rescheduleTimer()
         scheduleHistoricalScan(after: 1.5)
@@ -229,6 +233,8 @@ final class AppModel: ObservableObject {
         timer = nil
         menuBarAnimTimer?.invalidate()
         menuBarAnimTimer = nil
+        networkTimer?.invalidate()
+        networkTimer = nil
         historyWorkItem?.cancel()
         historyWorkItem = nil
         pendingSettingsCommit?.cancel()
@@ -249,6 +255,7 @@ final class AppModel: ObservableObject {
         var next = settings
         mutate(&next)
         next.pollIntervalSeconds = next.clampedPollIntervalSeconds
+        next.menuBarRefreshIntervalSeconds = next.clampedMenuBarRefreshIntervalSeconds
         next.menuBarCatIconScale = next.clampedCatIconScale
         next.menuBarTextScale = next.clampedTextScale
         next.menuBarVerticalOffset = next.clampedVerticalOffset
@@ -286,6 +293,13 @@ final class AppModel: ObservableObject {
     private func applySettingsSideEffects(from oldValue: AppSettings) {
         if oldValue.pollIntervalSeconds != settings.pollIntervalSeconds {
             rescheduleTimer()
+        }
+        if oldValue.menuBarRefreshIntervalSeconds != settings.menuBarRefreshIntervalSeconds {
+            rescheduleNetworkTimer(resetSampling: false)
+        }
+        if oldValue.showNetwork != settings.showNetwork
+            || oldValue.menuBarShowNetwork != settings.menuBarShowNetwork {
+            rescheduleNetworkTimer(resetSampling: true)
         }
         if oldValue.showDesktopPet != settings.showDesktopPet {
             applyDesktopPetVisibility()
@@ -329,6 +343,39 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Runs the menu-bar network sampler at the user's chosen refresh cadence.
+    /// Decoupled from `rescheduleTimer` so the status bar stays snappy even when
+    /// the heavier general poll backs off while the machine is idle.
+    private func rescheduleNetworkTimer(resetSampling: Bool) {
+        networkTimer?.invalidate()
+        networkTimer = nil
+        if resetSampling {
+            systemMetricsMonitor.resetNetworkSampling()
+        }
+        guard settings.showNetwork || settings.menuBarShowNetwork else { return }
+
+        let interval = settings.clampedMenuBarRefreshIntervalSeconds
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshNetworkMetrics() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        networkTimer = timer
+        // Paint an immediate sample so the readout appears without waiting a full interval.
+        refreshNetworkMetrics()
+    }
+
+    @MainActor
+    private func refreshNetworkMetrics() {
+        guard settings.showNetwork || settings.menuBarShowNetwork else { return }
+        let now = Date()
+        let rates = systemMetricsMonitor.sampleNetwork(now: now)
+        var metrics = liveMetrics.systemMetrics
+        metrics.networkInBytesPerSecond = rates.inbound
+        metrics.networkOutBytesPerSecond = rates.outbound
+        metrics.sampledAt = now
+        liveMetrics.setSystemMetrics(metrics)
+    }
+
     /// Stretch the poll timer while the machine is quiet so idle cost drops
     /// without making active token streaming feel laggy.
     private func effectivePollInterval(base: TimeInterval) -> TimeInterval {
@@ -366,7 +413,9 @@ final class AppModel: ObservableObject {
             cpu: s.showCPU || s.menuBarShowCPU,
             gpu: s.showGPU || s.menuBarShowGPU,
             memory: s.showMemory || s.menuBarShowMemory,
-            network: s.showNetwork || s.menuBarShowNetwork,
+            // Network is sampled by its own faster timer so the readout stays
+            // live even while the general poll adaptively backs off when idle.
+            network: false,
             thermal: s.showThermal || s.menuBarShowThermal
         )
     }

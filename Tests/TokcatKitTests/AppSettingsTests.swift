@@ -22,11 +22,13 @@ final class AppSettingsTests: XCTestCase {
         settings.desktopPetSkin = .procedural
         settings.customPetModelFileName = "demo.usdz"
         settings.pollIntervalSeconds = 7
+        settings.menuBarRefreshIntervalSeconds = 2.5
         store.save(settings)
 
         let loaded = store.load()
         XCTAssertEqual(loaded, settings)
         XCTAssertEqual(loaded.clampedPollIntervalSeconds, 7)
+        XCTAssertEqual(loaded.clampedMenuBarRefreshIntervalSeconds, 2.5)
         XCTAssertTrue(loaded.showsAnyMenuBarMetric)
         XCTAssertFalse(loaded.menuBarShowCatIcon)
         XCTAssertEqual(loaded.menuBarIconStyle, .lineCPU)
@@ -43,6 +45,49 @@ final class AppSettingsTests: XCTestCase {
 
         settings.pollIntervalSeconds = 99
         XCTAssertEqual(settings.clampedPollIntervalSeconds, 30)
+    }
+
+    func testMenuBarRefreshIntervalClamping() {
+        var settings = AppSettings.default
+        settings.menuBarRefreshIntervalSeconds = 0.1
+        XCTAssertEqual(settings.clampedMenuBarRefreshIntervalSeconds, AppSettings.menuBarRefreshRange.lowerBound)
+
+        settings.menuBarRefreshIntervalSeconds = 99
+        XCTAssertEqual(settings.clampedMenuBarRefreshIntervalSeconds, AppSettings.menuBarRefreshRange.upperBound)
+
+        XCTAssertEqual(
+            AppSettings.default.menuBarRefreshIntervalSeconds,
+            AppSettings.defaultMenuBarRefreshInterval,
+            accuracy: 0.0001
+        )
+    }
+
+    func testDeepSeekHarnessMigrationEnablesForExistingUsers() throws {
+        let suiteName = "tokcat.tests.dsh-migrate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Simulate a user whose saved source list predates DSH support.
+        var old = AppSettings.default
+        old.enabledAgentSources = [
+            AgentSource.ccSwitch.rawValue,
+            AgentSource.claudeCode.rawValue,
+            AgentSource.codexCLI.rawValue,
+            AgentSource.kimi.rawValue,
+            AgentSource.openClaw.rawValue,
+            AgentSource.workBuddy.rawValue
+        ]
+        XCTAssertFalse(old.enabledAgentSources.contains(AgentSource.deepseekHarness.rawValue))
+
+        let store = AppSettingsStore(defaults: defaults)
+        store.save(old)
+        defaults.set(false, forKey: AppSettingsStore.migratedDeepSeekHarnessKey)
+
+        let loaded = store.load()
+        XCTAssertTrue(
+            loaded.enabledAgentSources.contains(AgentSource.deepseekHarness.rawValue),
+            "迁移应把 DeepSeek Harness 纳入既有用户的启用列表"
+        )
     }
 
     func testCatIconScaleClamping() {
@@ -302,6 +347,30 @@ final class SystemMetricsMonitorTests: XCTestCase {
         XCTAssertTrue(second.gpuPercent.isFinite)
         XCTAssertGreaterThanOrEqual(second.gpuPercent, 0)
         XCTAssertLessThanOrEqual(second.gpuPercent, 100)
+    }
+
+    func testSampleNetworkReturnsSmoothedFiniteValues() {
+        let monitor = SystemMetricsMonitor()
+        monitor.resetNetworkSampling()
+        let first = monitor.sampleNetwork()
+        XCTAssertTrue(first.inbound.isFinite)
+        XCTAssertTrue(first.outbound.isFinite)
+
+        let second = monitor.sampleNetwork()
+        XCTAssertGreaterThanOrEqual(second.inbound, 0)
+        XCTAssertGreaterThanOrEqual(second.outbound, 0)
+    }
+
+    func testPollPreservesNetworkWhenSkipped() {
+        let monitor = SystemMetricsMonitor()
+        // First poll seeds the counter baseline; network starts at 0.
+        _ = monitor.poll(options: .all)
+        // A poll that skips network must preserve (0) instead of corrupting state.
+        let cpuOnly = monitor.poll(options: SystemMetricsSampleOptions(
+            cpu: true, gpu: false, memory: false, network: false, thermal: false
+        ))
+        XCTAssertEqual(cpuOnly.networkInBytesPerSecond, 0, accuracy: 0.0001)
+        XCTAssertEqual(cpuOnly.networkOutBytesPerSecond, 0, accuracy: 0.0001)
     }
 
 

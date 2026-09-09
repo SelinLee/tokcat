@@ -101,6 +101,22 @@ BUNDLEPLIST
 copy_resource_bundle "$MACOS_DIR/Tokcat_TokcatApp.bundle"
 copy_resource_bundle "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
 
+# App icon (.icns): generated from the bundled cat head so Finder/Dock show the
+# Tokcat icon instead of a generic app glyph. Single source of truth stays the
+# tokcat_head_menu.png in App/Resources.
+echo "==> Generating ${APP_NAME}.icns"
+ICON_SOURCE="$ROOT/App/Resources/tokcat_head_menu.png"
+ICONSET_DIR="$DIST_DIR/${APP_NAME}.iconset"
+ICNS_OUT="$RESOURCES_DIR/${APP_NAME}.icns"
+rm -rf "$ICONSET_DIR"
+mkdir -p "$ICONSET_DIR"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+  sips -z "$((size * 2))" "$((size * 2))" "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET_DIR" -o "$ICNS_OUT"
+rm -rf "$ICONSET_DIR"
+
 # PkgInfo
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 
@@ -137,7 +153,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
   <key>CFBundleIconFile</key>
-  <string></string>
+  <string>${APP_NAME}</string>
 </dict>
 </plist>
 PLIST

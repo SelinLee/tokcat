@@ -12,6 +12,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Robustly load the cat head icon from the app bundle
+        let bundle = Bundle.main
+        var icon: NSImage?
+
+        if let path = bundle.path(forResource: "tokcat_head_menu", ofType: "png") {
+            icon = NSImage(contentsOfFile: path)
+        } else if let namedIcon = NSImage(named: "tokcat_head_menu") {
+            icon = namedIcon
+        } else if let namedIcon = NSImage(named: "AppIcon") {
+            icon = namedIcon
+        }
+
+        if let icon = icon {
+            NSApp.applicationIconImage = icon
+        }
+
         let petWindow = PetWindowController(model: model)
         petWindowController = petWindow
         model.attachPetWindow(petWindow)

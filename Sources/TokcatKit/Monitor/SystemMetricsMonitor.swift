@@ -109,12 +109,17 @@ public struct SystemMetricsSampleOptions: Sendable, Equatable {
 public final class SystemMetricsMonitor {
     private var previousCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
     private var previousNetwork: (inbound: UInt64, outbound: UInt64, sampledAt: Date)?
+    /// EMA-smoothed network rates (bytes/second) so the menu bar doesn't jitter.
+    private var smoothedNetwork: (inbound: Double, outbound: Double)?
     private var previousGPUBusy: (value: Double, sampledAt: Date)?
     /// Last fully assembled snapshot so skipped probes keep stable values.
     private var lastMetrics = SystemMetrics()
     private var lastGPUSampleAt: Date = .distantPast
     /// GPU IOKit walk is relatively expensive; throttle even when enabled.
     public var gpuMinSampleInterval: TimeInterval = 5
+    /// Exponential moving average time constant (seconds) for network rates.
+    /// A larger value smooths harder; smaller reacts faster to bursts.
+    public var networkSmoothingTimeConstant: TimeInterval = 1.5
 
     public init() {}
 
@@ -155,9 +160,10 @@ public final class SystemMetricsMonitor {
             next.networkInBytesPerSecond = network.inbound
             next.networkOutBytesPerSecond = network.outbound
         } else {
-            next.networkInBytesPerSecond = 0
-            next.networkOutBytesPerSecond = 0
-            previousNetwork = nil
+            // Network is sampled on its own cadence via `sampleNetwork`; a poll
+            // that skips it must preserve the last value instead of zeroing it.
+            next.networkInBytesPerSecond = lastMetrics.networkInBytesPerSecond
+            next.networkOutBytesPerSecond = lastMetrics.networkOutBytesPerSecond
         }
         if options.thermal {
             next.thermalState = ThermalPressure(processInfoState: ProcessInfo.processInfo.thermalState)
@@ -315,14 +321,48 @@ public final class SystemMetricsMonitor {
 
         guard let previous = previousNetwork else { return (0, 0) }
         let elapsed = now.timeIntervalSince(previous.sampledAt)
-        guard elapsed > 0 else { return (0, 0) }
+        guard elapsed > 0 else { return smoothedNetwork ?? (0, 0) }
 
         let inboundDelta = Double(counters.inbound &- previous.inbound)
         let outboundDelta = Double(counters.outbound &- previous.outbound)
-        return (
-            max(0, inboundDelta / elapsed),
-            max(0, outboundDelta / elapsed)
-        )
+        let instantInbound = max(0, inboundDelta / elapsed)
+        let instantOutbound = max(0, outboundDelta / elapsed)
+
+        // Time-constant-corrected exponential moving average. `alpha` scales
+        // with elapsed so the smoothing feels identical whether samples arrive
+        // every ~1s (menu-bar refresh) or after a long adaptive idle backoff.
+        // This mirrors mature monitors (iStat Menus / MenuMeters / DockX):
+        // the readout glides instead of snapping on every counter delta.
+        let tau = max(0.1, networkSmoothingTimeConstant)
+        let alpha = 1.0 - exp(-elapsed / tau)
+
+        if let smoothed = smoothedNetwork {
+            smoothedNetwork = (
+                inbound: smoothed.inbound + alpha * (instantInbound - smoothed.inbound),
+                outbound: smoothed.outbound + alpha * (instantOutbound - smoothed.outbound)
+            )
+        } else {
+            smoothedNetwork = (instantInbound, instantOutbound)
+        }
+        return smoothedNetwork ?? (instantInbound, instantOutbound)
+    }
+
+    /// Samples only network throughput on its own cadence and returns the
+    /// smoothed rate. Keeps `lastMetrics` fresh so a later full poll preserves
+    /// the same value instead of zeroing it.
+    public func sampleNetwork(now: Date = Date()) -> (inbound: Double, outbound: Double) {
+        let rates = sampleNetworkRates(now: now)
+        lastMetrics.networkInBytesPerSecond = rates.inbound
+        lastMetrics.networkOutBytesPerSecond = rates.outbound
+        lastMetrics.sampledAt = now
+        return rates
+    }
+
+    /// Drops prior counter baselines and smoothing state (e.g. when network
+    /// monitoring is toggled off and back on) so stale samples don't leak in.
+    public func resetNetworkSampling() {
+        previousNetwork = nil
+        smoothedNetwork = nil
     }
 
     private func interfaceByteCounters() -> (inbound: UInt64, outbound: UInt64) {

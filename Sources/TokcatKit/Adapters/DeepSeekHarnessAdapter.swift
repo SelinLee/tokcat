@@ -3,11 +3,14 @@ import Foundation
 /// Parses DeepSeek Harness (DSH) token usage from its local state root.
 ///
 /// ## Web UI vs DSH Desktop
-/// The web UI (`npx @deepseek-ai/dsh web`) and the community desktop shell
-/// **DSH Desktop** both spawn the same harness runtime, so they share one local
-/// state root (`~/.dsh`, or `$DSH_HOME` when the launcher sets it). A single
-/// adapter therefore covers both surfaces — there is no data-level way to tell
-/// them apart, because session records do not carry a client flavor.
+/// The web UI (`npx @deepseek-ai/dsh web`) and the community Electron shell
+/// **DSH Desktop** (`deepseek-harness-desktop`, `dsh-plugin-desktop`) both spawn
+/// the same harness runtime, so they share one local state root (`~/.dsh`, or
+/// `$DSH_HOME` when the launcher sets it). Verified against DSH Desktop 2.0.5:
+/// its Electron `Application Support` directory only holds cache; the live
+/// session data stays in `~/.dsh`. A single adapter therefore covers both
+/// surfaces — there is no data-level way to tell them apart, because session
+/// records do not carry a client flavor.
 ///
 /// ## Why the projection cache
 /// Session transcripts are zstd-compressed (`session.jsonl.zstd`) and macOS

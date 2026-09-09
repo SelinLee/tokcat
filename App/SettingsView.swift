@@ -163,6 +163,21 @@ struct SettingsView: View {
             } footer: {
                 Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。")
             }
+
+            Section {
+                sliderRow(
+                    title: "状态栏刷新速度",
+                    valueText: String(format: "%.1f 秒", settings.clampedMenuBarRefreshIntervalSeconds),
+                    value: binding(\.menuBarRefreshIntervalSeconds),
+                    range: AppSettings.menuBarRefreshRange,
+                    step: 0.5,
+                    help: "控制菜单栏网速等指标的重采样与刷新频率。默认 1 秒；调小更跟手，调大更省电。"
+                )
+            } header: {
+                Text("刷新")
+            } footer: {
+                Text("网速以指数滑动平均平滑，采样独立于通用刷新间隔，空闲时也不会读数冻结。")
+            }
         }
         .formStyle(.grouped)
         .padding(8)
