@@ -32,9 +32,11 @@ enum MetricsFormatting {
     }
 
     /// Menu-bar strip height grows slightly with text scale / dual-line metrics.
+    /// Driven by settings only (not by live data) so the strip never resizes
+    /// when a dual-line readout appears mid-session.
     static func menuBarPointHeight(settings: AppSettings) -> CGFloat {
         let textScale = CGFloat(settings.clampedTextScale)
-        if settings.menuBarShowNetwork || settings.menuBarShowTokenRate {
+        if settings.menuBarShowNetwork || settings.menuBarShowTokenRate || settings.menuBarShowCodexUsage {
             // Two lines + small padding; keep a sensible minimum.
             return max(18, ceil(networkPointSize(textScale: Double(textScale)) * 2.35 + 2))
         }
@@ -155,6 +157,105 @@ enum MetricsFormatting {
     static let tokenRateWidthSampleTop = "tok 10.2k/s"
     static let tokenRateWidthSampleBottom = "tok 10.2k/s"
 
+    /// Codex usage cell: a centred label column (`5h` / `wk`) plus a centred
+    /// value column (`21%` / `--`). Both samples are static, so the reserved
+    /// width never depends on live data — in particular it does not change when
+    /// a window is missing and the value reads `--`.
+    static let codexUsageLabelWidthSample = "wk"
+    /// The **centring box** is sized to the widest ordinary reading (three
+    /// characters, `98%`) rather than to `100%`. A four-character box left the
+    /// short `--` sitting a whole half-box away from its own label, so the
+    /// Pro-plan shape (`5h --` over `wk 98%`) read as if `5h` belonged to the
+    /// network cell on its left. `100%` still fits: its centring offset simply
+    /// goes negative and eats into the cell's trailing pad.
+    static let codexUsageValueWidthSample = "99%"
+    /// Widest value that can actually occur. Only used to pin the cell's total
+    /// width to the legacy flat form, so the strip never resizes.
+    static let codexUsageValueReserveSample = "100%"
+
+    /// Columns of the Codex cell, in the units of the `font` passed in. Callers
+    /// pass either a scale-1 font (reserving the strip width) or the already
+    /// pixel-scaled drawing font, so every length here is font-relative and the
+    /// two passes agree without per-scale magic numbers.
+    struct CodexUsageColumns {
+        /// Separation from the previous metric cell, *on top of* the 4 pt gap
+        /// every cell already gets.
+        let inset: CGFloat
+        /// Label column (`5h` / `wk`).
+        let label: CGFloat
+        /// In-cell label → value gap.
+        let gap: CGFloat
+        /// Value centring box (`21%` / `--`).
+        let value: CGFloat
+        /// Slack that lets a rare `100%` overflow without leaving the cell.
+        let trailingPad: CGFloat
+
+        var cellWidth: CGFloat { inset + label + gap + value + trailingPad }
+        var labelStart: CGFloat { inset }
+        var valueStart: CGFloat { inset + label + gap }
+    }
+
+    /// Width the cell had while it was drawn as one flat `label value` string.
+    /// The new inner layout is built *inside* this width, so the strip keeps its
+    /// size and no neighbouring cell shifts by even a point.
+    private static func codexUsageLegacyWidth(font: NSFont) -> CGFloat {
+        max(
+            measure("\(codexUsageLabelWidthSample) \(codexUsageValueReserveSample)", font: font).width,
+            measure("\(CodexUsageWindowKind.fiveHour.shortLabel) \(codexUsageValueReserveSample)", font: font).width
+        )
+    }
+
+    /// Width reserved for the whole Codex cell.
+    static func codexUsageCellWidth(font: NSFont) -> CGFloat {
+        codexUsageColumns(font: font).cellWidth
+    }
+
+    /// The cell keeps an **asymmetric** spacing budget on purpose: the group sits
+    /// `inset` away from its neighbour while the label sits only `gap` away from
+    /// its own value. A uniform 4 pt gap everywhere made the in-cell distance the
+    /// larger of the two, which is what made `5h` look attached to the network
+    /// readout instead of to its `--`.
+    static func codexUsageColumns(font: NSFont) -> CodexUsageColumns {
+        let label = max(
+            measure(codexUsageLabelWidthSample, font: font).width,
+            measure(CodexUsageWindowKind.fiveHour.shortLabel, font: font).width
+        )
+        let value = measure(codexUsageValueWidthSample, font: font).width
+        let gap = max(1, font.pointSize * 0.25)
+        let inset = max(gap, font.pointSize * 0.50)
+        let trailingPad = max(0, codexUsageLegacyWidth(font: font) - inset - label - gap - value)
+        return CodexUsageColumns(
+            inset: inset,
+            label: max(label, 1),
+            gap: gap,
+            value: max(value, 1),
+            trailingPad: trailingPad
+        )
+    }
+
+    /// X offsets — relative to the cell's left edge — at which one Codex row's
+    /// label and value are drawn. Both are centred inside their column, so the
+    /// two rows of the cell share one label centre line and one value centre
+    /// line no matter how wide or short the strings are (`5h` / `21%` above
+    /// `wk` / `--`).
+    static func codexRowOffsets(
+        label: String,
+        value: String,
+        font: NSFont
+    ) -> (label: CGFloat, value: CGFloat) {
+        let columns = codexUsageColumns(font: font)
+        let labelWidth = measure(label, font: font).width
+        let valueWidth = measure(value, font: font).width
+        return (
+            // Centred inside its column, and never pushed past the column's own
+            // left edge (an over-wide label would then collide with nothing).
+            label: columns.labelStart + max(0, (columns.label - labelWidth) * 0.5),
+            // Deliberately *not* clamped: a 4-character `100%` overflows its
+            // 3-character box symmetrically, staying centred on the same line.
+            value: columns.valueStart + (columns.value - valueWidth) * 0.5
+        )
+    }
+
     static let percentWidthSample = "100%"
     static let thermalWidthSample = "偏高"
 
@@ -162,6 +263,11 @@ enum MetricsFormatting {
         case text(String, sample: String)
         case network(upload: String, download: String)
         case dualLine(top: String, bottom: String, topSample: String, bottomSample: String)
+        /// Codex usage: two rows sharing a centred label column and a centred
+        /// value column. Distinct from `dualLine` because that one right-aligns
+        /// each row independently — which visibly breaks as soon as the rows
+        /// differ in length (`5h --` above `wk 98%`, the Pro-plan shape).
+        case codexUsage(top: CodexMenuBarRow, bottom: CodexMenuBarRow)
 
         func pointWidth(primaryFont: NSFont, networkFont: NSFont) -> CGFloat {
             switch self {
@@ -176,6 +282,10 @@ enum MetricsFormatting {
                 let top = MetricsFormatting.measure(topSample, font: networkFont).width
                 let bottom = MetricsFormatting.measure(bottomSample, font: networkFont).width
                 return max(top, bottom)
+            case .codexUsage:
+                // The reservation is the flat-form width (unchanged from the
+                // previous layout); the columns are laid out inside it.
+                return MetricsFormatting.codexUsageCellWidth(font: networkFont)
             }
         }
     }
@@ -184,7 +294,8 @@ enum MetricsFormatting {
         settings: AppSettings,
         metrics: SystemMetrics,
         tokensPerSecond: Double = 0,
-        usdPerSecond: Double = 0
+        usdPerSecond: Double = 0,
+        codexUsage: CodexUsageSnapshot? = nil
     ) -> [MenuBarMetricCell] {
         var cells: [MenuBarMetricCell] = []
         if settings.menuBarShowCPU {
@@ -214,6 +325,11 @@ enum MetricsFormatting {
                 )
             )
         }
+        // Only rendered once a snapshot exists — no Codex login means no cell at all.
+        if settings.menuBarShowCodexUsage,
+           let rows = CodexUsageFormatting.menuBarRows(codexUsage) {
+            cells.append(.codexUsage(top: rows.top, bottom: rows.bottom))
+        }
         if settings.menuBarShowThermal {
             cells.append(.text(shortThermal(metrics.thermalState), sample: thermalWidthSample))
         }
@@ -238,7 +354,8 @@ enum MetricsFormatting {
     static func menuBarFixedWidth(
         settings: AppSettings,
         iconSize: CGFloat? = nil,
-        activity: MenuBarAgentActivity = .idle
+        activity: MenuBarAgentActivity = .idle,
+        codexUsage: CodexUsageSnapshot? = nil
     ) -> CGFloat {
         _ = activity // width is reserved even while sleeping so the item doesn't jump.
         let resolvedIcon: CGFloat
@@ -257,7 +374,7 @@ enum MetricsFormatting {
         let textScale = settings.clampedTextScale
         let primaryFont = menuBarFont(pointSize: primaryPointSize(textScale: textScale), scale: 1)
         let networkFont = menuBarFont(pointSize: networkPointSize(textScale: textScale), scale: 1)
-        let cells = menuBarMetricCells(settings: settings, metrics: SystemMetrics())
+        let cells = menuBarMetricCells(settings: settings, metrics: SystemMetrics(), codexUsage: codexUsage)
         let gap: CGFloat = 4
 
         var textWidth: CGFloat = 0

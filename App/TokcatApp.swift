@@ -34,17 +34,28 @@ private struct MenuBarLabelView: View {
             tokensPerSecond: live.tokensPerSecond,
             usdPerSecond: live.usdPerSecond,
             activity: live.menuBarActivity,
-            hatID: model.activeBonuses.menuBarHatID
+            hatID: model.activeBonuses.menuBarHatID,
+            codexUsage: live.codexUsage
         ))
         .renderingMode(.template)
         // Prevent SwiftUI from rescaling and clipping the pre-sized image.
         .frame(
             width: MetricsFormatting.menuBarFixedWidth(
                 settings: model.settings,
-                activity: live.menuBarActivity
+                activity: live.menuBarActivity,
+                codexUsage: live.codexUsage
             ),
             height: MetricsFormatting.menuBarPointHeight(settings: model.settings)
         )
-        .help(live.menuBarActivity.mode.title)
+        .help(menuBarTooltip)
+    }
+
+    /// Hover text: activity mode, plus Codex remaining + reset countdown when shown.
+    private var menuBarTooltip: String {
+        var lines = [live.menuBarActivity.mode.title]
+        if model.settings.menuBarShowCodexUsage {
+            lines.append(CodexUsageFormatting.tooltip(live.codexUsage))
+        }
+        return lines.joined(separator: "\n")
     }
 }

@@ -10,9 +10,16 @@ final class LiveMetricsStore: ObservableObject {
     @Published private(set) var tokensPerSecond: Double = 0
     @Published private(set) var usdPerSecond: Double = 0
     @Published private(set) var menuBarActivity: MenuBarAgentActivity = .idle
+    /// Codex 5h / weekly remaining. `nil` when the feature is off or no local
+    /// Codex login exists — the menu bar cell is hidden in that case.
+    @Published private(set) var codexUsage: CodexUsageSnapshot?
 
     func setSystemMetrics(_ value: SystemMetrics) {
         if systemMetrics != value { systemMetrics = value }
+    }
+
+    func setCodexUsage(_ value: CodexUsageSnapshot?) {
+        if codexUsage != value { codexUsage = value }
     }
 
     func setRates(tokensPerSecond: Double, usdPerSecond: Double) {

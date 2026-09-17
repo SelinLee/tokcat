@@ -28,6 +28,10 @@ struct MenuBarContentView: View {
                 tokenSummaryRow
             }
 
+            if model.settings.showCodexUsageSummary, live.codexUsage != nil {
+                codexUsageBlock
+            }
+
             if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty {
                 recentEventsBlock
             }
@@ -230,6 +234,104 @@ struct MenuBarContentView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
         .accessibilityValue(value)
+    }
+
+    // MARK: - Codex usage (5h / weekly remaining)
+
+    /// Mirrors the Codex usage readout: remaining percent per window plus the
+    /// reset countdown. Falls back to the last error instead of showing 0%.
+    private var codexUsageBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Codex 用量")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if let plan = live.codexUsage?.planType, !plan.isEmpty {
+                    Text(plan.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.14), in: Capsule())
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    model.refreshCodexUsageNow()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("立即刷新 Codex 用量")
+                .accessibilityLabel("刷新 Codex 用量")
+            }
+
+            if let usage = live.codexUsage, usage.hasUsage {
+                VStack(spacing: 5) {
+                    codexWindowRow(kind: .fiveHour, usage: usage)
+                    codexWindowRow(kind: .weekly, usage: usage)
+                }
+            } else {
+                Text(live.codexUsage?.errorMessage ?? "暂无 Codex 用量数据")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Codex 用量不可用")
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// One window: label · remaining bar · percent, with the reset countdown below.
+    private func codexWindowRow(kind: CodexUsageWindowKind, usage: CodexUsageSnapshot) -> some View {
+        let window = usage.window(kind)
+        let remaining = window?.remainingPercent ?? 0
+        let tint = codexRemainingTint(remaining)
+        let detail = window == nil
+            ? "服务端未返回该用量窗口"
+            : CodexUsageFormatting.resetLine(usage, kind: kind)
+
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(kind.title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .leading)
+
+                ProgressView(value: Double(remaining) / 100)
+                    .progressViewStyle(.linear)
+                    .tint(tint)
+                    .frame(height: 4)
+
+                Text(window == nil ? "--" : "\(remaining)%")
+                    .font(.system(size: 10, weight: .bold).monospacedDigit())
+                    .foregroundStyle(tint)
+                    .frame(width: 34, alignment: .trailing)
+            }
+
+            Text(detail)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.leading, 50)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Codex \(kind.title)剩余")
+        .accessibilityValue(window == nil ? "无数据" : "\(remaining)%，\(detail)")
+    }
+
+    /// Remaining-percent severity. This is a quota, not a price, so it uses a
+    /// simple traffic-light ramp rather than the app's token/cost palette.
+    private func codexRemainingTint(_ remaining: Int) -> Color {
+        if remaining < 20 { return .red }
+        if remaining < 50 { return .orange }
+        return .green
     }
 
     // MARK: - Recent events (2 rows)

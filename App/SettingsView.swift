@@ -145,6 +145,7 @@ struct SettingsView: View {
                 Toggle("内存 %", isOn: binding(\.menuBarShowMemory))
                 Toggle("网速（上↑ / 下↓，kb/s·mb/s）", isOn: binding(\.menuBarShowNetwork))
                 Toggle("Token 速率（tok 10.2k/s · $ 0.04/m）", isOn: binding(\.menuBarShowTokenRate))
+                Toggle("Codex 剩余用量（5h 21% · wk 20%）", isOn: binding(\.menuBarShowCodexUsage))
                 Toggle("温度压力", isOn: binding(\.menuBarShowThermal))
 
                 LabeledContent("预览") {
@@ -154,14 +155,15 @@ struct SettingsView: View {
                         tokensPerSecond: model.tokensPerSecond,
                         usdPerSecond: model.usdPerSecond,
                         activity: model.menuBarActivity,
-            hatID: nil
+                        hatID: nil,
+                        codexUsage: model.codexUsage
                     ))
                     .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
                 }
             } header: {
                 Text("图标旁指标")
             } footer: {
-                Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。")
+                Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。Codex 用量需要本机存在 ~/.codex/auth.json。")
             }
 
             Section {
@@ -206,6 +208,8 @@ struct SettingsView: View {
                 Text("仅展示 token 与成本相关内容，不混入工具进程 CPU。")
             }
 
+            codexUsageSection
+
             Section {
                 Toggle("显示宠物心情 / 饥饿", isOn: binding(\.showPetSummary))
             } header: {
@@ -214,6 +218,65 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(8)
+    }
+
+    /// Codex rate-limit readout. Reads the local Codex login and, only then,
+    /// queries the ChatGPT usage endpoint — so the footer spells that out.
+    private var codexUsageSection: some View {
+        Section {
+            Toggle("显示 Codex 剩余用量（5 小时 / 周）", isOn: binding(\.showCodexUsageSummary))
+
+            if let usage = model.codexUsage {
+                if usage.hasUsage {
+                    ForEach([CodexUsageWindowKind.fiveHour, .weekly], id: \.rawValue) { kind in
+                        LabeledContent("\(kind.title)剩余") {
+                            HStack(spacing: 8) {
+                                Text(CodexUsageFormatting.remainingPercent(usage, kind: kind))
+                                    .font(.body.weight(.semibold).monospacedDigit())
+                                Text(CodexUsageFormatting.resetLine(usage, kind: kind))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } else {
+                    Text(usage.errorMessage ?? "暂无数据")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("未检测到 Codex 登录信息")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("状态") {
+                HStack(spacing: 8) {
+                    Text(codexUsageStatusLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("刷新") {
+                        model.refreshCodexUsageNow()
+                    }
+                    .controlSize(.small)
+                }
+            }
+        } header: {
+            Text("Codex 用量")
+        } footer: {
+            Text("读取 ~/.codex/auth.json（或 $CODEX_HOME/auth.json）中的登录令牌，并访问 chatgpt.com 的用量接口获取 5 小时与周窗口剩余额度。这是本应用唯一的联网功能；未安装 / 未登录 Codex 时不会发起任何请求。")
+        }
+    }
+
+    private var codexUsageStatusLine: String {
+        guard let usage = model.codexUsage else {
+            return model.settings.showCodexUsageSummary ? "等待首次读取" : "已关闭"
+        }
+        guard let fetchedAt = usage.fetchedAt else { return "上次读取失败" }
+        let seconds = Date().timeIntervalSince(fetchedAt)
+        if seconds < 60 { return "刚刚更新" }
+        return "\(Int(seconds / 60)) 分钟前更新"
     }
 
     private var petTab: some View {

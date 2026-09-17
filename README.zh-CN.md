@@ -7,7 +7,7 @@
 <p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 饥饿 · 开心 · 招手 · 休息</sub></p>
 
 **在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用，并提供本地统计。**  
-可选桌面像素宠物由同一批用量喂养。默认离线：不联网、不上传。
+可选桌面像素宠物由同一批用量喂养。默认全程本地运行，唯一联网项是可选的 Codex 额度显示。
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -113,8 +113,17 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 ### 1. 实时监控（菜单栏）
 - **两种图标风格**：代码绘制表情脸（带状态浮动）或 AI 生成猫头肖像（template 自适应深浅模式）
 - 状态浮动图标：`zzz`（睡觉）· `💡+蒸汽`（工作中）· `✓`（完成）
-- 可选旁路：CPU、GPU、内存、网速、温度压力、**Token 速率**、**费用速率**  
-- 下拉：Agent + 模型、速度、今日 / 累计费用、最近事件、宠物状态  
+- 可选旁路：CPU、GPU、内存、网速、温度压力、**Token 速率**、**费用速率**、**Codex 剩余额度**  
+- 下拉：Agent + 模型、速度、今日 / 累计费用、Codex 剩余额度、最近事件、宠物状态  
+
+### 1b. Codex 剩余用量（5 小时 / 周窗口）
+- 读取本机 Codex 登录信息（`$CODEX_HOME/auth.json` → `~/.codex/auth.json` → `./.codex/auth.json`）  
+- 调用 ChatGPT 用量接口，按窗口显示**剩余**百分比：
+  菜单栏双行单元格 `5h 21%` / `wk 20%`，下拉面板另带进度条与重置倒计时  
+- 本机未登录 Codex 时完全隐藏——不占位、不发请求  
+- 每 5 分钟刷新一次；鼠标悬停菜单栏图标可见精确重置时间  
+- 可在 **设置 → 菜单栏 / 指标** 中关闭  
+- 数据口径参考 [HCLonely/TrafficMonitor_Codex_Plugin](https://github.com/HCLonely/TrafficMonitor_Codex_Plugin)  
 
 ### 2. 统计与费率（主界面）
 - 日 / 周 / 月；分组 = 中转站 / 模型 / Agent；Tokens 或费用  
@@ -131,9 +140,9 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 - 音效默认关闭  
 
 ### 4. 隐私
-- **应用本身不做网络请求**  
-- 只读本机日志与系统指标  
-- 无账号、无云同步、无 usage 上传  
+- **唯一的联网功能是可选的 Codex 额度显示**，且仅在本机存在 Codex 登录信息时才触发  
+- 其余全部本地完成：只读日志与系统指标  
+- 无账号、无云同步、不上传用量  
 
 ---
 

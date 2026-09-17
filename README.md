@@ -6,8 +6,8 @@
 
 <p align="center"><sub>Tokcat V3 — idle · working · hungry · happy · wave · rest</sub></p>
 
-**Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-only, no upload.**  
-Optional desktop pixel pet fed by the same usage.
+**Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-first, no upload.**  
+Optional desktop pixel pet fed by the same usage, plus an optional Codex quota readout.
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -113,8 +113,17 @@ Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
 ### 1. Live monitoring (menu bar)
 - **Two icon styles**: code-drawn expressive face (with state glyphs) or AI-generated cat-head portrait (template-friendly, auto light/dark)
 - Status glyphs float beside the icon: `zzz` (sleeping) · `💡+steam` (working) · `✓` (completed)
-- Optional metrics: CPU, GPU, memory, network, thermal, **token rate**, **spend rate**  
-- Dropdown: agent + model, speed, today & total cost, recent events, pet vitals  
+- Optional metrics: CPU, GPU, memory, network, thermal, **token rate**, **spend rate**, **Codex quota**  
+- Dropdown: agent + model, speed, today & total cost, Codex quota, recent events, pet vitals  
+
+### 1b. Codex quota (5-hour / weekly remaining)
+- Reads the local Codex login (`$CODEX_HOME/auth.json` → `~/.codex/auth.json` → `./.codex/auth.json`)  
+- Queries the ChatGPT usage endpoint and shows **remaining** percent for both windows:
+  menu bar cell `5h 21%` / `wk 20%`, plus a panel block with bars and reset countdowns  
+- Hidden entirely — no cell, no request — when Codex was never logged in on this Mac  
+- Refreshes every 5 minutes; hover the menu bar icon for the exact reset time  
+- Toggle off in **Settings → Menu bar / Metrics**  
+- Credit: payload contract follows [HCLonely/TrafficMonitor_Codex_Plugin](https://github.com/HCLonely/TrafficMonitor_Codex_Plugin)  
 
 ### 2. Stats & rates (main window)
 - Day / week / month; group by provider / model / agent; tokens ↔ cost  
@@ -129,8 +138,8 @@ Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
 - SFX **off by default**  
 
 ### 4. Privacy
-- **The app itself makes no network requests**  
-- Read-only local logs & system metrics  
+- **Only one optional network feature**: the Codex quota readout, and only when a local Codex login exists
+- Everything else is local: read-only logs & system metrics  
 - No account, no cloud sync, no usage upload  
 
 ---
@@ -200,6 +209,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 |------|------|
 | `Sources/TokcatKit/Adapters/` | Per-agent log parsing & provider attribution |
 | `Sources/TokcatKit/Economy/` | Pricing, nutrition tiers, **UsageStats** |
+| `Sources/TokcatKit/Monitor/CodexUsageMonitor.swift` | Optional Codex 5h/weekly quota fetch (local `auth.json` → ChatGPT usage endpoint) |
 | `Sources/TokcatKit/Persistence/` | Local SQLite |
 | `App/` | Menu bar, main window, floating pet |
 | `App/PixelPet/` | Pixel animation |

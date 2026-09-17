@@ -146,14 +146,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showGPU: Bool
 
     /// Metrics shown to the right of the menu bar cat icon.
-    /// Order is fixed: CPU → GPU → Memory → Network → TokenRate → Thermal.
+    /// Order is fixed: CPU → GPU → Memory → Network → TokenRate → CodexUsage → Thermal.
     public var menuBarShowCPU: Bool
     public var menuBarShowMemory: Bool
     public var menuBarShowNetwork: Bool
     /// Dual-line token throughput + spend rate (`tok 10.2k/s` over `$ 0.04/m`).
     public var menuBarShowTokenRate: Bool
+    /// Dual-line Codex rate-limit remaining (`5h 21%` over `wk 20%`).
+    /// The only feature that contacts the network, and only when a local
+    /// Codex `auth.json` exists — otherwise no cell is drawn and no request is made.
+    public var menuBarShowCodexUsage: Bool
     public var menuBarShowThermal: Bool
     public var menuBarShowGPU: Bool
+
+    /// Codex 5-hour / weekly remaining block in the menu bar dropdown panel.
+    public var showCodexUsageSummary: Bool
 
     /// Whether the menu bar glyph itself is drawn.
     public var menuBarShowCatIcon: Bool
@@ -238,6 +245,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowMemory: Bool = false,
         menuBarShowNetwork: Bool = false,
         menuBarShowTokenRate: Bool = true,
+        menuBarShowCodexUsage: Bool = true,
         menuBarShowThermal: Bool = false,
         menuBarShowGPU: Bool = false,
         menuBarShowCatIcon: Bool = true,
@@ -247,6 +255,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarVerticalOffset: Double = AppSettings.defaultVerticalOffset,
         showTokenSummary: Bool = true,
         showRecentTokenEvents: Bool = true,
+        showCodexUsageSummary: Bool = true,
         showPetSummary: Bool = true,
         showDesktopPet: Bool = true,
         enablePetSoundEffects: Bool = false,
@@ -269,6 +278,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarShowMemory = menuBarShowMemory
         self.menuBarShowNetwork = menuBarShowNetwork
         self.menuBarShowTokenRate = menuBarShowTokenRate
+        self.menuBarShowCodexUsage = menuBarShowCodexUsage
         self.menuBarShowThermal = menuBarShowThermal
         self.menuBarShowGPU = menuBarShowGPU
         self.menuBarShowCatIcon = menuBarShowCatIcon
@@ -278,6 +288,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarVerticalOffset = menuBarVerticalOffset
         self.showTokenSummary = showTokenSummary
         self.showRecentTokenEvents = showRecentTokenEvents
+        self.showCodexUsageSummary = showCodexUsageSummary
         self.showPetSummary = showPetSummary
         self.showDesktopPet = showDesktopPet
         self.enablePetSoundEffects = enablePetSoundEffects
@@ -381,7 +392,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     public var showsAnyMenuBarMetric: Bool {
-        menuBarShowCPU || menuBarShowGPU || menuBarShowMemory || menuBarShowNetwork || menuBarShowTokenRate || menuBarShowThermal
+        menuBarShowCPU || menuBarShowGPU || menuBarShowMemory || menuBarShowNetwork
+            || menuBarShowTokenRate || menuBarShowCodexUsage || menuBarShowThermal
     }
 
     public var showsAnyMenuBarContent: Bool {
@@ -393,8 +405,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case showCPU, showMemory, showNetwork, showThermal, showGPU
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
+        case menuBarShowCodexUsage
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
-        case showTokenSummary, showRecentTokenEvents, showPetSummary, showDesktopPet, enablePetSoundEffects, desktopPetSkin, customPetModelFileName, desktopPetWindowX, desktopPetWindowY
+        case showTokenSummary, showRecentTokenEvents, showCodexUsageSummary, showPetSummary, showDesktopPet, enablePetSoundEffects, desktopPetSkin, customPetModelFileName, desktopPetWindowX, desktopPetWindowY
         case pollIntervalSeconds, menuBarRefreshIntervalSeconds
         case enabledAgentSources, pricingEntries, fallbackPricing
         case menuBarAccessory // legacy
@@ -409,6 +422,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showGPU = try container.decodeIfPresent(Bool.self, forKey: .showGPU) ?? true
         showTokenSummary = try container.decodeIfPresent(Bool.self, forKey: .showTokenSummary) ?? true
         showRecentTokenEvents = try container.decodeIfPresent(Bool.self, forKey: .showRecentTokenEvents) ?? true
+        showCodexUsageSummary = try container.decodeIfPresent(Bool.self, forKey: .showCodexUsageSummary) ?? true
         showPetSummary = try container.decodeIfPresent(Bool.self, forKey: .showPetSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
         enablePetSoundEffects = try container.decodeIfPresent(Bool.self, forKey: .enablePetSoundEffects) ?? false
@@ -461,6 +475,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowNetwork = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowNetwork) ?? false
             // New metric defaults on for upgrades so users immediately see tok/$ rates.
             menuBarShowTokenRate = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowTokenRate) ?? true
+            // Codex usage also defaults on; it stays invisible unless Codex is logged in locally.
+            menuBarShowCodexUsage = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCodexUsage) ?? true
             menuBarShowThermal = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowThermal) ?? false
             menuBarShowGPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowGPU) ?? false
         } else if let legacy = try container.decodeIfPresent(String.self, forKey: .menuBarAccessory) {
@@ -468,6 +484,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowMemory = legacy == "memory"
             menuBarShowNetwork = legacy == "network"
             menuBarShowTokenRate = false
+            menuBarShowCodexUsage = true
             menuBarShowThermal = legacy == "thermal"
             menuBarShowGPU = false
         } else {
@@ -475,6 +492,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowMemory = false
             menuBarShowNetwork = false
             menuBarShowTokenRate = true
+            menuBarShowCodexUsage = true
             menuBarShowThermal = false
             menuBarShowGPU = false
         }
@@ -491,6 +509,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(menuBarShowMemory, forKey: .menuBarShowMemory)
         try container.encode(menuBarShowNetwork, forKey: .menuBarShowNetwork)
         try container.encode(menuBarShowTokenRate, forKey: .menuBarShowTokenRate)
+        try container.encode(menuBarShowCodexUsage, forKey: .menuBarShowCodexUsage)
         try container.encode(menuBarShowThermal, forKey: .menuBarShowThermal)
         try container.encode(menuBarShowGPU, forKey: .menuBarShowGPU)
         try container.encode(menuBarShowCatIcon, forKey: .menuBarShowCatIcon)
@@ -501,6 +520,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(menuBarVerticalOffset, forKey: .menuBarVerticalOffset)
         try container.encode(showTokenSummary, forKey: .showTokenSummary)
         try container.encode(showRecentTokenEvents, forKey: .showRecentTokenEvents)
+        try container.encode(showCodexUsageSummary, forKey: .showCodexUsageSummary)
         try container.encode(showPetSummary, forKey: .showPetSummary)
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
         try container.encode(enablePetSoundEffects, forKey: .enablePetSoundEffects)
