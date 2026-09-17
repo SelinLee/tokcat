@@ -9,7 +9,7 @@ APP_NAME="Tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.4.0}"
+VERSION="${TOKCAT_VERSION:-0.4.3}"
 BUILD_NUMBER="${TOKCAT_BUILD:-1}"
 
 DIST_DIR="$ROOT/dist"
@@ -237,7 +237,9 @@ Tokcat ${VERSION} — macOS 菜单栏用量监控 + 像素宠物
 - 当前为 ad-hoc 签名，未做 Apple Developer ID 公证
 - macOS 13+，架构以本机构建为准（通常 Apple Silicon）
 - 数据仅存本地：~/Library/Application Support/TokenCat/
-- 应用本身不联网、不上传
+- 唯一联网项：可选的 Codex 额度显示（读取本机 ~/.codex/auth.json 的
+  access_token 请求 chatgpt.com，仅用于展示 5 小时 / 周剩余额度）；关闭该
+  开关后应用完全离线
 
 卸载：
 - 删除 Tokcat.app
