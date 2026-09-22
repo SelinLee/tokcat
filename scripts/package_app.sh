@@ -212,15 +212,9 @@ rm -rf "$DMG_STAGE"
 # SHA256 (zip + dmg)
 SHA_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.sha256"
 if command -v shasum >/dev/null 2>&1; then
-  {
-    shasum -a 256 "$ZIP_PATH"
-    shasum -a 256 "$DMG_PATH"
-  } | tee "$SHA_PATH"
+  (cd "$DIST_DIR" && shasum -a 256 "$(basename "$ZIP_PATH")" "$(basename "$DMG_PATH")") | tee "$SHA_PATH"
 elif command -v sha256sum >/dev/null 2>&1; then
-  {
-    sha256sum "$ZIP_PATH"
-    sha256sum "$DMG_PATH"
-  } | tee "$SHA_PATH"
+  (cd "$DIST_DIR" && sha256sum "$(basename "$ZIP_PATH")" "$(basename "$DMG_PATH")") | tee "$SHA_PATH"
 fi
 
 cat > "$DIST_DIR/INSTALL.txt" <<TXT
