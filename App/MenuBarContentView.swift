@@ -12,31 +12,27 @@ struct MenuBarContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        MenuBarPanelLayout {
             header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    AgentSessionsPanel(model: model, live: live)
-                    if model.settings.showCodexUsageSummary, live.codexUsage != nil {
-                        codexUsageBlock
-                    }
-                    if model.settings.showTokenSummary { tokenSummaryRow }
-                    DisclosureGroup("更多监控信息") {
-                        VStack(spacing: 10) {
-                            if showsAnySystemMetric { systemMetricsGrid }
-                            if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty { recentEventsBlock }
-                            if model.settings.showPetSummary { petStatusRow }
-                        }
-                    }
-                    .font(.caption)
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
+                AgentSessionsPanel(model: model, live: live)
+                if model.settings.showCodexUsageSummary, live.codexUsage != nil {
+                    codexUsageBlock
                 }
+                if model.settings.showTokenSummary { tokenSummaryRow }
+                DisclosureGroup("更多监控信息") {
+                    VStack(spacing: 10) {
+                        if showsAnySystemMetric { systemMetricsGrid }
+                        if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty { recentEventsBlock }
+                        if model.settings.showPetSummary { petStatusRow }
+                    }
+                }
+                .font(.caption)
             }
-            .frame(maxHeight: 500)
-            Divider().opacity(0.55)
+        } footer: {
             actionBar
         }
-        .padding(12)
-        .frame(width: 360)
     }
 
     // MARK: - Header
@@ -619,5 +615,44 @@ struct MenuBarContentView: View {
             return String(format: "%.2fk", Double(value) / 1_000)
         }
         return "\(value)"
+    }
+}
+
+/// MenuBarExtra asks for the panel's intrinsic size. A ScrollView with only a
+/// maximum height can report zero, leaving just the header and action bar.
+/// Measure the unbounded content and give the viewport an explicit bounded height.
+struct MenuBarPanelLayout<Header: View, Content: View, Footer: View>: View {
+    @ViewBuilder var header: Header
+    @ViewBuilder var content: Content
+    @ViewBuilder var footer: Footer
+    @State private var contentHeight: CGFloat = 240
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: MenuBarContentHeightKey.self, value: geometry.size.height)
+                    })
+            }
+            .frame(height: min(500, max(1, contentHeight)))
+            .onPreferenceChange(MenuBarContentHeightKey.self) { height in
+                if height.isFinite && height > 0 { contentHeight = ceil(height) }
+            }
+            Divider().opacity(0.55)
+            footer
+        }
+        .padding(12)
+        .frame(width: 360)
+    }
+}
+
+private struct MenuBarContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

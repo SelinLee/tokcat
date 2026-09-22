@@ -46,44 +46,66 @@ enum AgentSessionPreview {
             let icon = MenuBarStatusRenderer.image(settings: settings,
                 metrics: SystemMetrics(cpuPercent: 24, networkInBytesPerSecond: 1_250_000, networkOutBytesPerSecond: 32_768),
                 tokensPerSecond: 42, usdPerSecond: 0.001)
-            var strip = icon
-            appearance.performAsCurrentDrawingAppearance {
-                strip = SessionMenuBarRenderer.image(icon: icon, sessions: all, phase: 1, reduceMotion: true, now: now,
-                    textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: settings))
-            }
-            let content = VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("菜单栏").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Image(nsImage: strip).renderingMode(.original)
-                }
-                Divider()
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Tokcat").font(.headline)
-                        Text("AI 工作监控").font(.caption).foregroundStyle(.secondary)
+            for count in [0, 1, 4, 20] {
+                let previewTasks = count == 1 ? [tasks[2]] : (0..<count).map { index -> AgentSession in
+                    var value = tasks[index % tasks.count]
+                    // AgentSession IDs derive from session/source. Rebuild additional rows.
+                    if index >= tasks.count {
+                        value = session("demo-\(index)", "演示项目 \(index + 1)", .codexCLI, .activity, 30)
                     }
-                    Spacer()
-                    Text("待处理 1").font(.caption.weight(.medium))
+                    return value
                 }
-                AgentSessionList(sessions: tasks, markRead: { _ in })
-                Divider()
-                HStack {
-                    Text("Codex 额度").font(.caption)
-                    Spacer()
-                    Text("剩余 24% · 1小时12分后重置").font(.caption).foregroundStyle(.secondary)
+                var strip = icon
+                appearance.performAsCurrentDrawingAppearance {
+                    strip = SessionMenuBarRenderer.image(icon: icon, sessions: previewTasks, phase: 1,
+                        reduceMotion: true, now: now,
+                        textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: settings))
+                }
+                let panel = MenuBarPanelLayout {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("菜单栏").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Image(nsImage: strip).renderingMode(.original)
+                        }
+                        Divider()
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Tokcat").font(.headline)
+                                Text("AI 工作监控").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(count == 1 ? "完成 1" : "任务 \(count)").font(.caption.weight(.medium))
+                        }
+                    }
+                } content: {
+                    VStack(alignment: .leading, spacing: 12) {
+                        AgentSessionList(sessions: previewTasks, markRead: { _ in })
+                        HStack {
+                            Text("Codex 额度").font(.caption)
+                            Spacer()
+                            Text("剩余 24%").font(.caption)
+                        }
+                        DisclosureGroup("更多监控信息") { Text("系统与用量监控") }.font(.caption)
+                    }
+                } footer: {
+                    HStack {
+                        Button("主界面") { }
+                        Button("宠物") { }
+                        Button("设置") { }
+                        Spacer()
+                        Button("退出") { }
+                    }
+                }
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, dark ? .dark : .light)
+                // Use the same self-sizing host as a real menu window, not ImageRenderer.
+                let panelURL = directory.appendingPathComponent("menu-panel-\(count)-\(name).png")
+                try snapshotPanel(panel, to: panelURL)
+                if count == 4 {
+                    try Data(contentsOf: panelURL).write(to: directory.appendingPathComponent("ai-monitor-\(name).png"))
                 }
             }
-            .padding(16).frame(width: max(360, strip.size.width + 90))
-            .background(Color(nsColor: .windowBackgroundColor))
-            .environment(\.colorScheme, dark ? .dark : .light)
-            let renderer = ImageRenderer(content: content)
-            renderer.scale = 2
-            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            try png.write(to: directory.appendingPathComponent("ai-monitor-\(name).png"))
 
             let samples = [1, 2, 3, 4, 6, 7].map { count -> (Int, NSImage) in
                 var sample = icon
@@ -112,5 +134,31 @@ enum AgentSessionPreview {
             try spacingPNG.write(to: directory.appendingPathComponent("task-dot-spacing-\(name).png"))
         }
     }
+    private static func snapshotPanel<V: View>(_ content: V, to url: URL) throws {
+        let hosting = NSHostingView(rootView: content)
+        // Regression check: a menu asks for the intrinsic size without a height proposal.
+        let initial = hosting.fittingSize
+        guard initial.height >= 240 else { throw CocoaError(.validationMissingMandatoryProperty) }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: initial),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.orderBack(nil)
+        defer { window.close() }
+        for _ in 0..<3 {
+            hosting.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            window.setContentSize(hosting.fittingSize)
+        }
+        hosting.layoutSubtreeIfNeeded()
+        guard hosting.fittingSize.height > 120, hosting.fittingSize.height < 720,
+              let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            throw CocoaError(.validationMissingMandatoryProperty)
+        }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+        try png.write(to: url)
+    }
+
 }
 #endif
