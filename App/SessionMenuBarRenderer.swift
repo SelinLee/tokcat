@@ -46,15 +46,15 @@ enum SessionMenuBarRenderer {
                 for (index, session) in tasks.prefix(6).enumerated() {
                     let state = session.displayState(at: now)
                     // Alternate every 0.8 seconds on the existing menu-bar timer.
-                    // Reduced motion keeps the approval reminder red without flashing.
-                    let approvalIsRed = state == .waitingForApproval
+                    // Reduced motion keeps reminders for human action red without flashing.
+                    let waitingIsRed = state.isWaiting
                         && (reduceMotion || phase.truncatingRemainder(dividingBy: 1.6) >= 0.8)
                     let color: NSColor
                     switch state {
                     case .running: color = SessionPresentation.attentionColor
                     case .completed: color = .systemGreen
-                    case .waitingForInput: color = SessionPresentation.attentionColor
-                    case .waitingForApproval: color = approvalIsRed ? .systemRed : SessionPresentation.attentionColor
+                    case .waitingForInput, .waitingForApproval:
+                        color = waitingIsRed ? .systemRed : SessionPresentation.attentionColor
                     case .failed: color = .systemRed
                     case .unknown, .interrupted: color = .secondaryLabelColor
                     }
@@ -70,7 +70,7 @@ enum SessionMenuBarRenderer {
                         if state == .running || state.isWaiting {
                             // Keep a crisp silhouette even at the dimmest point of the pulse.
                             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                            (dark || approvalIsRed ? color : NSColor(srgbRed: 0.57, green: 0.42, blue: 0, alpha: 1)).setStroke()
+                            (dark || waitingIsRed ? color : NSColor(srgbRed: 0.57, green: 0.42, blue: 0, alpha: 1)).setStroke()
                             dot.lineWidth = 0.45
                             dot.stroke()
                         }

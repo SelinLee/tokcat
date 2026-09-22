@@ -135,19 +135,20 @@ enum AgentSessionPreview {
                   let spacingPNG = spacingBitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
             try spacingPNG.write(to: directory.appendingPathComponent("task-dot-spacing-\(name).png"))
 
-            let approvalSamples = [("等待批准 · 黄色", 0.0, false), ("等待批准 · 红色", 0.8, false),
+            let approvalSamples = [("等待操作 · 黄色", 0.0, false), ("等待操作 · 红色", 0.8, false),
                                    ("减少动态效果", 0.0, true)]
+            let inputTask = session("input", "确认需求", .codexCLI, .waitingForInput, 180)
             let approvalImages = approvalSamples.map { label, phase, reduceMotion in
                 var sample = icon
                 appearance.performAsCurrentDrawingAppearance {
-                    sample = SessionMenuBarRenderer.image(icon: icon, sessions: [tasks[0]],
+                    sample = SessionMenuBarRenderer.image(icon: icon, sessions: [tasks[0], inputTask],
                         phase: phase, reduceMotion: reduceMotion, now: now,
                         textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: settings))
                 }
                 return (label, sample)
             }
             let approvalPreview = VStack(alignment: .leading, spacing: 22) {
-                Text("等待批准 · 黄红交替").font(.headline)
+                Text("等待批准 / 输入 · 黄红交替").font(.headline)
                 ForEach(approvalImages, id: \.0) { label, sample in
                     HStack(spacing: 20) {
                         Text(label).font(.caption).frame(width: 120, alignment: .leading)
