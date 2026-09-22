@@ -26,7 +26,7 @@ public final class WorkBuddyTaskReader {
         }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 100)
-        let query = "SELECT id, cwd, COALESCE(custom_title,title,''), status, updated_at, last_activity_at, model FROM sessions WHERE deleted_at IS NULL AND LOWER(status) != 'archived' ORDER BY MAX(updated_at,COALESCE(last_activity_at,0)) DESC LIMIT 500"
+        let query = "SELECT id, cwd, COALESCE(NULLIF(TRIM(custom_title),''),title,''), status, updated_at, last_activity_at, model FROM sessions WHERE deleted_at IS NULL AND LOWER(status) != 'archived' ORDER BY MAX(updated_at,COALESCE(last_activity_at,0)) DESC LIMIT 500"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }

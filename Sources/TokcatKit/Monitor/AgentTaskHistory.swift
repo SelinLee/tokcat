@@ -113,6 +113,25 @@ public struct AgentTaskHistory {
         records.removeValue(forKey: record.session.id + ":observed")
     }
 
+    public mutating func updateTitles(_ titles: [String: String], source: AgentSource) {
+        for (id, task) in records where task.session.source == source {
+            if let title = titles[task.session.sessionID] { records[id]?.title = title }
+        }
+    }
+
+    /// Migrate filename-based identities written by older monitors without dropping
+    /// turn history or replacing a newer canonical record with an older duplicate.
+    public mutating func reidentifySession(source: AgentSource, from oldID: String, to newID: String) {
+        for (id, task) in records where task.session.source == source && task.session.sessionID == oldID {
+            records.removeValue(forKey: id)
+            var migrated = task
+            migrated.session.sessionID = newID
+            migrated.id = migrated.activityOnly ? migrated.session.id + ":observed" : AgentTaskRecord.key(for: migrated.session)
+            if let existing = records[migrated.id], existing.lastActivityAt >= migrated.lastActivityAt { continue }
+            records[migrated.id] = migrated
+        }
+    }
+
     public mutating func prune(now: Date) {
         let keep = records.values.filter { now.timeIntervalSince($0.lastActivityAt) < 30 * 86_400 }
             .sorted { $0.lastActivityAt == $1.lastActivityAt ? $0.id < $1.id : $0.lastActivityAt > $1.lastActivityAt }

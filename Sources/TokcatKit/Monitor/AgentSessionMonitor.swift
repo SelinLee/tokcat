@@ -18,6 +18,7 @@ public final class AgentSessionMonitor {
     private var lastSaved: [AgentSession] = []
     private var history = AgentTaskHistory()
     private var lastSavedTasks: [AgentTaskRecord] = []
+    private let codexTitles: CodexSessionTitleReader
     private let recentReader: RecentAgentTaskReader
     private let workBuddyReader: WorkBuddyTaskReader?
 
@@ -26,6 +27,7 @@ public final class AgentSessionMonitor {
                 recentRoots: [RecentAgentTaskReader.Root] = RecentAgentTaskReader.defaultRoots,
                 workBuddyDatabase: URL? = WorkBuddyTaskReader.defaultDatabaseURL) {
         self.codexDirectory = codexDirectory
+        self.codexTitles = CodexSessionTitleReader(url: codexDirectory.deletingLastPathComponent().appendingPathComponent("session_index.jsonl"))
         self.supportDirectory = supportDirectory
         self.launchedAt = now
         self.recentReader = RecentAgentTaskReader(roots: recentRoots)
@@ -63,12 +65,12 @@ public final class AgentSessionMonitor {
                 let bootstrap = offsets[path] == nil || size < (offsets[path] ?? 0)
                 guard let handle = try? FileHandle(forReadingFrom: info.url) else { continue }
                 defer { try? handle.close() }
-                var parser = parsers[path] ?? CodexSessionParser(sessionID: info.url.deletingPathExtension().lastPathComponent)
+                var parser = bootstrap ? CodexSessionParser.bootstrap(at: info.url)
+                    : (parsers[path] ?? CodexSessionParser.bootstrap(at: info.url))
                 if bootstrap {
-                    // Metadata is at the beginning; the lifecycle tail is bounded independently.
-                    if let prefix = try? handle.read(upToCount: 16_384),
-                       let first = prefix.split(separator: 10).first {
-                        _ = parser.parse(Data(first))
+                    let legacyID = info.url.deletingPathExtension().lastPathComponent
+                    if legacyID != parser.sessionID {
+                        repairCodexIdentity(from: legacyID, to: parser.sessionID)
                     }
                 }
                 let start = bootstrap ? (size > 524_288 ? size - 524_288 : 0) : offsets[path]!
@@ -134,6 +136,7 @@ public final class AgentSessionMonitor {
         }
         sessions = sessions.filter { now.timeIntervalSince($0.value.lastActivityAt) < 7 * 86_400 }
         for record in recentReader.poll(enabled: enabled, now: now) { history.observeActivity(record) }
+        if enabled.contains(.codexCLI) { history.updateTitles(codexTitles.read(), source: .codexCLI) }
         history.prune(now: now)
         firstPoll = false
         previousEnabled = enabled
@@ -159,6 +162,17 @@ public final class AgentSessionMonitor {
            next.state.isWaiting || next.state == .completed || next.state == .failed {
             alerts[id] = next
         }
+    }
+
+    private func repairCodexIdentity(from legacyID: String, to sessionID: String) {
+        let oldKey = AgentSource.codexCLI.rawValue + ":" + legacyID
+        if var legacy = sessions.removeValue(forKey: oldKey) {
+            legacy.sessionID = sessionID
+            if sessions[legacy.id].map({ $0.lastActivityAt < legacy.lastActivityAt }) ?? true {
+                sessions[legacy.id] = legacy
+            }
+        }
+        history.reidentifySession(source: .codexCLI, from: legacyID, to: sessionID)
     }
 
     public func markRead(id: String, enabled: Set<AgentSource>) -> [AgentSession] {

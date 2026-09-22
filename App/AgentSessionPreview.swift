@@ -80,7 +80,9 @@ enum AgentSessionPreview {
                     }
                 } content: {
                     VStack(alignment: .leading, spacing: 12) {
-                        AgentSessionList(sessions: previewTasks, markRead: { _ in })
+                        AgentSessionList(sessions: previewTasks, markRead: { _ in }, tasks: previewTasks.map {
+                            AgentTaskRecord(session: $0, title: "优化" + $0.projectName + "的布局与内容")
+                        })
                         HStack {
                             Text("Codex 额度").font(.caption)
                             Spacer()

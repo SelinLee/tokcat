@@ -91,7 +91,7 @@ final class AgentConversationReaderTests: XCTestCase {
         let id = UUID().uuidString
         let now = Date()
         let ms = Int64(now.timeIntervalSince1970 * 1000)
-        let sql = "CREATE TABLE sessions(id TEXT,cwd TEXT,custom_title TEXT,title TEXT,status TEXT,updated_at INTEGER,last_activity_at INTEGER,model TEXT,deleted_at INTEGER); INSERT INTO sessions VALUES('\(id)','/demo',NULL,'项目检查','Completed',\(ms),\(ms),'hy3',NULL);"
+        let sql = "CREATE TABLE sessions(id TEXT,cwd TEXT,custom_title TEXT,title TEXT,status TEXT,updated_at INTEGER,last_activity_at INTEGER,model TEXT,deleted_at INTEGER); INSERT INTO sessions VALUES('\(id)','/demo','  ','项目检查','Completed',\(ms),\(ms),'hy3',NULL);"
         XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
         let project = root.appendingPathComponent("demo")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -105,8 +105,9 @@ final class AgentConversationReaderTests: XCTestCase {
         XCTAssertEqual(records[0].title, "项目检查")
         XCTAssertNotNil(records[0].logPath)
         XCTAssertNil(records[0].session.startedAt)
-        XCTAssertEqual(sqlite3_exec(db, "UPDATE sessions SET status='Running',updated_at=\(ms + 6000)", nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, "UPDATE sessions SET status='Running',custom_title='新的对话标题',updated_at=\(ms + 6000)", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(reader.poll(now: now.addingTimeInterval(6)).first?.session.state, .running)
+        XCTAssertEqual(reader.poll(now: now.addingTimeInterval(6)).first?.title, "新的对话标题")
         XCTAssertEqual(sqlite3_exec(db, "UPDATE sessions SET status='working'", nil, nil, nil), SQLITE_OK)
         let working = try XCTUnwrap(reader.poll(now: now.addingTimeInterval(600)).first?.session)
         XCTAssertEqual(working.state, .running)

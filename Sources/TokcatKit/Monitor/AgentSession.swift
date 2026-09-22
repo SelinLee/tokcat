@@ -147,6 +147,7 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public init(event: AgentSessionEvent, historical: Bool = false) {
         sessionID = event.sessionID
         source = event.source
+        turnID = event.turnID
         lastActivityAt = event.timestamp
         apply(event, historical: historical)
     }

@@ -45,7 +45,7 @@ Task dots appear **after the selected monitoring metrics**. Each column holds up
 | Red | Failed |
 | Hollow gray | Updates unavailable or turn interrupted |
 
-Click to inspect project, session, elapsed time, waiting time, and recent activity. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for at least 1.5 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
+The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for at least 1.5 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
 
 Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
 

@@ -10,6 +10,31 @@ public struct CodexSessionParser {
 
     public init(sessionID: String) { self.sessionID = sessionID }
 
+    /// Rollout headers can contain large instruction blocks. Use a bounded full
+    /// first line, rather than decoding a truncated 16 KB JSON prefix.
+    public static func bootstrap(at url: URL) -> CodexSessionParser {
+        let filename = url.deletingPathExtension().lastPathComponent
+        if let handle = try? FileHandle(forReadingFrom: url) {
+            defer { try? handle.close() }
+            var prefix = Data()
+            while prefix.count < 1_048_576 {
+                guard let chunk = try? handle.read(upToCount: min(16_384, 1_048_576 - prefix.count)), !chunk.isEmpty else { break }
+                prefix.append(chunk)
+                if let end = prefix.firstIndex(of: 10) {
+                    var parser = CodexSessionParser(sessionID: filename)
+                    _ = parser.parse(prefix.prefix(upTo: end))
+                    if parser.sessionID != filename { return parser }
+                    break
+                }
+            }
+        }
+        // Resumed rollout names can contain a second UUID; the first identifies
+        // the original conversation. Do not create a session named after a file.
+        let pattern = "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
+        if let range = filename.range(of: pattern, options: .regularExpression) { return CodexSessionParser(sessionID: String(filename[range])) }
+        return CodexSessionParser(sessionID: filename)
+    }
+
     public mutating func parse(_ data: Data) -> AgentSessionEvent? {
         guard let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = record["type"] as? String,

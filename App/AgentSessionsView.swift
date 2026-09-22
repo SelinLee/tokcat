@@ -100,14 +100,21 @@ private struct AgentSessionRow: View {
                 HStack(spacing: 6) {
                     Image(systemName: state == .unknown || state == .interrupted ? "circle" : "circle.fill")
                         .font(.system(size: 7)).foregroundStyle(SessionPresentation.color(state))
-                    Text(session.source.displayName).font(.caption.weight(.semibold))
-                    Text(session.projectName).font(.caption).lineLimit(1).truncationMode(.middle)
+                    Text(task?.displayTitle ?? session.projectName)
+                        .font(.subheadline.weight(.semibold)).lineLimit(2)
+                        .help(task?.displayTitle ?? session.projectName)
                     Spacer(minLength: 0)
                     if session.unread {
                         Button("已读", action: markRead).buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
                             .help("标为已读并移除顶部栏状态点")
                     }
                 }
+                HStack(spacing: 6) {
+                    Text(session.source.displayName)
+                    if task?.displayTitle != session.projectName {
+                        Text("· " + session.projectName).lineLimit(1).truncationMode(.middle)
+                    }
+                }.font(.caption2).foregroundStyle(.secondary)
                 HStack {
                     Text(state.title).font(.caption.weight(.medium))
                     Spacer()
