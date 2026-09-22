@@ -10,9 +10,32 @@
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#环境要求)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
-![多 Agent 任务总览与对话详情](docs/assets/screenshots/task-dashboard-light.png)
+## 菜单栏：一眼看清 AI 任务状态
 
-*原生界面预览，使用演示数据。本文介绍的任务监控功能已在 `main` 分支，Release 安装包可能尚未包含最新改动。*
+<p align="center">
+  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="浅色模式：菜单栏监控指标、任务状态点与详情面板" width="430" />
+  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="深色模式：菜单栏指标与 AI 任务详情面板" width="430" />
+</p>
+
+*浅色与深色原生面板预览，任务均为演示数据。状态点和监控指标可在「设置 → 菜单栏」分别开关。*
+
+任务点放在**已选监控指标后方**。以左侧文字的上下边缘为限均匀排列：每列最多 3 个，第 4 个从右侧新列顶部开始。最多展示 6 个，其余显示 `+N`。
+
+![1 到 7 个任务点的排列示例，包含超出数量提示](docs/assets/screenshots/task-dot-spacing-light.png)
+
+*示例覆盖运行、等待、完成、失败及暂无更新状态，并展示运行黄点呼吸最暗时的效果。*
+
+| 圆点 | 含义 |
+|---|---|
+| 🟡 黄色呼吸 | 正在运行；呼吸最暗时也保持清晰 |
+| 🟢 绿色常亮 | 本轮结束且未读；查看或标为已读后消失 |
+| 🟡 黄色常亮 | 等待输入或授权 |
+| 🔴 红色常亮 | 本轮失败 |
+| ◯ 灰色空心 | 暂无更新或已中断；安静不等于已完成 |
+
+下拉栏优先显示对话标题，并列出 Agent、项目、状态、耗时及最近活动。Codex 标题读取自本地会话索引，WorkBuddy 使用本地数据库标题；没有标题时回退显示项目名。切回已识别的 Codex、WorkBuddy / WorkBuddy AI、Claude 桌面应用并停留至少 1.5 秒，会按 Agent 清除进入应用前已完成的绿点。普通终端无法区分其中的 Agent，仍可手动标为已读；已读状态重启后保留。
+
+任务点与 CPU / GPU / 内存 / 网速 / Token / 费用指标可分别开关；任务点排在已选指标后面，两者可以同时显示。可选系统通知用于提醒任务结束或等待操作，启动时不重放历史通知。本机有 Codex 登录信息时，还可显示 5 小时与周窗口的剩余额度和重置时间。
 
 ## 不用来回切窗口，也知道 AI 的工作状态
 
@@ -26,32 +49,11 @@
 | 一个任务经历了什么？ | 耗时、可观测的工具调用、可用的 Token 数、模型与活动时间线 |
 | 花了多少 Token 和钱？ | 实时速率及日 / 周 / 月统计，按 Agent、模型、中转站分组 |
 
-## 菜单栏：轻量提醒，点开看详情
-
-<p align="center">
-  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="浅色模式：菜单栏监控指标、任务状态点与详情面板" width="430" />
-  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="深色模式：菜单栏指标与 AI 任务详情面板" width="430" />
-</p>
-
-*浅色与深色原生面板预览，任务内容为演示数据。*
-
-任务点放在**已选监控指标后方**。以左侧文字的上下边缘为限均匀排列：每列最多 3 个，第 4 个从右侧新列顶部开始。最多展示 6 个，其余显示 `+N`。
-
-| 圆点 | 含义 |
-|---|---|
-| 黄色呼吸 | 正在运行 |
-| 绿色常亮 | 本轮结束，尚未查看 |
-| 黄色常亮 | 等待输入或授权 |
-| 红色 | 失败 |
-| 灰色空心 | 暂无更新或已中断 |
-
-下拉栏优先显示对话标题，并列出 Agent、项目、状态、耗时及最近活动。Codex 标题读取自本地会话索引，WorkBuddy 使用本地数据库标题；没有标题时回退显示项目名。切回已识别的 Codex、WorkBuddy / WorkBuddy AI、Claude 桌面应用并停留至少 1.5 秒，会按 Agent 清除进入应用前已完成的绿点。普通终端无法区分其中的 Agent，仍可手动标为已读；已读状态重启后保留。
-
-任务点与 CPU / GPU / 内存 / 网速 / Token / 费用指标可分别开关。可选系统通知用于提醒任务结束或等待操作，启动时不重放历史通知。本机有 Codex 登录信息时，还可显示 5 小时与周窗口的剩余额度和重置时间。
-
 ## 主界面：左侧找任务，右侧读对话、看监控
 
 默认打开**任务总览**，收窄导航与任务列表，将大部分空间留给选中任务的详情。
+
+![多 Agent 任务总览与对话详情](docs/assets/screenshots/task-dashboard-light.png)
 
 - **实时任务**：当前状态、项目、耗时、等待时间与最近活动。
 - **最近任务**：汇总不同 Agent 的记录，按时间排序；按工具、24 小时 / 7 天 / 30 天、关键词筛选。同一 Codex 会话的不同轮次独立留存。
@@ -148,12 +150,12 @@ Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**
 本地打包：
 
 ```bash
-TOKCAT_VERSION=0.4.3 scripts/package_app.sh
+TOKCAT_VERSION=0.5.0 scripts/package_app.sh
 # 产物在 dist/（不入库）：
 #   Tokcat.app
-#   Tokcat-0.4.3-macos.zip
-#   Tokcat-0.4.3-macos.dmg
-#   Tokcat-0.4.3-macos.sha256
+#   Tokcat-0.5.0-macos.zip
+#   Tokcat-0.5.0-macos.dmg
+#   Tokcat-0.5.0-macos.sha256
 #   INSTALL.txt
 ```
 

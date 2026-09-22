@@ -5,6 +5,8 @@ public struct CodexSessionParser {
     public var sessionID: String
     public var projectPath: String?
     public var turnID: String?
+    /// Guardian review runs are internal checks attached to another task.
+    public private(set) var isGuardianReview = false
     private var modelName: String?
     private var pendingQuestions: Set<String> = []
 
@@ -23,7 +25,7 @@ public struct CodexSessionParser {
                 if let end = prefix.firstIndex(of: 10) {
                     var parser = CodexSessionParser(sessionID: filename)
                     _ = parser.parse(prefix.prefix(upTo: end))
-                    if parser.sessionID != filename { return parser }
+                    if parser.sessionID != filename || parser.isGuardianReview { return parser }
                     break
                 }
             }
@@ -42,6 +44,7 @@ public struct CodexSessionParser {
         if type == "session_meta" {
             sessionID = payload["id"] as? String ?? payload["session_id"] as? String ?? sessionID
             projectPath = payload["cwd"] as? String
+            isGuardianReview = payload["thread_source"] as? String == "guardian_review"
             return nil
         }
         if type == "turn_context" {

@@ -67,6 +67,13 @@ public final class AgentSessionMonitor {
                 defer { try? handle.close() }
                 var parser = bootstrap ? CodexSessionParser.bootstrap(at: info.url)
                     : (parsers[path] ?? CodexSessionParser.bootstrap(at: info.url))
+                if parser.isGuardianReview {
+                    sessions.removeValue(forKey: AgentSource.codexCLI.rawValue + ":" + parser.sessionID)
+                    history.removeSession(source: .codexCLI, sessionID: parser.sessionID)
+                    offsets[path] = size
+                    parsers[path] = parser
+                    continue
+                }
                 if bootstrap {
                     let legacyID = info.url.deletingPathExtension().lastPathComponent
                     if legacyID != parser.sessionID {

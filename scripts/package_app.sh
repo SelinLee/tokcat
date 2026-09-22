@@ -9,7 +9,7 @@ APP_NAME="Tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.4.3}"
+VERSION="${TOKCAT_VERSION:-0.5.0}"
 BUILD_NUMBER="${TOKCAT_BUILD:-1}"
 
 DIST_DIR="$ROOT/dist"
@@ -21,7 +21,14 @@ ZIP_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.zip"
 DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-macos.dmg"
 
 echo "==> Building release binary"
-swift build -c release --product TokcatApp
+SWIFT_BUILD_ARGS=()
+if [[ "${TOKCAT_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
+  SWIFT_BUILD_ARGS+=(--disable-sandbox)
+fi
+if [[ "${TOKCAT_SKIP_DSYM:-0}" == "1" ]]; then
+  SWIFT_BUILD_ARGS+=(-debug-info-format none)
+fi
+swift build "${SWIFT_BUILD_ARGS[@]}" -c release --product TokcatApp
 
 TRIPLE="$(swift -print-target-info 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["target"]["triple"])' 2>/dev/null || true)"
 if [[ -z "${TRIPLE:-}" ]]; then
@@ -64,9 +71,8 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BIN" "$MACOS_DIR/${EXEC_NAME}"
 chmod +x "$MACOS_DIR/${EXEC_NAME}"
 
-# SwiftPM resource bundle: put under Contents/Resources and also next to the
-# executable (Bundle.module for executable targets resolves relative to the binary).
-# Make the MacOS copy a proper bundle with Info.plist so codesign accepts --deep.
+# Packaged resources are loaded from Contents/Resources by TokcatResources.
+# Keep SwiftPM's bundle structure intact so nested code signing succeeds.
 copy_resource_bundle() {
   local dest="$1"
   rm -rf "$dest"
@@ -74,7 +80,7 @@ copy_resource_bundle() {
   # Copy payload files
   rsync -a --delete "$RES_BUNDLE_SRC"/ "$dest"/
   # Ensure bundle Info.plist exists (SwiftPM loose bundles often lack it).
-  if [[ ! -f "$dest/Info.plist" ]]; then
+  if [[ ! -f "$dest/Contents/Info.plist" && ! -f "$dest/Info.plist" ]]; then
     cat > "$dest/Info.plist" <<'BUNDLEPLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -98,7 +104,6 @@ BUNDLEPLIST
   fi
 }
 
-copy_resource_bundle "$MACOS_DIR/Tokcat_TokcatApp.bundle"
 copy_resource_bundle "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
 
 # App icon (.icns): generated from the bundled cat head so Finder/Dock show the
@@ -160,8 +165,7 @@ PLIST
 
 echo "==> Ad-hoc codesign"
 # Sign nested resource bundles first, then the app.
-codesign --force --sign - "$MACOS_DIR/Tokcat_TokcatApp.bundle" || true
-codesign --force --sign - "$RESOURCES_DIR/Tokcat_TokcatApp.bundle" || true
+codesign --force --sign - "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
 codesign --force --sign - "$MACOS_DIR/${EXEC_NAME}"
 codesign --force --deep --options runtime --sign - "$APP_DIR" || codesign --force --deep --sign - "$APP_DIR"
 
@@ -220,7 +224,7 @@ elif command -v sha256sum >/dev/null 2>&1; then
 fi
 
 cat > "$DIST_DIR/INSTALL.txt" <<TXT
-Tokcat ${VERSION} — macOS 菜单栏用量监控 + 像素宠物
+Tokcat ${VERSION} — macOS 多 Agent AI 任务监控、用量统计与可选桌面猫咪
 
 推荐安装（DMG）：
 1. 打开 Tokcat-${VERSION}-macos.dmg

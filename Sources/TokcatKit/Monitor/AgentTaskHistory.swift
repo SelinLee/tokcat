@@ -119,6 +119,12 @@ public struct AgentTaskHistory {
         }
     }
 
+    public mutating func removeSession(source: AgentSource, sessionID: String) {
+        for (id, task) in records where task.session.source == source && task.session.sessionID == sessionID {
+            records.removeValue(forKey: id)
+        }
+    }
+
     /// Migrate filename-based identities written by older monitors without dropping
     /// turn history or replacing a newer canonical record with an older duplicate.
     public mutating func reidentifySession(source: AgentSource, from oldID: String, to newID: String) {

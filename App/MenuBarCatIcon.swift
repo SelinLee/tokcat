@@ -276,7 +276,8 @@ enum MenuBarStatusRenderer {
                         rectHeight: rect.height,
                         font: networkFont,
                         attrs: networkAttrs,
-                        yOffset: yOffset
+                        yOffset: yOffset,
+                        leading: true
                     )
 
                 case .dualLine(let top, let bottom, _, _):
@@ -423,16 +424,17 @@ enum MenuBarStatusRenderer {
         rectHeight: CGFloat,
         font: NSFont,
         attrs: [NSAttributedString.Key: Any],
-        yOffset: CGFloat
+        yOffset: CGFloat,
+        leading: Bool = false
     ) {
         let baselines = dualLineBaselines(rectHeight: rectHeight, font: font, yOffset: yOffset)
 
-        // Right-align both rows inside the reserved cell so units line up.
-        // `font` is already pixel-scaled; cellWidth is measured with the same font.
+        // Network arrows stay at the cell's left edge when kb/s changes to mb/s.
+        // Other dual-line metrics keep their existing right alignment.
         let topWidth = MetricsFormatting.measure(top, font: font).width
         let bottomWidth = MetricsFormatting.measure(bottom, font: font).width
-        let topX = cursorX + max(0, cellWidth - topWidth)
-        let bottomX = cursorX + max(0, cellWidth - bottomWidth)
+        let topX = cursorX + (leading ? 0 : max(0, cellWidth - topWidth))
+        let bottomX = cursorX + (leading ? 0 : max(0, cellWidth - bottomWidth))
 
         (top as NSString).draw(
             at: NSPoint(x: topX, y: baselines.top),

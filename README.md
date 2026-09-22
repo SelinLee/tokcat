@@ -10,9 +10,32 @@ Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into o
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#requirements)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
-![Multi-agent task overview with a conversation detail pane](docs/assets/screenshots/task-dashboard-light.png)
+## Menu bar: AI task status at a glance
 
-*Native UI preview with demonstration data. Task monitoring features described here are on `main`; release downloads may lag behind.*
+<p align="center">
+  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="Menu bar metrics, colored task dots, and task details in light mode" width="430" />
+  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="Menu bar metrics and AI task panel in dark mode" width="430" />
+</p>
+
+*Native light and dark previews with demonstration tasks. Select metrics and task dots independently in Settings → Menu Bar.*
+
+Task dots appear **after the selected monitoring metrics**. Each column holds up to three dots, spaced within the text's top and bottom edges; a fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
+
+![Task dot layouts from one to seven tasks, including the overflow indicator](docs/assets/screenshots/task-dot-spacing-light.png)
+
+*The dot examples show running, waiting, completed, failed, and unavailable states at the dimmest point of the running animation.*
+
+| Dot | Meaning |
+|---|---|
+| 🟡 Pulsing yellow | Running; stays bright even at the dimmest point |
+| 🟢 Solid green | This turn finished; unread until viewed or acknowledged |
+| 🟡 Solid yellow | Waiting for input or approval |
+| 🔴 Solid red | Failed |
+| ◯ Hollow gray | Updates unavailable or turn interrupted; silence alone does not mean completion |
+
+The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for at least 1.5 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
+
+Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. The dots follow the selected metrics, so both can remain visible. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
 
 ## Keep track of AI work without switching windows
 
@@ -26,32 +49,11 @@ Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into o
 | What happened during a task? | Elapsed time, observed tool calls, available token counts, model, and activity timeline |
 | How much am I spending? | Live token / cost rates and daily, weekly, monthly usage grouped by agent, model, or provider |
 
-## Menu bar: compact status, useful details
-
-<p align="center">
-  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="Menu bar metrics, colored task dots, and task details in light mode" width="430" />
-  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="Menu bar metrics and AI task panel in dark mode" width="430" />
-</p>
-
-*Light and dark native panel previews, using demonstration tasks.*
-
-Task dots appear **after the selected monitoring metrics**. Each column holds up to three dots, spaced within the text's top and bottom edges; a fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
-
-| Dot | Meaning |
-|---|---|
-| Pulsing yellow | Running |
-| Solid green | This turn finished; unread |
-| Solid yellow | Waiting for input or approval |
-| Red | Failed |
-| Hollow gray | Updates unavailable or turn interrupted |
-
-The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for at least 1.5 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
-
-Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
-
 ## Main window: tasks on the left, details in focus
 
 The main window opens **Task Overview**. Narrow navigation and task columns leave most of the space for the selected task.
+
+![Multi-agent task overview with a conversation detail pane](docs/assets/screenshots/task-dashboard-light.png)
 
 - **Live tasks:** current state, project, elapsed and waiting time, and latest activity.
 - **Recent tasks:** one chronological list across tools; filter by agent, 24 hours / 7 days / 30 days, or keyword. Codex turns are archived separately.
@@ -148,12 +150,12 @@ Download from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
 Build a release locally:
 
 ```bash
-TOKCAT_VERSION=0.4.3 scripts/package_app.sh
+TOKCAT_VERSION=0.5.0 scripts/package_app.sh
 # Artifacts under dist/ (not committed):
 #   Tokcat.app
-#   Tokcat-0.4.3-macos.zip
-#   Tokcat-0.4.3-macos.dmg
-#   Tokcat-0.4.3-macos.sha256
+#   Tokcat-0.5.0-macos.zip
+#   Tokcat-0.5.0-macos.dmg
+#   Tokcat-0.5.0-macos.sha256
 #   INSTALL.txt
 ```
 
