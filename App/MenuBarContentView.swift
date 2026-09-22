@@ -1,8 +1,7 @@
 import SwiftUI
 import TokcatKit
 
-/// Compact MenuBarExtra dropdown: system strip, pet chips, token summary,
-/// two recent events, and a slim action bar.
+/// AI sessions first; usage and quotas follow, with auxiliary metrics collapsed.
 struct MenuBarContentView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var live: LiveMetricsStore
@@ -13,36 +12,31 @@ struct MenuBarContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-
-            if showsAnySystemMetric {
-                systemMetricsGrid
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    AgentSessionsPanel(model: model, live: live)
+                    if model.settings.showCodexUsageSummary, live.codexUsage != nil {
+                        codexUsageBlock
+                    }
+                    if model.settings.showTokenSummary { tokenSummaryRow }
+                    DisclosureGroup("更多监控信息") {
+                        VStack(spacing: 10) {
+                            if showsAnySystemMetric { systemMetricsGrid }
+                            if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty { recentEventsBlock }
+                            if model.settings.showPetSummary { petStatusRow }
+                        }
+                    }
+                    .font(.caption)
+                }
             }
-
-            if model.settings.showPetSummary {
-                petStatusRow
-            }
-
-            if model.settings.showTokenSummary {
-                tokenSummaryRow
-            }
-
-            if model.settings.showCodexUsageSummary, live.codexUsage != nil {
-                codexUsageBlock
-            }
-
-            if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty {
-                recentEventsBlock
-            }
-
+            .frame(maxHeight: 500)
             Divider().opacity(0.55)
-
             actionBar
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(width: 320)
+        .padding(12)
+        .frame(width: 360)
     }
 
     // MARK: - Header
@@ -52,10 +46,7 @@ struct MenuBarContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tokcat")
                     .font(.headline.weight(.semibold))
-                Text(PathwayLore.sequenceTitleLine(
-                    level: model.petState.level,
-                    stats: model.petState.stats
-                ))
+                Text("AI 工作监控")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -64,12 +55,6 @@ struct MenuBarContentView: View {
             Spacer(minLength: 8)
 
             activityChip
-
-            Text(CompactCopy.levelLabel(model.petState.level))
-                .font(.caption.weight(.bold).monospacedDigit())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.12), in: Capsule())
         }
     }
 
@@ -92,14 +77,8 @@ struct MenuBarContentView: View {
     }
 
     private var activityLabel: String {
-        switch live.menuBarActivity.mode {
-        case .working:
-            return String(format: "%@ %.0f%%", live.menuBarActivity.mode.title, live.menuBarActivity.intensity * 100)
-        case .completed:
-            return "完成"
-        case .sleeping:
-            return "休息"
-        }
+        let summary = AgentSessionSummary(sessions: live.agentSessions)
+        return summary.label.isEmpty ? "空闲" : summary.label
     }
 
     // MARK: - Pet (horizontal)
@@ -202,7 +181,7 @@ struct MenuBarContentView: View {
             }
 
             HStack(spacing: 6) {
-                compactMetric(title: "速度", value: formatTokPerSec(live.tokensPerSecond))
+                compactMetric(title: "用量吞吐", value: formatTokPerSec(live.tokensPerSecond))
                 compactMetric(title: "费用/分", value: formatUSDPerMinute(live.usdPerSecond))
                 compactMetric(
                     title: "今日",
@@ -399,7 +378,7 @@ struct MenuBarContentView: View {
             .accessibilityLabel(model.settings.showDesktopPet ? "隐藏桌面宠物" : "显示桌面宠物")
 
             Button("主界面") {
-                MainWindowController.show(model: model, tab: .stats)
+                MainWindowController.show(model: model, tab: .tasks)
             }
             .buttonStyle(.bordered)
             .keyboardShortcut("o", modifiers: .command)
@@ -449,6 +428,9 @@ struct MenuBarContentView: View {
         case .sleeping: return .secondary
         case .working: return .orange
         case .completed: return .green
+        case .waiting: return .yellow
+        case .failed: return .red
+        case .unknown: return .secondary
         }
     }
 

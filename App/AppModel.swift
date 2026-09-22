@@ -1,6 +1,8 @@
 import Foundation
 import TokcatKit
 import Combine
+import UserNotifications
+import AppKit
 
 /// Ties together monitoring, the pet engine, settings, and local persistence,
 /// and republishes state for SwiftUI to observe. Runs almost entirely offline —
@@ -52,6 +54,7 @@ final class AppModel: ObservableObject {
     /// High-frequency rates / system / menu-bar activity live here so the main
     /// window is not rebuilt on every menu-bar animation tick.
     let liveMetrics = LiveMetricsStore()
+    let taskMonitor = TaskMonitorStore()
 
     var systemMetrics: SystemMetrics { liveMetrics.systemMetrics }
     var tokensPerSecond: Double { liveMetrics.tokensPerSecond }
@@ -85,7 +88,13 @@ final class AppModel: ObservableObject {
     private let store: PetStore?
     private let settingsStore: AppSettingsStore
     private var throughputTracker = ThroughputTracker(windowSeconds: 12, idleZeroSeconds: 3)
-    private var menuBarActivityTracker = MenuBarAgentActivityTracker()
+    nonisolated(unsafe) private let sessionMonitor = AgentSessionMonitor()
+    private let sessionQueue = DispatchQueue(label: "com.tokcat.sessions", qos: .utility)
+    private var sessionTimer: Timer?
+    private var isSessionPolling = false
+    private var agentViewing = AgentViewingTracker()
+    private var agentActivationObserver: NSObjectProtocol?
+    @Published var sessionMonitoringMessage: String?
     private var timer: Timer?
     private var menuBarAnimTimer: Timer?
     /// Dedicated cadence for network sampling + status-bar metric refresh,
@@ -234,6 +243,20 @@ final class AppModel: ObservableObject {
         historicalIdleStreak = 0
         consecutiveQuietPolls = 0
         startMenuBarAnimation()
+        agentViewing.activated(bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date())
+        agentActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let bundleID = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            let activatedAt = Date()
+            Task { @MainActor in self?.agentViewing.activated(bundleIdentifier: bundleID, now: activatedAt) }
+        }
+        pollSessions()
+        let sessionTimer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollSessions() }
+        }
+        RunLoop.main.add(sessionTimer, forMode: .common)
+        self.sessionTimer = sessionTimer
         rescheduleNetworkTimer(resetSampling: true)
         rescheduleCodexUsageTimer()
         poll()
@@ -247,6 +270,10 @@ final class AppModel: ObservableObject {
 
 
     func stop() {
+        if let agentActivationObserver { NSWorkspace.shared.notificationCenter.removeObserver(agentActivationObserver) }
+        agentActivationObserver = nil
+        sessionTimer?.invalidate()
+        sessionTimer = nil
         timer?.invalidate()
         timer = nil
         menuBarAnimTimer?.invalidate()
@@ -311,6 +338,14 @@ final class AppModel: ObservableObject {
     }
 
     private func applySettingsSideEffects(from oldValue: AppSettings) {
+        if settings.notifyAgentEvents && !oldValue.notifyAgentEvents {
+            requestAgentNotifications()
+        }
+        if oldValue.enabledAgentSources != settings.enabledAgentSources {
+            liveMetrics.setAgentSessions(liveMetrics.agentSessions.filter { settings.enabledAgents.contains($0.source) })
+            taskMonitor.update(sessions: liveMetrics.agentSessions, tasks: taskMonitor.tasks, enabled: settings.enabledAgents)
+            pollSessions()
+        }
         if oldValue.pollIntervalSeconds != settings.pollIntervalSeconds {
             rescheduleTimer()
         }
@@ -606,7 +641,6 @@ final class AppModel: ObservableObject {
             throughputTracker.record(events: resolvedEvents, now: now)
             let rates = throughputTracker.rates(now: now)
             liveMetrics.setRates(tokensPerSecond: rates.tokensPerSecond, usdPerSecond: rates.usdPerSecond)
-            menuBarActivityTracker.noteActivity(at: now)
             refreshMenuBarActivity(now: now)
         }
 
@@ -640,7 +674,6 @@ final class AppModel: ObservableObject {
         }
         if applyResult.didFeed {
             petFeedPulse &+= 1
-            menuBarActivityTracker.noteFeed(at: now)
         }
         if applyResult.didLevelUp {
             petLevelPulse &+= 1
@@ -935,12 +968,18 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshMenuBarActivity(now: Date = Date()) {
-
-        let next = menuBarActivityTracker.tick(tokensPerSecond: tokensPerSecond, now: now)
+        let summary = AgentSessionSummary(sessions: liveMetrics.agentSessions, now: now)
+        let fallback = summary.mode == .sleeping && tokensPerSecond > 0
+        let mode: MenuBarAgentMode = fallback ? .working : summary.mode
+        let completedAt = liveMetrics.agentSessions.filter { $0.state == .completed && $0.unread }
+            .compactMap(\.endedAt).max()
+        let celebration = completedAt.map { max(0, 1 - now.timeIntervalSince($0) / 8) } ?? 0
+        let next = MenuBarAgentActivity(mode: mode, intensity: mode == .working ? 0.5 : 0,
+                                       phase: now.timeIntervalSinceReferenceDate, completionProgress: celebration)
         // Coarse-quantize phase so SwiftUI is not redrawing on every sub-frame.
         let phaseStep: TimeInterval
         switch next.mode {
-        case .sleeping: phaseStep = 0.45
+        case .sleeping, .waiting, .failed, .unknown: phaseStep = 0.45
         case .working: phaseStep = 0.35
         case .completed: phaseStep = 0.25
         }
@@ -951,6 +990,99 @@ final class AppModel: ObservableObject {
             completionProgress: (next.completionProgress * 20).rounded() / 20
         )
         liveMetrics.setMenuBarActivity(quantized)
+    }
+
+    private func pollSessions() {
+        guard !isSessionPolling else { return }
+        isSessionPolling = true
+        let enabled = settings.enabledAgents
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.sessionMonitor.poll(enabled: enabled)
+            DispatchQueue.main.async {
+                self.isSessionPolling = false
+                self.liveMetrics.setAgentSessions(result.sessions.filter { self.settings.enabledAgents.contains($0.source) })
+                self.taskMonitor.update(sessions: result.sessions, tasks: result.tasks, enabled: self.settings.enabledAgents)
+                self.refreshMenuBarActivity()
+                self.refreshPetProgress()
+                self.acknowledgeViewedCompletions()
+                if self.settings.notifyAgentEvents {
+                    for session in result.alerts where self.settings.enabledAgents.contains(session.source) {
+                        self.notify(session)
+                    }
+                }
+            }
+        }
+    }
+
+    func markSessionRead(_ id: String) {
+        let enabled = settings.enabledAgents
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let sessions = self.sessionMonitor.markRead(id: id, enabled: enabled)
+            let tasks = self.sessionMonitor.taskSnapshot(enabled: enabled)
+            DispatchQueue.main.async {
+                self.liveMetrics.setAgentSessions(sessions.filter { self.settings.enabledAgents.contains($0.source) })
+                self.taskMonitor.update(sessions: sessions, tasks: tasks, enabled: self.settings.enabledAgents)
+                self.refreshMenuBarActivity()
+            }
+        }
+    }
+
+    private func acknowledgeViewedCompletions() {
+        guard let viewed = agentViewing.viewedCompletions(
+            bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date()),
+            liveMetrics.agentSessions.contains(where: {
+                $0.source == viewed.source && $0.state == .completed && $0.unread
+                    && ($0.endedAt ?? $0.lastActivityAt) <= viewed.through
+            }) else { return }
+        let enabled = settings.enabledAgents
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let sessions = self.sessionMonitor.markCompletedRead(source: viewed.source, through: viewed.through, enabled: enabled)
+            let tasks = self.sessionMonitor.taskSnapshot(enabled: enabled)
+            DispatchQueue.main.async {
+                self.liveMetrics.setAgentSessions(sessions.filter { self.settings.enabledAgents.contains($0.source) })
+                self.taskMonitor.update(sessions: sessions, tasks: tasks, enabled: self.settings.enabledAgents)
+                self.refreshMenuBarActivity()
+            }
+        }
+    }
+
+    func configureClaudeMonitoring(enabled: Bool) {
+        let executable = enabled ? Bundle.main.executableURL?.path : nil
+        guard !enabled || executable != nil else { return }
+        sessionQueue.async { [weak self] in
+            let message: String
+            do {
+                try ClaudeSessionHooks.configure(executable: executable)
+                message = enabled ? "已启用。请重新打开 Claude Code 会话以加载状态监控。" : "已移除 Tokcat 的 Claude 状态接入，其他配置保留。"
+            } catch { message = "状态接入未更改：\(error.localizedDescription)" }
+            DispatchQueue.main.async { self?.sessionMonitoringMessage = message }
+        }
+    }
+
+    private func requestAgentNotifications() {
+        guard Bundle.main.bundleIdentifier != nil else {
+            sessionMonitoringMessage = "系统通知需要从打包后的 Tokcat.app 启用。菜单栏提醒仍可使用。"
+            return
+        }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            Task { @MainActor in
+                self?.sessionMonitoringMessage = granted ? "已启用完成和待处理通知。" :
+                    "通知未获授权，可在系统设置中开启。\(error.map { " " + $0.localizedDescription } ?? "")"
+            }
+        }
+    }
+
+    private func notify(_ session: AgentSession) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(session.source.displayName) · \(session.state.title)"
+        content.body = session.projectName
+        content.threadIdentifier = session.id
+        let request = UNNotificationRequest(identifier: "tokcat-session-" + session.id, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 
     private func refreshPetProgress(justLeveledUp: Bool = false) {

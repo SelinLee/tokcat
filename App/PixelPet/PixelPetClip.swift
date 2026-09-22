@@ -222,6 +222,8 @@ enum PixelPetClip: String, CaseIterable, Hashable, Sendable {
         activity: MenuBarAgentActivity
     ) -> PixelPetClip {
         switch activity.mode {
+        case .waiting, .unknown: return .waiting
+        case .failed: return .failed
         case .working:
             // Live token throughput = focused work (Codex running).
             if status == .excited {

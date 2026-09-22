@@ -14,6 +14,12 @@ final class LiveMetricsStore: ObservableObject {
     /// Codex login exists — the menu bar cell is hidden in that case.
     @Published private(set) var codexUsage: CodexUsageSnapshot?
 
+    @Published private(set) var agentSessions: [AgentSession] = []
+
+    func setAgentSessions(_ sessions: [AgentSession]) {
+        if agentSessions != sessions { agentSessions = sessions }
+    }
+
     func setSystemMetrics(_ value: SystemMetrics) {
         if systemMetrics != value { systemMetrics = value }
     }

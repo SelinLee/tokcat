@@ -51,7 +51,7 @@ enum RainMenuBarIcon {
 
     private static func loadedImage() -> NSImage? {
         if let image { return image }
-        guard let url = Bundle.module.url(forResource: "tokcat_head_menu", withExtension: "png"),
+        guard let url = TokcatResources.bundle.url(forResource: "tokcat_head_menu", withExtension: "png"),
               let loaded = NSImage(contentsOf: url) else {
             return nil
         }

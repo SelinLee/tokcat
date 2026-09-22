@@ -100,6 +100,9 @@ struct SettingsView: View {
     private var menuBarTab: some View {
         Form {
             Section {
+                Toggle("在监控指标后显示 AI 任务状态点", isOn: binding(\.compactAIMenuBar))
+                Text("状态点排在监控指标后方，每列从上到下最多 3 个点：黄点呼吸表示运行，绿点常亮表示本轮结束，黄点常亮表示等待你，红点失败，灰色空心点暂无更新。最多 6 个点，其余显示 +N。切回对应桌面 Agent 并停留片刻，会清除该 Agent 已完成的绿点。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("显示菜单栏图标", isOn: binding(\.menuBarShowCatIcon))
 
                 if settings.menuBarShowCatIcon {
@@ -372,6 +375,7 @@ struct SettingsView: View {
 
     private var agentsTab: some View {
         Form {
+            AgentMonitoringSettings(model: model, notifications: binding(\.notifyAgentEvents))
             Section {
                 ForEach(AgentSource.allCases) { source in
                     Toggle(isOn: Binding(
@@ -950,4 +954,3 @@ private struct ProviderBackfillSettingsRow: View {
         }
     }
 }
-

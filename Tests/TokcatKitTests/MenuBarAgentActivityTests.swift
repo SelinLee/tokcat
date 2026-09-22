@@ -25,7 +25,7 @@ final class MenuBarAgentActivityTests: XCTestCase {
         XCTAssertLessThanOrEqual(activity.intensity, 1)
     }
 
-    func testCompletedAfterWorkQuietsThenSleeps() {
+    func testExplicitCompletionThenSleeps() {
         let t0 = Date(timeIntervalSince1970: 1_000)
         var tracker = MenuBarAgentActivityTracker(
             workingThresholdTokensPerSecond: 8,
@@ -34,7 +34,7 @@ final class MenuBarAgentActivityTests: XCTestCase {
             now: t0
         )
         _ = tracker.tick(tokensPerSecond: 40, now: t0)
-        // Quiet for 2s → completed
+        tracker.noteCompletion(at: t0.addingTimeInterval(2.1))
         let completed = tracker.tick(tokensPerSecond: 0, now: t0.addingTimeInterval(2.1))
         XCTAssertEqual(completed.mode, .completed)
         XCTAssertGreaterThan(completed.completionProgress, 0.5)
@@ -53,12 +53,12 @@ final class MenuBarAgentActivityTests: XCTestCase {
             now: t0
         )
         _ = tracker.tick(tokensPerSecond: 30, now: t0)
-        _ = tracker.tick(tokensPerSecond: 0, now: t0.addingTimeInterval(1.2))
+        tracker.noteCompletion(at: t0.addingTimeInterval(1.2))
         let again = tracker.tick(tokensPerSecond: 40, now: t0.addingTimeInterval(1.5))
         XCTAssertEqual(again.mode, .working)
     }
 
-    func testNoteFeedArmsCompletionPath() {
+    func testFeedAndSilenceNeverImplyCompletion() {
         let t0 = Date(timeIntervalSince1970: 3_000)
         var tracker = MenuBarAgentActivityTracker(
             workingThresholdTokensPerSecond: 8,
@@ -67,8 +67,8 @@ final class MenuBarAgentActivityTests: XCTestCase {
             now: t0
         )
         tracker.noteFeed(at: t0)
-        // Even without high rate, feed marks a work session; after quiet → completed.
+        // Usage observations cannot prove that a turn has completed.
         let completed = tracker.tick(tokensPerSecond: 0, now: t0.addingTimeInterval(1.2))
-        XCTAssertEqual(completed.mode, .completed)
+        XCTAssertEqual(completed.mode, .sleeping)
     }
 }

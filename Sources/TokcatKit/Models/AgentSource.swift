@@ -43,7 +43,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .openClaw:
             return "读取 ~/.openclaw/agents/**/sessions/*.trajectory.jsonl 的 model.completed。"
         case .workBuddy:
-            return "读取 ~/.workbuddy/traces/<pid>/trace_*.json 的 generation usage（含近 24h 首次写入）。"
+            return "读取本地 traces 用量、workbuddy.db 会话状态与 projects 对话记录。"
         case .kimi:
             return "读取 Kimi Desktop wire.jsonl 的 usage.record。"
         case .cursor:

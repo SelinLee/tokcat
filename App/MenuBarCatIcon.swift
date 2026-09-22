@@ -163,6 +163,8 @@ enum MenuBarStatusRenderer {
     private static let cellGapPoints: CGFloat = 4
     private static var cachedKey: String = ""
     private static var cachedImage: NSImage?
+    private static var measuredImage: NSImage?
+    private static var measuredTextBounds: ClosedRange<CGFloat>?
 
     /// Back-compat for callers that still read a constant height.
     static var pointHeight: CGFloat { 18 }
@@ -315,6 +317,42 @@ enum MenuBarStatusRenderer {
         cachedKey = key
         cachedImage = image
         return image
+    }
+
+    /// Measure the rendered metric glyphs, excluding the cat and its badge. Cache per
+    /// strip image so animation frames reuse the bounds, including text scale/offset.
+    static func textVerticalBounds(in image: NSImage, settings: AppSettings) -> ClosedRange<CGFloat>? {
+        if measuredImage === image { return measuredTextBounds }
+        measuredImage = image
+        measuredTextBounds = nil
+        var proposed = NSRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else { return nil }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        let sx = CGFloat(bitmap.pixelsWide) / image.size.width
+        let sy = CGFloat(bitmap.pixelsHigh) / image.size.height
+        var textX: CGFloat = 0
+        if settings.menuBarShowCatIcon {
+            textX = min(CGFloat(settings.menuBarCatIconPointSize), image.size.height - 2) + 4
+            if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
+                textX += MenuBarCatExpression.badgePointWidth
+            }
+        }
+        let startX = min(bitmap.pixelsWide, max(0, Int(ceil(textX * sx))))
+        var first = bitmap.pixelsHigh
+        var last = -1
+        for y in 0..<bitmap.pixelsHigh {
+            for x in startX..<bitmap.pixelsWide {
+                if (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.2 {
+                    first = min(first, y); last = max(last, y)
+                    break
+                }
+            }
+        }
+        if last >= first {
+            // Bitmap rows run top-to-bottom; NSImage drawing coordinates run upward.
+            measuredTextBounds = (CGFloat(bitmap.pixelsHigh - last - 1) / sy)...(CGFloat(bitmap.pixelsHigh - first) / sy)
+        }
+        return measuredTextBounds
     }
 
     private static func cacheKey(

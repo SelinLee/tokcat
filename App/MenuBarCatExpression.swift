@@ -174,7 +174,7 @@ enum MenuBarCatExpression {
         NSBezierPath(ovalIn: head).fill()
 
         switch activity.mode {
-        case .sleeping:
+        case .sleeping, .waiting, .failed, .unknown:
             drawSleepingFace(head: head, bounds: bounds, stroke: stroke, phase: activity.phase)
         case .working:
             drawWorkingFace(
@@ -495,6 +495,14 @@ enum MenuBarCatExpression {
             drawZZZ(in: rect, phase: activity.phase)
         case .working:
             drawWorkingGlyphs(in: rect, intensity: activity.intensity, phase: activity.phase)
+        case .waiting, .failed, .unknown:
+            let path = NSBezierPath()
+            let x = rect.midX
+            path.move(to: NSPoint(x: x, y: rect.minY + rect.height * 0.4))
+            path.line(to: NSPoint(x: x, y: rect.minY + rect.height * 0.8))
+            path.lineWidth = max(1.5, rect.width * 0.14)
+            path.stroke()
+            NSBezierPath(ovalIn: NSRect(x: x - 1, y: rect.minY + rect.height * 0.15, width: 2, height: 2)).fill()
         case .completed:
             drawOK(in: rect, progress: activity.completionProgress, phase: activity.phase)
         }

@@ -361,7 +361,7 @@ enum MetricsFormatting {
         let resolvedIcon: CGFloat
         if settings.menuBarShowCatIcon {
             let base = iconSize ?? CGFloat(settings.menuBarCatIconPointSize)
-            if settings.menuBarIconStyle == .tokcat {
+            if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
                 // Must match MenuBarCatExpression.badgePointWidth (floating zzz/OK column).
                 resolvedIcon = base + 9
             } else {

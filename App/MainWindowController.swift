@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// Owns the single reusable main window (stats dashboard + settings tabs).
+/// Owns the single reusable main window (task monitor, usage, pet and settings).
 /// Works with an accessory menu-bar app via a dedicated `NSWindowController`.
 @MainActor
 final class MainWindowController: NSWindowController {
@@ -16,15 +16,15 @@ final class MainWindowController: NSWindowController {
         self.model = model
         self.tabHolder = tabHolder
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: 660),
+            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Tokcat"
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 920, height: 660))
-        window.minSize = NSSize(width: 760, height: 540)
+        window.setContentSize(NSSize(width: 1180, height: 780))
+        window.minSize = NSSize(width: 900, height: 620)
         // Match GameUITheme paper surface (avoid default system mid-gray).
         window.backgroundColor = NSColor(name: nil, dynamicProvider: { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -44,7 +44,7 @@ final class MainWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    static func show(model: AppModel, tab: MainTab = .stats) {
+    static func show(model: AppModel, tab: MainTab = .tasks) {
         if shared == nil {
             shared = MainWindowController(model: model, tabHolder: MainTabHolder(tab: tab))
         }

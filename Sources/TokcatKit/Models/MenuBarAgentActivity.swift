@@ -5,6 +5,9 @@ public enum MenuBarAgentMode: String, Codable, CaseIterable, Sendable, Identifia
     case sleeping
     case working
     case completed
+    case waiting
+    case failed
+    case unknown
 
     public var id: String { rawValue }
 
@@ -12,7 +15,10 @@ public enum MenuBarAgentMode: String, Codable, CaseIterable, Sendable, Identifia
         switch self {
         case .sleeping: return "空闲"
         case .working: return "工作中"
-        case .completed: return "完成"
+        case .completed: return "本轮结束"
+        case .waiting: return "等待你"
+        case .failed: return "失败"
+        case .unknown: return "暂无更新"
         }
     }
 }
@@ -42,7 +48,7 @@ public struct MenuBarAgentActivity: Equatable, Sendable {
     public static let idle = MenuBarAgentActivity()
 }
 
-/// Derives sleep / working / completed from live token throughput + feed pulses.
+/// Legacy throughput presentation with explicit lifecycle completion.
 public struct MenuBarAgentActivityTracker: Sendable {
     /// Tokens/sec above this counts as "working".
     public var workingThresholdTokensPerSecond: Double
@@ -50,7 +56,7 @@ public struct MenuBarAgentActivityTracker: Sendable {
     public var intensityFullTokensPerSecond: Double
     /// How long the OK celebration lasts after work quiets.
     public var completionHoldSeconds: TimeInterval
-    /// After work stops, wait this long before entering completed (avoids flicker).
+    /// Legacy configuration retained for callers; silence no longer triggers completion.
     public var quietBeforeCompleteSeconds: TimeInterval
 
     private var lastWorkAt: Date?
@@ -83,6 +89,12 @@ public struct MenuBarAgentActivityTracker: Sendable {
         sawWorkSession = true
     }
 
+    /// Only a lifecycle event can arm completion; silence never can.
+    public mutating func noteCompletion(at date: Date = Date()) {
+        celebrationUntil = date.addingTimeInterval(completionHoldSeconds)
+        sawWorkSession = false
+    }
+
     public mutating func tick(
         tokensPerSecond: Double,
         now: Date = Date()
@@ -94,12 +106,6 @@ public struct MenuBarAgentActivityTracker: Sendable {
             sawWorkSession = true
             // Fresh work cancels a lingering OK celebration.
             celebrationUntil = nil
-        } else if celebrationUntil == nil,
-                  sawWorkSession,
-                  let lastWorkAt,
-                  now.timeIntervalSince(lastWorkAt) >= quietBeforeCompleteSeconds {
-            celebrationUntil = now.addingTimeInterval(completionHoldSeconds)
-            sawWorkSession = false
         }
 
         let phase = now.timeIntervalSince(start)

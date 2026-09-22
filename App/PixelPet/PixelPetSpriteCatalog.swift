@@ -97,7 +97,7 @@ enum PixelPetSpriteCatalog {
 
     private static func loadAllGear() {
         // Prefer enumerating the gear subdirectory so new PNGs are picked up automatically.
-        if let urls = Bundle.module.urls(forResourcesWithExtension: "png", subdirectory: gearSubdirectory) {
+        if let urls = TokcatResources.bundle.urls(forResourcesWithExtension: "png", subdirectory: gearSubdirectory) {
             var grouped: [String: [(Int, URL)]] = [:]
             for url in urls {
                 let file = url.deletingPathExtension().lastPathComponent
@@ -183,11 +183,11 @@ enum PixelPetSpriteCatalog {
     }
 
     private static func loadPixelImage(named name: String, subdirectory: String) -> NSImage? {
-        let url = Bundle.module.url(
+        let url = TokcatResources.bundle.url(
             forResource: name,
             withExtension: "png",
             subdirectory: subdirectory
-        ) ?? Bundle.module.url(forResource: name, withExtension: "png")
+        ) ?? TokcatResources.bundle.url(forResource: name, withExtension: "png")
         guard let url else { return nil }
         return loadPixelImage(at: url)
     }
@@ -239,11 +239,11 @@ enum PixelPetSpriteCatalog {
     }
 
     private static func loadManifest() -> Manifest? {
-        let url = Bundle.module.url(
+        let url = TokcatResources.bundle.url(
             forResource: "manifest",
             withExtension: "json",
             subdirectory: subdirectory
-        ) ?? Bundle.module.url(forResource: "manifest", withExtension: "json")
+        ) ?? TokcatResources.bundle.url(forResource: "manifest", withExtension: "json")
         guard let url, let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(Manifest.self, from: data)
     }

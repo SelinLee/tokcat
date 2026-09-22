@@ -3,6 +3,33 @@ import TokcatKit
 import AppKit
 
 @main
+struct TokcatLauncher {
+    @MainActor static func main() {
+        #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-task-dashboard"),
+           CommandLine.arguments.count > index + 1 {
+            do { try AgentTaskPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)) }
+            return
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-session-monitor"),
+           CommandLine.arguments.count > index + 1 {
+            do { try AgentSessionPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)) }
+            return
+        }
+        #endif
+        if CommandLine.arguments.contains(ClaudeSessionHooks.argument) {
+            // Run without constructing AppDelegate/AppModel or opening any windows.
+            // Monitoring must never block or change Claude's permission decisions.
+            do { try ClaudeSessionHooks.record(input: FileHandle.standardInput.readDataToEndOfFile()) }
+            catch { FileHandle.standardError.write(Data("Tokcat could not record the status event.\n".utf8)) }
+            return
+        }
+        TokcatApp.main()
+    }
+}
+
 struct TokcatApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
@@ -16,11 +43,12 @@ struct TokcatApp: App {
     }
 }
 
-/// Renders as a single template image so both download and upload stay visible
-/// inside the short macOS menu bar (~22pt). SwiftUI multi-line Text is clipped.
+/// Use a single image to append colored task dots after the configured metric strip.
 private struct MenuBarLabelView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var live: LiveMetricsStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     init(model: AppModel) {
         self.model = model
@@ -28,31 +56,36 @@ private struct MenuBarLabelView: View {
     }
 
     var body: some View {
-        Image(nsImage: MenuBarStatusRenderer.image(
-            settings: model.settings,
-            metrics: live.systemMetrics,
-            tokensPerSecond: live.tokensPerSecond,
-            usdPerSecond: live.usdPerSecond,
-            activity: live.menuBarActivity,
-            hatID: model.activeBonuses.menuBarHatID,
+        let icon = MenuBarStatusRenderer.image(
+            settings: model.settings, metrics: live.systemMetrics,
+            tokensPerSecond: live.tokensPerSecond, usdPerSecond: live.usdPerSecond,
+            activity: live.menuBarActivity, hatID: model.activeBonuses.menuBarHatID,
             codexUsage: live.codexUsage
-        ))
-        .renderingMode(.template)
-        // Prevent SwiftUI from rescaling and clipping the pre-sized image.
-        .frame(
-            width: MetricsFormatting.menuBarFixedWidth(
-                settings: model.settings,
-                activity: live.menuBarActivity,
-                codexUsage: live.codexUsage
-            ),
-            height: MetricsFormatting.menuBarPointHeight(settings: model.settings)
         )
-        .help(menuBarTooltip)
+        let displayed: NSImage = {
+            guard model.settings.compactAIMenuBar else { return icon }
+            var result = icon
+            let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)!
+            appearance.performAsCurrentDrawingAppearance {
+                result = SessionMenuBarRenderer.image(icon: icon,
+                    sessions: live.agentSessions, phase: live.menuBarActivity.phase, reduceMotion: reduceMotion,
+                    textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: model.settings))
+            }
+            return result
+        }()
+        Image(nsImage: displayed)
+            .renderingMode(model.settings.compactAIMenuBar ? .original : .template)
+            .frame(width: displayed.size.width, height: displayed.size.height)
+            .help(menuBarTooltip)
+            .accessibilityLabel(menuBarTooltip)
     }
 
     /// Hover text: activity mode, plus Codex remaining + reset countdown when shown.
     private var menuBarTooltip: String {
-        var lines = [live.menuBarActivity.mode.title]
+        var lines = ["Tokcat · AI 工作监控", live.menuBarActivity.mode.title]
+        lines += SessionPresentation.visibleTasks(live.agentSessions).map {
+            "\($0.source.displayName) · \($0.projectName) · \($0.displayState(at: Date()).title)"
+        }
         if model.settings.menuBarShowCodexUsage {
             lines.append(CodexUsageFormatting.tooltip(live.codexUsage))
         }

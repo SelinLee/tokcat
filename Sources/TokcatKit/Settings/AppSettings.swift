@@ -138,6 +138,9 @@ public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiabl
 }
 
 public struct AppSettings: Codable, Equatable, Sendable {
+    /// Append AI status dots after the selected metrics. Legacy key retained for saved settings.
+    public var compactAIMenuBar: Bool
+    public var notifyAgentEvents: Bool
     /// Whole-machine metrics in the menu bar dropdown panel.
     public var showCPU: Bool
     public var showMemory: Bool
@@ -236,6 +239,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public static let defaultMenuBarRefreshInterval: Double = 1.0
 
     public init(
+        compactAIMenuBar: Bool = true,
+        notifyAgentEvents: Bool = false,
         showCPU: Bool = true,
         showMemory: Bool = true,
         showNetwork: Bool = true,
@@ -269,6 +274,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         pricingEntries: [PricingEntry] = PricingTable.catalogDefault.entries,
         fallbackPricing: ModelPricing = .sonnetLike
     ) {
+        self.compactAIMenuBar = compactAIMenuBar
+        self.notifyAgentEvents = notifyAgentEvents
         self.showCPU = showCPU
         self.showMemory = showMemory
         self.showNetwork = showNetwork
@@ -403,6 +410,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
+        case compactAIMenuBar, notifyAgentEvents
         case showCPU, showMemory, showNetwork, showThermal, showGPU
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCodexUsage
@@ -415,6 +423,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        compactAIMenuBar = try container.decodeIfPresent(Bool.self, forKey: .compactAIMenuBar) ?? true
+        notifyAgentEvents = try container.decodeIfPresent(Bool.self, forKey: .notifyAgentEvents) ?? false
         showCPU = try container.decodeIfPresent(Bool.self, forKey: .showCPU) ?? true
         showMemory = try container.decodeIfPresent(Bool.self, forKey: .showMemory) ?? true
         showNetwork = try container.decodeIfPresent(Bool.self, forKey: .showNetwork) ?? true
@@ -500,6 +510,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(compactAIMenuBar, forKey: .compactAIMenuBar)
+        try container.encode(notifyAgentEvents, forKey: .notifyAgentEvents)
         try container.encode(showCPU, forKey: .showCPU)
         try container.encode(showMemory, forKey: .showMemory)
         try container.encode(showNetwork, forKey: .showNetwork)

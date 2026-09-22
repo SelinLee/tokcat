@@ -1,13 +1,8 @@
 # Tokcat
 
-<p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="Tokcat V3 states" width="720" />
-</p>
+**One macOS menu bar for all your AI agents. See what is running, what has finished, and what needs you.**
 
-<p align="center"><sub>Tokcat V3 — idle · working · hungry · happy · wave · rest</sub></p>
-
-**Realtime multi-agent token usage & cost monitoring in the macOS menu bar — local-first, no upload.**  
-Optional desktop pixel pet fed by the same usage, plus an optional Codex quota readout.
+Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into one task monitor. Glance at colored task dots while you work, then open the main window to browse recent tasks, read conversations, and inspect timing and activity. Token usage, cost, system metrics, and an optional desktop cat complete the picture.
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -15,132 +10,117 @@ Optional desktop pixel pet fed by the same usage, plus an optional Codex quota r
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#requirements)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
+![Multi-agent task overview with a conversation detail pane](docs/assets/screenshots/task-dashboard-light.png)
+
+*Native UI preview with demonstration data. Task monitoring features described here are on `main`; release downloads may lag behind.*
+
+## Keep track of AI work without switching windows
+
+| What you want to know | What Tokcat shows |
+|---|---|
+| Which agents are still working? | One menu-bar dot per active or unread task, beside your existing metrics |
+| Has a reply finished? | A green reminder until you acknowledge it or return to the corresponding desktop agent |
+| Is an agent waiting for me? | Input / approval state and accumulated waiting time, when reported by the source |
+| What did I work on recently? | A shared task list across tools, sorted by last activity, with source, time, and keyword filters |
+| What did the agent say? | A large conversation pane with user messages and AI replies, copying, refresh, and follow-latest |
+| What happened during a task? | Elapsed time, observed tool calls, available token counts, model, and activity timeline |
+| How much am I spending? | Live token / cost rates and daily, weekly, monthly usage grouped by agent, model, or provider |
+
+## Menu bar: compact status, useful details
+
 <p align="center">
-  <img src="docs/assets/screenshots/menubar-cathead.png" alt="Tokcat menu bar — cat head icon" width="520" />
+  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="Menu bar metrics, colored task dots, and task details in light mode" width="430" />
+  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="Menu bar metrics and AI task panel in dark mode" width="430" />
 </p>
 
-<p align="center"><sub>Menu bar live strip — cat head icon with status glyphs (zzz · steam · ✓), network · token rate · spend rate.</sub></p>
+*Light and dark native panel previews, using demonstration tasks.*
 
----
+Task dots appear **after the selected monitoring metrics**. Each column holds up to three dots, spaced within the text's top and bottom edges; a fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
 
-## Why Tokcat
+| Dot | Meaning |
+|---|---|
+| Pulsing yellow | Running |
+| Solid green | This turn finished; unread |
+| Solid yellow | Waiting for input or approval |
+| Red | Failed |
+| Hollow gray | Updates unavailable or turn interrupted |
 
-If you hop between Claude Code, Codex, Cursor and friends, costs scatter across tools.  
-Tokcat **only reads local agent logs** on your Mac (no cloud hook, no API-key upload), unifies them into token events, and shows:
+Click to inspect project, session, elapsed time, waiting time, and recent activity. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for at least 1.5 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
 
-| You care about | What you see |
-|----------------|--------------|
-| **Live rates** | Menu bar: `tok/s`, `$/h`, optional CPU / GPU / mem / network |
-| **Today & total** | Today’s tokens & cost, cumulative spend |
-| **Who spent it** | Agent · model · optional **provider / relay** (CC Switch) |
-| **Trends** | Day / week / month charts; group by provider, model, or agent |
-| **Local pricing** | Editable rate table + reported real prices when available |
-| **Optional pet** | Tokcat V3 grows on usage — loot, bag, codex |
+Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
 
-> The pet is an optional shell: **tokens → stats → (optional) feed the cat**.  
-> Monitoring and stats work fully without the pet.
+## Main window: tasks on the left, details in focus
 
----
+The main window opens **Task Overview**. Narrow navigation and task columns leave most of the space for the selected task.
 
-## Screenshots
+- **Live tasks:** current state, project, elapsed and waiting time, and latest activity.
+- **Recent tasks:** one chronological list across tools; filter by agent, 24 hours / 7 days / 30 days, or keyword. Codex turns are archived separately.
+- **Conversation:** local user messages and AI replies from Codex, Claude Code, and WorkBuddy. Select and copy text, follow new messages, or open a separate reading window.
+- **Monitor:** elapsed and waiting time, observed tool calls, model, available per-turn tokens, and an activity timeline. Open the project folder, locate source records, or return to a valid Codex session.
 
-### Live menu bar & panel
+![Task overview and conversation in dark mode](docs/assets/screenshots/task-dashboard-dark.png)
 
-| Menu bar strip | Dropdown panel |
-|----------------|----------------|
-| ![Menu bar](docs/assets/screenshots/menubar.png) | ![Menu bar panel](docs/assets/screenshots/menubar-panel.png) |
+### Task monitor
 
-- Cat icon with state (idle / working / resting / reviewing…)
-- Side metrics: network, **token rate**, **spend rate**
-- Panel: system strip, pet vitals, active agent + model, today / total cost, recent events
-- Shortcuts: main window · pet · settings · quit
+<p align="center">
+  <img src="docs/assets/screenshots/task-monitor-light.png" alt="Task monitor: duration, waiting time, tool calls, session metadata, and timeline" width="650" />
+</p>
 
-### Usage dashboard
 
-![Stats dashboard](docs/assets/screenshots/stats-dashboard.png)
+*All task screenshots use demonstration data, not private conversations.*
 
-- Period: **Day / Week / Month**
-- Group by: **Provider (relay)** · **Model** · **Agent**
-- Metric: **Tokens** or **Cost**
-- Summary cards (totals, in/out split, estimate ratio) + trend chart + breakdown table
+## Agent support
 
-### Multi-agent sources
+Task state, task history, conversations, and usage are separate capabilities. Tokcat shows only what each local source provides.
 
-![Agent settings](docs/assets/screenshots/settings-agents.png)
+| Source | Task state | Recent tasks | Conversation | Token / cost usage |
+|---|---|---|---|---|
+| **Codex** | Local lifecycle events | Yes, per turn | Yes | Yes |
+| **Claude Code** | Opt-in local hooks | Yes | Yes | Yes |
+| **WorkBuddy** | Explicit local database status | Yes, per session | Yes | Yes |
+| **DeepSeek Harness** | Activity records only | Yes | — | Yes |
+| **OpenClaw** | Activity records only | Yes | — | Yes |
+| **Kimi** | Activity records only | Yes | — | Yes |
+| **Cursor / Gemini CLI** | — | — | — | When local data is available |
+| **CC Switch** | — | — | — | Provider attribution, reported cost, multiplier |
 
-Toggle each adapter in **Settings → Agent**. Sources only poll **local** logs / state files.
+Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy reads `~/.workbuddy/workbuddy.db` in read-only mode and links local conversation logs; an explicitly working session stays running while the database remains readable.
 
-| Source | What it reads |
-|--------|----------------|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` session logs |
-| **Codex CLI** | `~/.codex/sessions/**/rollout-*.json` `token_count` events |
-| **OpenClaw** | trajectory `model.completed` events |
-| **WorkBuddy** | local generation usage traces |
-| **Kimi** | Desktop `wire.jsonl` usage records |
-| **Cursor** | local state / logs (shown when data exists) |
-| **Gemini CLI** | `~/.gemini` session logs (shown when data exists) |
-| **CC Switch** | local proxy DB → **relay attribution, reported cost, multiplier** |
+A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy does not infer per-turn start times. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
 
-New adapters track from the **end of the file** so first launch does not backfill huge histories.
+## Usage and costs
 
-### Optional pixel pet
+![Usage dashboard](docs/assets/screenshots/stats-dashboard.png)
 
-| Character | Inventory | Codex |
-|-----------|-----------|-------|
-| ![Pet](docs/assets/screenshots/pet-character.png) | ![Bag](docs/assets/screenshots/inventory.png) | ![Codex](docs/assets/screenshots/codex.png) |
+- Live token and spend rates, today's totals, and cumulative spend.
+- Day / week / month charts grouped by **agent, model, or provider / relay**.
+- Editable local rates, with reported real prices when available through CC Switch.
+- Optional CPU, GPU, memory, network, and thermal monitoring alongside AI task status.
 
-- **Character**: level, series, streak, mood / satiety / three stats, animation preview  
-- **Inventory**: loadout slots (hat / glasses / cape / held / aura) + bag filters  
-- **Codex**: skins & gear discovery progress; equip owned items from the codex  
+## Start in 60 seconds
 
-Main window tabs: **Stats · Pet · Bag · Codex · Settings**.
+1. Install and open Tokcat; it appears in the menu bar.
+2. Use Codex or WorkBuddy as usual. For Claude Code task states, enable local hooks in **Settings → Agent**.
+3. Watch task dots beside your chosen metrics; click for quick status details.
+4. Open **Task Overview** to read conversations and inspect live or recent tasks. Use **Stats** for token and cost trends.
 
----
+## Local data and privacy
 
-## 60-second tour
+Task monitoring reads local logs, explicit lifecycle events, and local state databases. No account or cloud sync is required, and usage and conversations are not uploaded. **The optional Codex quota readout** contacts the ChatGPT usage endpoint using a local Codex login; it can be disabled in settings.
 
-1. Install and open Tokcat (cat appears in the menu bar)  
-2. Use Claude Code / Codex / Cursor as usual  
-3. Watch **tok/s · $/h** beside the icon; click for today’s summary  
-4. Open **Main window → Stats** for day / week / month charts  
+- Task metadata and read state: `~/Library/Application Support/TokenCat/agent-sessions.json` and `agent-task-history.json`.
+- Task archive: up to **30 days / 500 records**. Initial import scans logs modified in the last seven days with bounded reads, so older turns may be absent.
+- Conversations: loaded on demand from the linked session, bounded to the last **4 MB / 200 messages**, with truncation notices. Text stays in view memory and is not copied to the archive. Attachments use placeholders; system messages, tool internals, and reasoning records are excluded.
+- Claude hooks store sanitized lifecycle metadata, not conversation text or tool arguments, in the local `session-inbox/` directory.
+- Usage statistics: local `tokencat.sqlite3`. Usage adapters start at the end of existing files rather than backfilling entire histories.
 
-Local DB only: `~/Library/Application Support/TokenCat/tokencat.sqlite3`
+## Optional desktop companion
 
----
+<p align="center">
+  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="Optional Tokcat companion: idle, working, hungry, happy, wave, rest" width="720" />
+</p>
 
-## Feature map
-
-### 1. Live monitoring (menu bar)
-- **Two icon styles**: code-drawn expressive face (with state glyphs) or AI-generated cat-head portrait (template-friendly, auto light/dark)
-- Status glyphs float beside the icon: `zzz` (sleeping) · `💡+steam` (working) · `✓` (completed)
-- Optional metrics: CPU, GPU, memory, network, thermal, **token rate**, **spend rate**, **Codex quota**  
-- Dropdown: agent + model, speed, today & total cost, Codex quota, recent events, pet vitals  
-
-### 1b. Codex quota (5-hour / weekly remaining)
-- Reads the local Codex login (`$CODEX_HOME/auth.json` → `~/.codex/auth.json` → `./.codex/auth.json`)  
-- Queries the ChatGPT usage endpoint and shows **remaining** percent for both windows:
-  menu bar cell `5h 21%` / `wk 20%`, plus a panel block with bars and reset countdowns  
-- Hidden entirely — no cell, no request — when Codex was never logged in on this Mac  
-- Refreshes every 5 minutes; hover the menu bar icon for the exact reset time  
-- Toggle off in **Settings → Menu bar / Metrics**  
-- Credit: payload contract follows [HCLonely/TrafficMonitor_Codex_Plugin](https://github.com/HCLonely/TrafficMonitor_Codex_Plugin)  
-
-### 2. Stats & rates (main window)
-- Day / week / month; group by provider / model / agent; tokens ↔ cost  
-- Async aggregation + cache so period switches stay responsive  
-- **Settings → Rates**: model unit prices; pairs with CC Switch reported prices  
-
-### 3. Desktop pet (optional)
-- Default **pixel Tokcat V3** (idle / work / review / wait / fail / happy / sad / sleepy / hungry / **rest (pacing & turning)** / wave / jump…)  
-- V3 sprites: refined silhouettes with clean edges, tall ears, big expressive eyes; all 90 frames AI-polished
-- Also: block cat / pink cat / custom USDZ  
-- Usage-driven growth: level, smarts / stability / feel, loot drops, bag & codex  
-- SFX **off by default**  
-
-### 4. Privacy
-- **Only one optional network feature**: the Codex quota readout, and only when a local Codex login exists
-- Everything else is local: read-only logs & system metrics  
-- No account, no cloud sync, no usage upload  
+The desktop cat reacts to activity and grows with usage, with optional gear, inventory, and a collection book. Monitoring and statistics work fully with the pet disabled. Sound is off by default.
 
 ---
 
@@ -168,12 +148,12 @@ Download from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
 Build a release locally:
 
 ```bash
-TOKCAT_VERSION=0.3.1 scripts/package_app.sh
+TOKCAT_VERSION=0.4.3 scripts/package_app.sh
 # Artifacts under dist/ (not committed):
 #   Tokcat.app
-#   Tokcat-0.3.1-macos.zip
-#   Tokcat-0.3.1-macos.dmg
-#   Tokcat-0.3.1-macos.sha256
+#   Tokcat-0.4.3-macos.zip
+#   Tokcat-0.4.3-macos.dmg
+#   Tokcat-0.4.3-macos.sha256
 #   INSTALL.txt
 ```
 
@@ -197,7 +177,8 @@ swift run TokcatApp
 Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
         │  local logs (read-only)
         ▼
-  Adapters → TokenEvent (tokens, cost, model, provider)
+  ├─ AgentSessionMonitor → task state / history / conversations
+  └─ Adapters → TokenEvent (tokens, cost, model, provider)
         │
         ├─ Throughput / daily totals / menu-bar live UI
         ├─ UsageStats (day·week·month · Agent/Model/Provider)
@@ -207,6 +188,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 | Path | Role |
 |------|------|
+| `Sources/TokcatKit/Monitor/` | Agent lifecycle, task history, conversation readers, optional quota |
 | `Sources/TokcatKit/Adapters/` | Per-agent log parsing & provider attribution |
 | `Sources/TokcatKit/Economy/` | Pricing, nutrition tiers, **UsageStats** |
 | `Sources/TokcatKit/Monitor/CodexUsageMonitor.swift` | Optional Codex 5h/weekly quota fetch (local `auth.json` → ChatGPT usage endpoint) |
@@ -220,6 +202,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 ## Roadmap (summary)
 
+- [x] Multi-agent task monitor, menu-bar dots, conversation details, WorkBuddy state
 - [x] Multi-agent local log adapters + live tok/s / cost  
 - [x] Day / week / month stats (Agent / Model / Provider)  
 - [x] Menu-bar metrics & main window  

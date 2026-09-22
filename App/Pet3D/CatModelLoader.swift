@@ -61,7 +61,7 @@ enum CatModelLoader {
 
     private static func candidateURLs() -> [URL] {
         var urls: [URL] = []
-        for bundle in [Bundle.module, Bundle.main] {
+        for bundle in [TokcatResources.bundle, Bundle.main] {
             for name in candidateNames {
                 for ext in candidateExtensions {
                     if let url = bundle.url(
@@ -443,7 +443,7 @@ enum CatModelLoader {
             searchDirs.append(modelURL.deletingLastPathComponent())
             searchDirs.append(modelURL.deletingLastPathComponent().appendingPathComponent("textures"))
         }
-        for bundle in [Bundle.module, Bundle.main] {
+        for bundle in [TokcatResources.bundle, Bundle.main] {
             searchDirs.append(bundle.bundleURL)
             if let tex = bundle.resourceURL?.appendingPathComponent("textures") {
                 searchDirs.append(tex)

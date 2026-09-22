@@ -13,20 +13,18 @@ struct MainView: View {
     @ObservedObject var tabHolder: MainTabHolder
     @State private var mountedTabs: Set<MainTab>
     @State private var didWarmStats = false
-    @State private var brandLevel: Int
 
-    private let sidebarWidth: CGFloat = 168
+    private let sidebarWidth: CGFloat = 140
 
     init(model: AppModel, tabHolder: MainTabHolder) {
         self.model = model
         self.tabHolder = tabHolder
         _mountedTabs = State(initialValue: [tabHolder.tab])
-        _brandLevel = State(initialValue: model.petState.level)
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
+            MainSidebar(selection: $tabHolder.tab)
                 .frame(width: sidebarWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
 
@@ -48,23 +46,17 @@ struct MainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(minWidth: 760, idealWidth: 920, minHeight: 540, idealHeight: 660)
+        .frame(minWidth: 900, idealWidth: 1180, minHeight: 620, idealHeight: 780)
         .background(GameUITheme.windowBackground)
         .onAppear {
             ensureMounted(tabHolder.tab)
             warmStatsIfNeeded(for: tabHolder.tab)
-            brandLevel = model.petState.level
         }
         .onChange(of: tabHolder.tab) { newTab in
             ensureMounted(newTab)
             warmStatsIfNeeded(for: newTab)
         }
-        // Low-frequency brand refresh only — not every metrics tick.
-        .onReceive(model.$petState) { state in
-            if brandLevel != state.level {
-                brandLevel = state.level
-            }
-        }
+
     }
 
     private func ensureMounted(_ item: MainTab) {
@@ -88,6 +80,8 @@ struct MainView: View {
     @ViewBuilder
     private func tabContent(_ item: MainTab) -> some View {
         switch item {
+        case .tasks:
+            TaskDashboardView(store: model.taskMonitor, markRead: model.markSessionRead)
         case .stats:
             StatsDashboardView(model: model)
         case .pet:
@@ -100,6 +94,12 @@ struct MainView: View {
             SettingsView(model: model, embedded: true)
         }
     }
+
+}
+
+struct MainSidebar: View {
+    @Binding var selection: MainTab
+    var body: some View { sidebar }
 
     // MARK: - Sidebar
 
@@ -116,6 +116,15 @@ struct MainView: View {
                 }
             }
             .padding(.horizontal, 10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                sidebarSectionLabel("桌宠")
+                sidebarButton(.pet)
+                sidebarButton(.bag)
+                sidebarButton(.codex)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 24)
 
             Spacer(minLength: 12)
 
@@ -148,14 +157,14 @@ struct MainView: View {
                 Text("Tokcat")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(GameUITheme.primaryText)
-                Text(CompactCopy.levelLabel(brandLevel))
+                Text("AI 工作监控")
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(GameUITheme.secondaryText)
             }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tokcat \(CompactCopy.levelLabel(brandLevel))")
+        .accessibilityLabel("Tokcat AI 工作监控")
     }
 
     private func sidebarSectionLabel(_ title: String) -> some View {
@@ -168,12 +177,12 @@ struct MainView: View {
     }
 
     private func sidebarButton(_ item: MainTab) -> some View {
-        let selected = tabHolder.tab == item
+        let selected = selection == item
         return Button {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                tabHolder.tab = item
+                selection = item
             }
         } label: {
             HStack(spacing: 10) {
@@ -214,6 +223,7 @@ struct MainView: View {
 }
 
 enum MainTab: String, CaseIterable, Identifiable, Hashable {
+    case tasks
     case stats
     case pet
     case bag
@@ -223,12 +233,13 @@ enum MainTab: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
 
     static var primaryTabs: [MainTab] {
-        [.stats, .pet, .bag, .codex]
+        [.tasks, .stats]
     }
 
     var title: String {
         switch self {
-        case .stats: return "统计"
+        case .tasks: return "任务总览"
+        case .stats: return "用量统计"
         case .pet: return "宠物"
         case .bag: return "背包"
         case .codex: return "图鉴"
@@ -238,6 +249,7 @@ enum MainTab: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .tasks: return "rectangle.stack"
         case .stats: return "chart.xyaxis.line"
         case .pet: return "cat.fill"
         case .bag: return "bag.fill"

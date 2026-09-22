@@ -1,13 +1,8 @@
 # Tokcat
 
-<p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="Tokcat V3 状态一览" width="720" />
-</p>
+**菜单栏里的多 Agent AI 任务监控工具：谁还在运行、谁已完成、谁需要你，一眼看清。**
 
-<p align="center"><sub>Tokcat V3 — 空闲 · 工作 · 饥饿 · 开心 · 招手 · 休息</sub></p>
-
-**在 macOS 菜单栏实时监控多种 AI coding agent 的 token 用量与费用，并提供本地统计。**  
-可选桌面像素宠物由同一批用量喂养。默认全程本地运行，唯一联网项是可选的 Codex 额度显示。
+将 **Codex、Claude Code、WorkBuddy 等本地 AI 工具**汇总到一个监控界面。菜单栏用状态点提醒，主界面按时间整理任务，点开即可阅读对话、查看耗时与活动记录；同时保留 Token、费用、系统指标与可选桌面猫咪。
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -15,134 +10,117 @@
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#环境要求)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
+![多 Agent 任务总览与对话详情](docs/assets/screenshots/task-dashboard-light.png)
+
+*原生界面预览，使用演示数据。本文介绍的任务监控功能已在 `main` 分支，Release 安装包可能尚未包含最新改动。*
+
+## 不用来回切窗口，也知道 AI 的工作状态
+
+| 你关心的 | Tokcat 展示的 |
+|---|---|
+| 哪些 Agent 还在工作？ | 每个进行中或未读任务一个菜单栏状态点，与已有监控指标并排显示 |
+| 回复完成了吗？ | 绿点提醒，手动已读或回到对应桌面 Agent 后清除 |
+| 有没有任务正在等我？ | 数据源明确报告的输入 / 授权等待状态，以及累计等待时间 |
+| 最近在各工具里做了什么？ | 跨工具任务按最后活动时间排列，支持来源、时间范围、关键词筛选 |
+| AI 具体说了什么？ | 大面积对话详情，支持复制、刷新、跟随最新消息 |
+| 一个任务经历了什么？ | 耗时、可观测的工具调用、可用的 Token 数、模型与活动时间线 |
+| 花了多少 Token 和钱？ | 实时速率及日 / 周 / 月统计，按 Agent、模型、中转站分组 |
+
+## 菜单栏：轻量提醒，点开看详情
+
 <p align="center">
-  <img src="docs/assets/screenshots/menubar-cathead.png" alt="Tokcat 菜单栏 — 猫头图标" width="520" />
+  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="浅色模式：菜单栏监控指标、任务状态点与详情面板" width="430" />
+  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="深色模式：菜单栏指标与 AI 任务详情面板" width="430" />
 </p>
 
-<p align="center"><sub>菜单栏实时条：猫头图标 + 状态浮动（zzz · 蒸汽灯泡 · ✓）、网速 · Token 速率 · 费用速率。</sub></p>
+*浅色与深色原生面板预览，任务内容为演示数据。*
 
----
+任务点放在**已选监控指标后方**。以左侧文字的上下边缘为限均匀排列：每列最多 3 个，第 4 个从右侧新列顶部开始。最多展示 6 个，其余显示 `+N`。
 
-## 为什么需要 Tokcat
+| 圆点 | 含义 |
+|---|---|
+| 黄色呼吸 | 正在运行 |
+| 绿色常亮 | 本轮结束，尚未查看 |
+| 黄色常亮 | 等待输入或授权 |
+| 红色 | 失败 |
+| 灰色空心 | 暂无更新或已中断 |
 
-同时用 Claude Code、Codex、Cursor 时，费用散落在各个工具里。  
-Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报），统一成 token 事件后给你：
+点击可查看项目、会话、耗时、等待时间及最近活动。切回已识别的 Codex、WorkBuddy / WorkBuddy AI、Claude 桌面应用并停留至少 1.5 秒，会按 Agent 清除进入应用前已完成的绿点。普通终端无法区分其中的 Agent，仍可手动标为已读；已读状态重启后保留。
 
-| 你关心的 | 你能看到的 |
-|----------|------------|
-| **实时速率** | 菜单栏：`tok/s`、`$/h`，可选 CPU / GPU / 内存 / 网速 |
-| **今日与累计** | 今日 tokens / 费用、累计费用 |
-| **谁花的** | Agent · 模型 · 可选 **中转站 / provider**（CC Switch） |
-| **趋势** | 日 / 周 / 月曲线；按中转站、模型、Agent 分组 |
-| **本地费率** | 可编辑单价表 + 有上报时用真实费用 |
-| **可选宠物** | Tokcat V3 随用量成长：掉落、背包、图鉴 |
+任务点与 CPU / GPU / 内存 / 网速 / Token / 费用指标可分别开关。可选系统通知用于提醒任务结束或等待操作，启动时不重放历史通知。本机有 Codex 登录信息时，还可显示 5 小时与周窗口的剩余额度和重置时间。
 
-> 宠物是可选壳层：**token 进来 → 统计落库 →（可选）喂养桌面猫**。  
-> **即使不用宠物，监控与统计也能单独使用。**
+## 主界面：左侧找任务，右侧读对话、看监控
 
----
+默认打开**任务总览**，收窄导航与任务列表，将大部分空间留给选中任务的详情。
 
-## 界面一览
+- **实时任务**：当前状态、项目、耗时、等待时间与最近活动。
+- **最近任务**：汇总不同 Agent 的记录，按时间排序；按工具、24 小时 / 7 天 / 30 天、关键词筛选。同一 Codex 会话的不同轮次独立留存。
+- **对话**：直接阅读 Codex、Claude Code、WorkBuddy 的用户提问与 AI 回复，支持选择复制、自动刷新、跟随最新消息和独立阅读窗口。
+- **监控详情**：本轮耗时、等待时间、可观测的工具调用数、模型、可用的本轮 Token 与活动时间线；可打开项目文件夹、定位源记录，或跳转回有效的 Codex 会话。
 
-### 菜单栏实时与下拉面板
+![深色任务总览与对话详情](docs/assets/screenshots/task-dashboard-dark.png)
 
-| 菜单栏 | 点击详情 |
-|--------|----------|
-| ![菜单栏](docs/assets/screenshots/menubar.png) | ![菜单栏面板](docs/assets/screenshots/menubar-panel.png) |
+### 任务监控详情
 
-- 猫头图标随状态变化（空闲 / 工作 / 休息 / 审阅…）
-- 旁路指标：网速、**Token 速率**、**费用速率**
-- 面板：系统条、宠物状态、当前 Agent + 模型、今日 / 累计费用、最近事件
-- 快捷入口：主界面 · 宠物 · 设置 · 退出
+<p align="center">
+  <img src="docs/assets/screenshots/task-monitor-light.png" alt="任务监控详情：耗时、等待时间、工具调用、会话信息与活动时间线" width="650" />
+</p>
 
-### Token 用量统计
 
-![统计看板](docs/assets/screenshots/stats-dashboard.png)
+*任务截图均使用演示数据，不包含私人对话。*
 
-- 周期：**日 / 周 / 月**
-- 分组：**中转站** · **模型** · **Agent**
-- 指标：**Tokens** 或 **费用**
-- 汇总卡片（总量、输入/输出、估算占比）+ 趋势曲线 + 明细表
+## Agent 接入能力
 
-### 支持的 Agent 列表
+任务状态、历史记录、对话阅读和用量统计是不同能力，界面只展示数据源实际提供的信息。
 
-![Agent 设置](docs/assets/screenshots/settings-agents.png)
+| 来源 | 任务状态 | 最近任务 | 对话阅读 | Token / 费用 |
+|---|---|---|---|---|
+| **Codex** | 本地生命周期事件 | 支持，按轮次 | 支持 | 支持 |
+| **Claude Code** | 可选本地事件接入 | 支持 | 支持 | 支持 |
+| **WorkBuddy** | 本地数据库明确状态 | 支持，按会话 | 支持 | 支持 |
+| **DeepSeek Harness** | 仅活动记录 | 支持 | — | 支持 |
+| **OpenClaw** | 仅活动记录 | 支持 | — | 支持 |
+| **Kimi** | 仅活动记录 | 支持 | — | 支持 |
+| **Cursor / Gemini CLI** | — | — | — | 本机有数据时显示 |
+| **CC Switch** | — | — | — | 中转站归因、上报费用与倍率 |
 
-在 **设置 → Agent** 中开关各数据源。仅轮询**本机**日志 / 状态文件。
+Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**启用本地状态接入，再重启 Claude Code 会话；接入会备份、合并现有 hook 设置，移动 Tokcat 后需重新启用。WorkBuddy 只读 `~/.workbuddy/workbuddy.db` 并关联本地对话日志；只要数据库仍明确报告工作中，就不会仅因暂时没有新消息而变成空心点。
 
-| 来源 | 读取内容 |
-|------|----------|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` 本地会话日志 |
-| **Codex CLI** | `~/.codex/sessions/**/rollout-*.json` 的 `token_count` 事件 |
-| **OpenClaw** | trajectory 的 `model.completed` |
-| **WorkBuddy** | 本地 generation usage traces |
-| **Kimi** | Desktop `wire.jsonl` 的 usage 记录 |
-| **Cursor** | 本地状态库 / 日志（有数据才显示） |
-| **Gemini CLI** | `~/.gemini` 会话日志（有数据才显示） |
-| **CC Switch** | 本机 proxy 库 → **中转站归因、真实费用、倍率** |
+**日志安静不等于完成，本轮结束不等于项目完成或测试通过。** WorkBuddy 不推测每轮起点；仅有活动记录的来源不冒充实时任务状态。缺失的指标显示为未提供，没有明确步骤数据时不显示推测的进度百分比。
 
-新适配器默认从文件**末尾**跟踪，避免首次启动灌入海量历史。
+## Token 与费用统计
 
-### 可选像素宠物
+![用量统计看板](docs/assets/screenshots/stats-dashboard.png)
 
-| 宠物状态 | 物品背包 | 掉落图鉴 |
-|----------|----------|----------|
-| ![宠物](docs/assets/screenshots/pet-character.png) | ![背包](docs/assets/screenshots/inventory.png) | ![图鉴](docs/assets/screenshots/codex.png) |
-
-- **宠物**：等级、序列、连续天数、心情 / 饱食 / 三围、动作预览  
-- **背包**：装备栏（帽子 / 眼镜 / 披风 / 手持 / 光环）+ 物品筛选  
-- **图鉴**：皮肤与装备收集进度；已获得的可直接启用  
-
-主界面导航：**统计 · 宠物 · 背包 · 图鉴 · 设置**。
-
----
+- 实时 Token / 费用速率、今日用量与累计费用。
+- 日 / 周 / 月趋势，按 **Agent、模型、中转站 / Provider** 分组。
+- 可编辑本地费率，支持结合 CC Switch 上报的实际费用。
+- 可选 CPU、GPU、内存、网速与温度压力，与 AI 任务状态一起查看。
 
 ## 60 秒上手
 
-1. 安装并打开 Tokcat（菜单栏出现猫头）  
-2. 正常使用 Claude Code / Codex / Cursor 等  
-3. 菜单栏可看 **tok/s · 费用速率**；点开面板查看今日用量  
-4. 主界面 → **统计**：日 / 周 / 月曲线与明细  
+1. 安装并打开 Tokcat，菜单栏出现图标。
+2. 正常使用 Codex 或 WorkBuddy；Claude Code 任务状态需在**设置 → Agent**启用本地接入。
+3. 在已有监控指标旁查看任务点，点击展开简要状态。
+4. 打开**任务总览**阅读对话、查看实时与最近任务；在**统计**页查看 Token 和费用趋势。
 
-数据仅写入本机 SQLite：`~/Library/Application Support/TokenCat/tokencat.sqlite3`
+## 本地数据与隐私
 
----
+任务监控读取本机日志、明确的生命周期事件和本地状态数据库，不需要账号或云同步，不上传用量与对话。**可选的 Codex 额度显示**会使用本机 Codex 登录信息请求 ChatGPT 用量接口，可在设置中关闭。
 
-## 功能一览
+- 任务元数据与已读状态保存在 `~/Library/Application Support/TokenCat/agent-sessions.json` 和 `agent-task-history.json`。
+- 最多保留 **30 天 / 500 条**任务；首次扫描最近 7 天修改过的日志，读取量有限，不保证回填全部历史轮次。
+- 对话按需读取整个关联会话，最多读取末尾 **4 MB / 最近 200 条消息**，截断时明确提示。正文只在视图内存中，不写入任务存档；附件显示占位，不展示系统消息、工具内部数据与推理记录。
+- Claude hook 在本地 `session-inbox/` 写入经过筛选的生命周期信息，不保存对话正文或工具参数。
+- 用量统计写入本机 `tokencat.sqlite3`；用量适配器从已有文件末尾开始跟踪，避免回填大量历史。
 
-### 1. 实时监控（菜单栏）
-- **两种图标风格**：代码绘制表情脸（带状态浮动）或 AI 生成猫头肖像（template 自适应深浅模式）
-- 状态浮动图标：`zzz`（睡觉）· `💡+蒸汽`（工作中）· `✓`（完成）
-- 可选旁路：CPU、GPU、内存、网速、温度压力、**Token 速率**、**费用速率**、**Codex 剩余额度**  
-- 下拉：Agent + 模型、速度、今日 / 累计费用、Codex 剩余额度、最近事件、宠物状态  
+## 可选桌面猫咪
 
-### 1b. Codex 剩余用量（5 小时 / 周窗口）
-- 读取本机 Codex 登录信息（`$CODEX_HOME/auth.json` → `~/.codex/auth.json` → `./.codex/auth.json`）  
-- 调用 ChatGPT 用量接口，按窗口显示**剩余**百分比：
-  菜单栏双行单元格 `5h 21%` / `wk 20%`，下拉面板另带进度条与重置倒计时  
-- 本机未登录 Codex 时完全隐藏——不占位、不发请求  
-- 每 5 分钟刷新一次；鼠标悬停菜单栏图标可见精确重置时间  
-- 可在 **设置 → 菜单栏 / 指标** 中关闭  
-- 数据口径参考 [HCLonely/TrafficMonitor_Codex_Plugin](https://github.com/HCLonely/TrafficMonitor_Codex_Plugin)  
+<p align="center">
+  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="可选桌面猫咪：空闲、工作、饥饿、开心、招手、休息" width="720" />
+</p>
 
-### 2. 统计与费率（主界面）
-- 日 / 周 / 月；分组 = 中转站 / 模型 / Agent；Tokens 或费用  
-- 异步聚合 + 缓存，切换周期不阻塞主线程  
-- **设置 → 费率**：维护模型单价；可与 CC Switch 上报价配合  
-
-### 3. 桌面宠物（可选）
-- 默认 **Tokcat V3**（插画风帧动画）  
-  - **rest 状态**改为站立转圈踱步（不再趴窝）
-  - 全部 90 帧精灵经 AI 精修外轮廓，去除白边残留
-  - 长尖耳、大眼睛、干净剪影
-- 也可用方块猫 / 自定义 USDZ  
-- 用量驱动成长：等级、聪明 / 稳定 / 手感、掉落、背包与图鉴  
-- 音效默认关闭  
-
-### 4. 隐私
-- **唯一的联网功能是可选的 Codex 额度显示**，且仅在本机存在 Codex 登录信息时才触发  
-- 其余全部本地完成：只读日志与系统指标  
-- 无账号、无云同步、不上传用量  
+猫咪随活动改变状态、随用量成长，提供装备、背包与图鉴。关闭桌宠也能完整使用监控和统计；音效默认关闭。
 
 ---
 
@@ -170,12 +148,12 @@ Tokcat **只读本机 agent 日志**（无需 cloud hook、无需 API Key 上报
 本地打包：
 
 ```bash
-TOKCAT_VERSION=0.3.1 scripts/package_app.sh
+TOKCAT_VERSION=0.4.3 scripts/package_app.sh
 # 产物在 dist/（不入库）：
 #   Tokcat.app
-#   Tokcat-0.3.1-macos.zip
-#   Tokcat-0.3.1-macos.dmg
-#   Tokcat-0.3.1-macos.sha256
+#   Tokcat-0.4.3-macos.zip
+#   Tokcat-0.4.3-macos.dmg
+#   Tokcat-0.4.3-macos.sha256
 #   INSTALL.txt
 ```
 
@@ -199,7 +177,8 @@ swift run TokcatApp
 Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
         │  本机日志（只读）
         ▼
-  Adapters → TokenEvent（token、费用、模型、provider）
+  ├─ AgentSessionMonitor → task state / history / conversations
+  └─ Adapters → TokenEvent（token、费用、模型、provider）
         │
         ├─ Throughput / 今日累计 / 菜单栏实时
         ├─ UsageStats（日周月 · Agent/模型/中转站）
@@ -209,6 +188,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 | 路径 | 职责 |
 |------|------|
+| `Sources/TokcatKit/Monitor/` | Agent 生命周期、任务历史、对话读取与可选额度 |
 | `Sources/TokcatKit/Adapters/` | 各 Agent 日志解析与 provider 归因 |
 | `Sources/TokcatKit/Economy/` | 定价、营养分层、**UsageStats 看板** |
 | `Sources/TokcatKit/Persistence/` | 本地 SQLite |
@@ -221,6 +201,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 ## 路线图（摘要）
 
+- [x] 多 Agent 任务监控、菜单栏状态点、对话详情与 WorkBuddy 状态接入
 - [x] 多 Agent 本地日志适配 + 实时 tok/s / 费用  
 - [x] 日周月统计看板（Agent / 模型 / 中转站）  
 - [x] 菜单栏指标与主界面  
