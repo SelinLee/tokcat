@@ -6,6 +6,10 @@ import AppKit
 struct TokcatLauncher {
     @MainActor static func main() {
         #if DEBUG
+        if CommandLine.arguments.contains("--preview-menu-resize") {
+            MenuBarResizePreviewApp.main()
+            return
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--preview-task-dashboard"),
            CommandLine.arguments.count > index + 1 {
             do { try AgentTaskPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }

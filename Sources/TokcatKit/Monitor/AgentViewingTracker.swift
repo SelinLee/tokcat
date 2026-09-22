@@ -3,6 +3,7 @@ import Foundation
 /// An app coming to the foreground acknowledges completed reminders from that agent only.
 /// Generic terminals/editors are intentionally not mapped: focus there cannot identify an agent.
 public struct AgentViewingTracker {
+    public static let acknowledgementDelay: TimeInterval = 3
     private var source: AgentSource?
     private var focusedSince: Date?
     public init() {}
@@ -28,7 +29,8 @@ public struct AgentViewingTracker {
         if next != source {
             activated(bundleIdentifier: bundleIdentifier, now: now)
         }
-        guard let source, let focusedSince, now.timeIntervalSince(focusedSince) >= 1.5 else { return nil }
+        guard let source, let focusedSince,
+              now.timeIntervalSince(focusedSince) >= Self.acknowledgementDelay else { return nil }
         return (source, focusedSince)
     }
 }

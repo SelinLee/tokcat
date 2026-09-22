@@ -647,6 +647,7 @@ struct MenuBarPanelLayout<Header: View, Content: View, Footer: View>: View {
         }
         .padding(12)
         .frame(width: 360)
+        .background(MenuBarWindowSizing())
     }
 }
 

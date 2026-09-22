@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
     private var isSessionPolling = false
     private var agentViewing = AgentViewingTracker()
     private var agentActivationObserver: NSObjectProtocol?
+    private var viewedCompletionTimer: Timer?
     @Published var sessionMonitoringMessage: String?
     private var timer: Timer?
     private var menuBarAnimTimer: Timer?
@@ -243,13 +244,13 @@ final class AppModel: ObservableObject {
         historicalIdleStreak = 0
         consecutiveQuietPolls = 0
         startMenuBarAnimation()
-        agentViewing.activated(bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date())
+        agentActivated(bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date())
         agentActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in
             let bundleID = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
             let activatedAt = Date()
-            Task { @MainActor in self?.agentViewing.activated(bundleIdentifier: bundleID, now: activatedAt) }
+            Task { @MainActor in self?.agentActivated(bundleIdentifier: bundleID, now: activatedAt) }
         }
         pollSessions()
         let sessionTimer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
@@ -272,6 +273,8 @@ final class AppModel: ObservableObject {
     func stop() {
         if let agentActivationObserver { NSWorkspace.shared.notificationCenter.removeObserver(agentActivationObserver) }
         agentActivationObserver = nil
+        viewedCompletionTimer?.invalidate()
+        viewedCompletionTimer = nil
         sessionTimer?.invalidate()
         sessionTimer = nil
         timer?.invalidate()
@@ -1027,6 +1030,19 @@ final class AppModel: ObservableObject {
                 self.refreshMenuBarActivity()
             }
         }
+    }
+
+    private func agentActivated(bundleIdentifier: String?, now: Date) {
+        agentViewing.activated(bundleIdentifier: bundleIdentifier, now: now)
+        viewedCompletionTimer?.invalidate()
+        viewedCompletionTimer = nil
+        guard AgentViewingTracker.source(bundleIdentifier: bundleIdentifier) != nil else { return }
+        // Clear viewed reminders at the dwell deadline, independently of log polling.
+        let timer = Timer(timeInterval: AgentViewingTracker.acknowledgementDelay, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.acknowledgeViewedCompletions() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        viewedCompletionTimer = timer
     }
 
     private func acknowledgeViewedCompletions() {
