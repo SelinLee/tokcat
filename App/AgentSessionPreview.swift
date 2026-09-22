@@ -163,6 +163,35 @@ enum AgentSessionPreview {
                   let bitmap = NSBitmapImageRep(data: tiff),
                   let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
             try png.write(to: directory.appendingPathComponent("approval-dot-\(name).png"))
+
+            let completionSamples = [("前台 · 亮", 0.1, true, false), ("前台 · 暗", 0.5, true, false),
+                                     ("后台 · 保留", 0.5, false, false), ("减少动态效果", 0.5, true, true)]
+            let completionImages = completionSamples.map { label, elapsed, viewed, reduceMotion in
+                var sample = icon
+                appearance.performAsCurrentDrawingAppearance {
+                    sample = SessionMenuBarRenderer.image(icon: icon, sessions: [tasks[2]],
+                        phase: 0, reduceMotion: reduceMotion, now: now.addingTimeInterval(elapsed),
+                        textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: settings),
+                        completionFlashingSince: viewed ? [tasks[2].id: now] : [:])
+                }
+                return (label, sample)
+            }
+            let completionPreview = VStack(alignment: .leading, spacing: 22) {
+                Text("完成提醒 · 前台闪烁 3 秒后消失").font(.headline)
+                ForEach(completionImages, id: \.0) { label, sample in
+                    HStack(spacing: 20) {
+                        Text(label).font(.caption).frame(width: 120, alignment: .leading)
+                        Image(nsImage: sample).renderingMode(.original)
+                    }
+                }
+            }.padding(20).background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, dark ? .dark : .light)
+            let completionRenderer = ImageRenderer(content: completionPreview)
+            completionRenderer.scale = 2
+            guard let image = completionRenderer.nsImage, let tiff = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff),
+                  let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+            try png.write(to: directory.appendingPathComponent("completion-dot-\(name).png"))
         }
     }
     private static func snapshotPanel<V: View>(_ content: V, to url: URL) throws {

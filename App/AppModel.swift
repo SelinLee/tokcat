@@ -1034,33 +1034,35 @@ final class AppModel: ObservableObject {
 
     private func agentActivated(bundleIdentifier: String?, now: Date) {
         agentViewing.activated(bundleIdentifier: bundleIdentifier, now: now)
-        viewedCompletionTimer?.invalidate()
-        viewedCompletionTimer = nil
-        guard AgentViewingTracker.source(bundleIdentifier: bundleIdentifier) != nil else { return }
-        // Clear viewed reminders at the dwell deadline, independently of log polling.
-        let timer = Timer(timeInterval: AgentViewingTracker.acknowledgementDelay, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.acknowledgeViewedCompletions() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        viewedCompletionTimer = timer
+        acknowledgeViewedCompletions()
     }
 
     private func acknowledgeViewedCompletions() {
-        guard let viewed = agentViewing.viewedCompletions(
-            bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date()),
-            liveMetrics.agentSessions.contains(where: {
-                $0.source == viewed.source && $0.state == .completed && $0.unread
-                    && ($0.endedAt ?? $0.lastActivityAt) <= viewed.through
-            }) else { return }
+        let update = agentViewing.update(sessions: liveMetrics.agentSessions,
+            bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date())
+        liveMetrics.setCompletionFlashingSince(update.flashingSince)
+        viewedCompletionTimer?.invalidate()
+        viewedCompletionTimer = nil
+        if let deadline = update.nextDeadline {
+            // Each newly observed completion gets a full three seconds, even if
+            // its agent has stayed in the foreground throughout the task.
+            let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+                Task { @MainActor in self?.acknowledgeViewedCompletions() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            viewedCompletionTimer = timer
+        }
+        guard !update.acknowledgements.isEmpty else { return }
         let enabled = settings.enabledAgents
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            let sessions = self.sessionMonitor.markCompletedRead(source: viewed.source, through: viewed.through, enabled: enabled)
+            let sessions = self.sessionMonitor.markCompletedRead(update.acknowledgements, enabled: enabled)
             let tasks = self.sessionMonitor.taskSnapshot(enabled: enabled)
             DispatchQueue.main.async {
                 self.liveMetrics.setAgentSessions(sessions.filter { self.settings.enabledAgents.contains($0.source) })
                 self.taskMonitor.update(sessions: sessions, tasks: tasks, enabled: self.settings.enabledAgents)
                 self.refreshMenuBarActivity()
+                self.acknowledgeViewedCompletions()
             }
         }
     }

@@ -73,7 +73,8 @@ private struct MenuBarLabelView: View {
             appearance.performAsCurrentDrawingAppearance {
                 result = SessionMenuBarRenderer.image(icon: icon,
                     sessions: live.agentSessions, phase: live.menuBarActivity.phase, reduceMotion: reduceMotion,
-                    textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: model.settings))
+                    textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: model.settings),
+                    completionFlashingSince: live.completionFlashingSince)
             }
             return result
         }()

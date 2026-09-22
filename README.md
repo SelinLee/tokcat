@@ -28,12 +28,12 @@ Task dots appear **after the selected monitoring metrics**. Each column holds up
 | Dot | Meaning |
 |---|---|
 | 🟡 Pulsing yellow | Running; stays bright even at the dimmest point |
-| 🟢 Solid green | This turn finished; unread until viewed or acknowledged |
+| 🟢 Green | Flashes for 3 seconds then disappears when its agent is foreground; stays solid in the background until viewed |
 | 🟡🔴 Alternating yellow / red | Waiting for input or approval; switches color every 0.8 seconds, or stays red when Reduce Motion is enabled |
 | 🔴 Solid red | Failed |
 | ◯ Hollow gray | Updates unavailable or turn interrupted; silence alone does not mean completion |
 
-The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. Switching to a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app for 3 seconds clears that agent's pre-existing completed reminders. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
+The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. While a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app is foreground, each newly observed completion flashes green for 3 seconds before disappearing, without switching apps. Background completions stay visible until that agent is opened. Leaving during the countdown preserves the reminder and starts a fresh countdown on return. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
 
 Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. The dots follow the selected metrics, so both can remain visible. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
 

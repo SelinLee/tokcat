@@ -117,11 +117,30 @@ final class AgentSessionMonitorTests: XCTestCase {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         try JSONEncoder().encode(saved).write(to: support.appendingPathComponent("agent-sessions.json"))
         let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil)
-        let updated = monitor.markCompletedRead(source: .workBuddy, through: now.addingTimeInterval(-5), enabled: [.workBuddy, .codexCLI])
+        let updated = monitor.markCompletedRead([try XCTUnwrap(AgentViewingTracker.Completion(saved[0]))], enabled: [.workBuddy, .codexCLI])
         XCTAssertFalse(try XCTUnwrap(updated.first { $0.sessionID == "done" }).unread)
         XCTAssertTrue(updated.filter { $0.sessionID != "done" }.allSatisfy(\.unread))
         let restart = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil)
         XCTAssertFalse(try XCTUnwrap(restart.snapshot(enabled: [.workBuddy]).first { $0.sessionID == "done" }).unread)
         XCTAssertFalse(try XCTUnwrap(restart.taskSnapshot(enabled: [.workBuddy]).first { $0.session.sessionID == "done" }).session.unread)
+    }
+
+    func testQueuedAcknowledgementCannotClearANewerCompletionInTheSameConversation() throws {
+        let (logs, support, _) = try fixture()
+        let now = Date()
+        var old = AgentSession(event: .init(sessionID: "same", source: .codexCLI,
+            timestamp: now.addingTimeInterval(-10), kind: .completed, turnID: "one"))
+        old.unread = true
+        let stale = try XCTUnwrap(AgentViewingTracker.Completion(old))
+        var newer = old
+        newer.turnID = "two"
+        newer.endedAt = now
+        newer.lastActivityAt = now
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try JSONEncoder().encode([newer]).write(to: support.appendingPathComponent("agent-sessions.json"))
+        let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil)
+        XCTAssertTrue(try XCTUnwrap(monitor.markCompletedRead([stale], enabled: [.codexCLI]).first).unread)
+        let current = try XCTUnwrap(AgentViewingTracker.Completion(newer))
+        XCTAssertFalse(try XCTUnwrap(monitor.markCompletedRead([current], enabled: [.codexCLI]).first).unread)
     }
 }

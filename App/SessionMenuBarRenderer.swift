@@ -6,7 +6,8 @@ import TokcatKit
 @MainActor
 enum SessionMenuBarRenderer {
     static func image(icon: NSImage?, sessions: [AgentSession], phase: TimeInterval,
-                      reduceMotion: Bool, now: Date = Date(), textBounds: ClosedRange<CGFloat>? = nil) -> NSImage {
+                      reduceMotion: Bool, now: Date = Date(), textBounds: ClosedRange<CGFloat>? = nil,
+                      completionFlashingSince: [String: Date] = [:]) -> NSImage {
         let tasks = SessionPresentation.visibleTasks(sessions)
         let count = min(tasks.count, 6)
         let overflow = tasks.count > 6 ? "+\(tasks.count - 6)" : ""
@@ -58,7 +59,11 @@ enum SessionMenuBarRenderer {
                     case .failed: color = .systemRed
                     case .unknown, .interrupted: color = .secondaryLabelColor
                     }
-                    let alpha = state == .running && !reduceMotion ? 0.88 + 0.12 * (sin(phase * 2) + 1) / 2 : 1
+                    var alpha = state == .running && !reduceMotion ? 0.88 + 0.12 * (sin(phase * 2) + 1) / 2 : 1
+                    if state == .completed, !reduceMotion, let seenAt = completionFlashingSince[session.id] {
+                        let elapsed = max(0, now.timeIntervalSince(seenAt))
+                        alpha = elapsed.truncatingRemainder(dividingBy: 0.8) < 0.4 ? 1 : 0.2
+                    }
                     color.withAlphaComponent(alpha).setFill()
                     color.setStroke()
                     let x = iconWidth + gap + CGFloat(index / 3) * columnPitch + 2

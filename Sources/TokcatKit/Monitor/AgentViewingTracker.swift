@@ -1,12 +1,37 @@
 import Foundation
 
-/// An app coming to the foreground acknowledges completed reminders from that agent only.
+/// Each completed reminder gets three seconds of visibility in its foreground agent.
 /// Generic terminals/editors are intentionally not mapped: focus there cannot identify an agent.
 public struct AgentViewingTracker {
     public static let acknowledgementDelay: TimeInterval = 3
     private var source: AgentSource?
-    private var focusedSince: Date?
+    private struct Pending {
+        var completion: Completion
+        var seenAt: Date
+    }
+    private var pending: [String: Pending] = [:]
     public init() {}
+
+    /// Identity includes the completed turn so a queued acknowledgement cannot
+    /// clear a newer result from the same conversation.
+    public struct Completion: Equatable, Sendable {
+        public let id: String
+        public let turnID: String?
+        public let completedAt: Date
+
+        public init?(_ session: AgentSession) {
+            guard session.state == .completed, session.unread else { return nil }
+            id = session.id
+            turnID = session.turnID
+            completedAt = session.endedAt ?? session.lastActivityAt
+        }
+    }
+
+    public struct Update: Sendable {
+        public var acknowledgements: [Completion]
+        public var flashingSince: [String: Date]
+        public var nextDeadline: Date?
+    }
 
     public static func source(bundleIdentifier: String?) -> AgentSource? {
         switch bundleIdentifier {
@@ -18,19 +43,30 @@ public struct AgentViewingTracker {
     }
 
     public mutating func activated(bundleIdentifier: String?, now: Date) {
-        source = Self.source(bundleIdentifier: bundleIdentifier)
-        focusedSince = source == nil ? nil : now
+        let next = Self.source(bundleIdentifier: bundleIdentifier)
+        if next != source { pending.removeAll() }
+        source = next
     }
 
-    /// Acknowledge only completions that existed when the user entered the agent.
-    /// A later completion stays unread until a subsequent visit.
-    public mutating func viewedCompletions(bundleIdentifier: String?, now: Date) -> (source: AgentSource, through: Date)? {
-        let next = Self.source(bundleIdentifier: bundleIdentifier)
-        if next != source {
-            activated(bundleIdentifier: bundleIdentifier, now: now)
+    public mutating func update(sessions: [AgentSession], bundleIdentifier: String?, now: Date) -> Update {
+        activated(bundleIdentifier: bundleIdentifier, now: now)
+        var visible: [String: Pending] = [:]
+        for session in sessions where session.source == source {
+            guard let completion = Completion(session) else { continue }
+            if let previous = pending[completion.id], previous.completion == completion {
+                visible[completion.id] = previous
+            } else {
+                visible[completion.id] = Pending(completion: completion, seenAt: now)
+            }
         }
-        guard let source, let focusedSince,
-              now.timeIntervalSince(focusedSince) >= Self.acknowledgementDelay else { return nil }
-        return (source, focusedSince)
+        pending = visible
+        var result = Update(acknowledgements: [], flashingSince: [:], nextDeadline: nil)
+        for item in pending.values {
+            result.flashingSince[item.completion.id] = item.seenAt
+            let deadline = item.seenAt.addingTimeInterval(Self.acknowledgementDelay)
+            if now >= deadline { result.acknowledgements.append(item.completion) }
+            else { result.nextDeadline = min(result.nextDeadline ?? deadline, deadline) }
+        }
+        return result
     }
 }

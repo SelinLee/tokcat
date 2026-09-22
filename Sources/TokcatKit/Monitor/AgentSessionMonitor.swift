@@ -194,13 +194,12 @@ public final class AgentSessionMonitor {
         return snapshot(enabled: enabled)
     }
 
-    /// Preserve running, waiting and failed reminders, and don't acknowledge a newer completion
-    /// that arrived after the foreground view being processed.
-    public func markCompletedRead(source: AgentSource, through date: Date, enabled: Set<AgentSource>) -> [AgentSession] {
-        for (id, session) in sessions where session.source == source && session.state == .completed
-            && session.unread && (session.endedAt ?? session.lastActivityAt) <= date {
-            sessions[id]?.unread = false
-            if let updated = sessions[id] { history.observe(updated, event: nil) }
+    public func markCompletedRead(_ completions: [AgentViewingTracker.Completion], enabled: Set<AgentSource>) -> [AgentSession] {
+        for completion in completions {
+            guard let session = sessions[completion.id], enabled.contains(session.source),
+                  AgentViewingTracker.Completion(session) == completion else { continue }
+            sessions[completion.id]?.unread = false
+            if let updated = sessions[completion.id] { history.observe(updated, event: nil) }
         }
         save()
         return snapshot(enabled: enabled)
