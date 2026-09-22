@@ -29,7 +29,8 @@ Task dots appear **after the selected monitoring metrics**. Each column holds up
 |---|---|
 | 🟡 Pulsing yellow | Running; stays bright even at the dimmest point |
 | 🟢 Solid green | This turn finished; unread until viewed or acknowledged |
-| 🟡 Solid yellow | Waiting for input or approval |
+| 🟡🔴 Alternating yellow / red | Waiting for approval; solid red when Reduce Motion is enabled |
+| 🟡 Solid yellow | Waiting for input |
 | 🔴 Solid red | Failed |
 | ◯ Hollow gray | Updates unavailable or turn interrupted; silence alone does not mean completion |
 

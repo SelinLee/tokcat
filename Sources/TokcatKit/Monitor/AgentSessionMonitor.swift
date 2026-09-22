@@ -68,8 +68,13 @@ public final class AgentSessionMonitor {
                 var parser = bootstrap ? CodexSessionParser.bootstrap(at: info.url)
                     : (parsers[path] ?? CodexSessionParser.bootstrap(at: info.url))
                 if parser.isGuardianReview {
-                    sessions.removeValue(forKey: AgentSource.codexCLI.rawValue + ":" + parser.sessionID)
-                    history.removeSession(source: .codexCLI, sessionID: parser.sessionID)
+                    // Older versions could persist this internal run under the
+                    // rollout filename instead of its session_meta ID.
+                    let legacyID = info.url.deletingPathExtension().lastPathComponent
+                    for id in Set([parser.sessionID, legacyID]) {
+                        sessions.removeValue(forKey: AgentSource.codexCLI.rawValue + ":" + id)
+                        history.removeSession(source: .codexCLI, sessionID: id)
+                    }
                     offsets[path] = size
                     parsers[path] = parser
                     continue

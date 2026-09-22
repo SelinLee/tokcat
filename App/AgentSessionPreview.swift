@@ -134,6 +134,34 @@ enum AgentSessionPreview {
                   let spacingBitmap = NSBitmapImageRep(data: spacingTIFF),
                   let spacingPNG = spacingBitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
             try spacingPNG.write(to: directory.appendingPathComponent("task-dot-spacing-\(name).png"))
+
+            let approvalSamples = [("等待批准 · 黄色", 0.0, false), ("等待批准 · 红色", 0.8, false),
+                                   ("减少动态效果", 0.0, true)]
+            let approvalImages = approvalSamples.map { label, phase, reduceMotion in
+                var sample = icon
+                appearance.performAsCurrentDrawingAppearance {
+                    sample = SessionMenuBarRenderer.image(icon: icon, sessions: [tasks[0]],
+                        phase: phase, reduceMotion: reduceMotion, now: now,
+                        textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: settings))
+                }
+                return (label, sample)
+            }
+            let approvalPreview = VStack(alignment: .leading, spacing: 22) {
+                Text("等待批准 · 黄红交替").font(.headline)
+                ForEach(approvalImages, id: \.0) { label, sample in
+                    HStack(spacing: 20) {
+                        Text(label).font(.caption).frame(width: 120, alignment: .leading)
+                        Image(nsImage: sample).renderingMode(.original)
+                    }
+                }
+            }.padding(20).background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, dark ? .dark : .light)
+            let approvalRenderer = ImageRenderer(content: approvalPreview)
+            approvalRenderer.scale = 2
+            guard let image = approvalRenderer.nsImage, let tiff = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff),
+                  let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+            try png.write(to: directory.appendingPathComponent("approval-dot-\(name).png"))
         }
     }
     private static func snapshotPanel<V: View>(_ content: V, to url: URL) throws {

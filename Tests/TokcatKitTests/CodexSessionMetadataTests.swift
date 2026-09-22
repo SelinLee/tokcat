@@ -91,8 +91,10 @@ final class CodexSessionMetadataTests: XCTestCase {
         var saved = AgentSession(event: .init(sessionID: "review", source: .codexCLI,
             timestamp: now.addingTimeInterval(-30), kind: .completed))
         saved.unread = true
-        try JSONEncoder().encode([saved]).write(to: support.appendingPathComponent("agent-sessions.json"))
-        try JSONEncoder().encode([AgentTaskRecord(session: saved)]).write(
+        var legacy = saved
+        legacy.sessionID = "rollout-review"
+        try JSONEncoder().encode([saved, legacy]).write(to: support.appendingPathComponent("agent-sessions.json"))
+        try JSONEncoder().encode([AgentTaskRecord(session: saved), AgentTaskRecord(session: legacy)]).write(
             to: support.appendingPathComponent("agent-task-history.json"))
         func write(_ name: String, _ id: String, _ source: String) throws {
             let rows: [[String: Any]] = [
