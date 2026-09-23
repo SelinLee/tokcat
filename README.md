@@ -1,8 +1,8 @@
 # Tokcat
 
-**One macOS menu bar for all your AI agents. See what is running, what has finished, and what needs you.**
+**Monitor AI work from your Mac’s menu bar.**
 
-Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into one task monitor. Glance at colored task dots while you work, then open the main window to browse recent tasks, read conversations, and inspect timing and activity. Token usage, cost, system metrics, and an optional desktop cat complete the picture.
+See which agents are running, which replies are ready, and which tasks need your input. Tokcat brings **Codex, Claude Code, and WorkBuddy** into one view: glance at the menu bar, open the dropdown for context, then read conversations and inspect activity in the main window.
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -10,66 +10,86 @@ Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into o
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#requirements)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
-## Menu bar: AI task status at a glance
+**[Download Tokcat](https://github.com/SelinLee/tokcat/releases)** · [Get started](#start-in-60-seconds) · [Agent support](#agent-support)
+
+## 1. Monitor from the menu bar
+
+Keep AI task status beside the metrics you already watch. **One dot per task**, placed after your selected monitoring indicators.
 
 <p align="center">
-  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="Menu bar metrics, colored task dots, and task details in light mode" width="430" />
-  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="Menu bar metrics and AI task panel in dark mode" width="430" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
+    <img src="docs/assets/screenshots/readme-menubar-light.png" alt="Tokcat menu-bar close-up: live metrics, Codex quota, and colored task dots" width="900" />
+  </picture>
 </p>
 
-*Native light and dark previews with demonstration tasks. Select metrics and task dots independently in Settings → Menu Bar.*
+- **Choose your metrics:** CPU, GPU, memory, network traffic, token throughput, and spend rate.
+- **Watch Codex limits:** optional 5-hour and weekly remaining quota, using your local login.
+- **Keep it compact:** up to three dots per column, six visible dots, then `+N`. Metrics and task dots can be enabled independently.
 
-Task dots appear **after the selected monitoring metrics**. Each column fills fixed top, middle, then bottom positions within the text's vertical bounds; two tasks use the top and middle slots. A fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
-
-![Task dot layouts from one to seven tasks, including the overflow indicator](docs/assets/screenshots/task-dot-spacing-light.png)
-
-*The dot examples show running, waiting, completed, failed, and unavailable states at the dimmest point of the running animation.*
-
-| Dot | Meaning |
+| Task dot | What it means |
 |---|---|
-| 🟡 Pulsing yellow | Running; stays bright even at the dimmest point |
-| 🟢 Green | Flashes for 3 seconds then disappears when its agent is foreground; stays solid in the background until viewed |
-| 🟡🔴 Alternating yellow / red | Waiting for input or approval; switches color every 0.8 seconds, or stays red when Reduce Motion is enabled |
-| 🔴 Solid red | Failed |
-| ◯ Hollow gray | Updates unavailable or turn interrupted; silence alone does not mean completion |
+| 🟡 Pulsing yellow | The task is running. |
+| 🟡🔴 Alternating yellow / red | Your input or approval is needed; colors switch every 0.8 seconds. |
+| 🟢 Green | A reply has finished. In the foreground agent, it flashes for 3 seconds and clears automatically. Background completions stay visible until viewed. |
+| 🔴 Solid red | The turn failed. |
+| ◯ Hollow gray | Updates are unavailable or the turn was interrupted. |
 
-The dropdown shows each conversation title first, followed by its agent, project, state, elapsed time, and recent activity. Codex titles come from its local session index; WorkBuddy uses its local database title. When no title is available, the project name is shown. While a recognized Codex, WorkBuddy / WorkBuddy AI, or Claude desktop app is foreground, each newly observed completion flashes green for 3 seconds before disappearing, without switching apps. Background completions stay visible until that agent is opened. Leaving during the countdown preserves the reminder and starts a fresh countdown on return. Generic terminals cannot identify the agent inside, so manual acknowledgement remains available. Read state survives restarts.
+Completed tasks clear even when you have stayed in the same agent throughout the task. Switching away during the 3-second countdown keeps the reminder for your next visit. With **Reduce Motion**, waiting dots stay red and completion dots stay green during the countdown.
 
-Task dots and CPU / GPU / memory / network / token / cost metrics are independently configurable. The dots follow the selected metrics, so both can remain visible. Optional native notifications surface completion and waiting states; historical notifications are not replayed at startup. The optional Codex quota display adds 5-hour and weekly remaining percentages and reset times when local login information is available.
+## 2. Open the dropdown for context
 
-## Keep track of AI work without switching windows
-
-| What you want to know | What Tokcat shows |
-|---|---|
-| Which agents are still working? | One menu-bar dot per active or unread task, beside your existing metrics |
-| Has a reply finished? | A green reminder until you acknowledge it or return to the corresponding desktop agent |
-| Is an agent waiting for me? | Input / approval state and accumulated waiting time, when reported by the source |
-| What did I work on recently? | A shared task list across tools, sorted by last activity, with source, time, and keyword filters |
-| What did the agent say? | A large conversation pane with user messages and AI replies, copying, refresh, and follow-latest |
-| What happened during a task? | Elapsed time, observed tool calls, available token counts, model, and activity timeline |
-| How much am I spending? | Live token / cost rates and daily, weekly, monthly usage grouped by agent, model, or provider |
-
-## Main window: tasks on the left, details in focus
-
-The main window opens **Task Overview**. Narrow navigation and task columns leave most of the space for the selected task.
-
-![Multi-agent task overview with a conversation detail pane](docs/assets/screenshots/task-dashboard-light.png)
-
-- **Live tasks:** current state, project, elapsed and waiting time, and latest activity.
-- **Recent tasks:** one chronological list across tools; filter by agent, 24 hours / 7 days / 30 days, or keyword. Codex turns are archived separately.
-- **Conversation:** local user messages and AI replies from Codex, Claude Code, and WorkBuddy. Select and copy text, follow new messages, or open a separate reading window.
-- **Monitor:** elapsed and waiting time, observed tool calls, model, available per-turn tokens, and an activity timeline. Open the project folder, locate source records, or return to a valid Codex session.
-
-![Task overview and conversation in dark mode](docs/assets/screenshots/task-dashboard-dark.png)
-
-### Task monitor
+Click the menu-bar item to see **conversation titles first**, with the agent, state, duration, and recent activity underneath.
 
 <p align="center">
-  <img src="docs/assets/screenshots/task-monitor-light.png" alt="Task monitor: duration, waiting time, tool calls, session metadata, and timeline" width="650" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-dropdown-dark.png" />
+    <img src="docs/assets/screenshots/readme-dropdown-light.png" alt="English dropdown preview with named tasks, agent status, elapsed time, and quick actions" width="430" />
+  </picture>
 </p>
 
+- Spot tasks waiting for input or approval, and see how long they have been waiting.
+- Expand a task for more context, open its conversation or project, or mark its completion as read.
+- Check recent completions, Codex quota, and optional usage or system details.
+- Jump straight to the main window or settings. The dropdown stays attached to the menu bar as its content grows or shrinks.
 
-*All task screenshots use demonstration data, not private conversations.*
+## 3. Explore tasks in the main window
+
+**Tasks on the left. The conversation in focus.** A shared task list brings recent work across agents into one place, with most of the window reserved for the selected task.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-tasks-dark.png" />
+    <img src="docs/assets/screenshots/readme-tasks-light.png" alt="English task dashboard: live and recent multi-agent tasks beside a large conversation pane" width="1100" />
+  </picture>
+</p>
+
+| Area | What you can do |
+|---|---|
+| **Live tasks** | Check current status, elapsed time, waiting time, and latest activity. |
+| **Recent tasks** | Browse by last activity; filter by agent, 24 hours / 7 days / 30 days, or keyword. Codex turns are archived separately. |
+| **Conversation** | Read local prompts and AI replies, select and copy text, follow new messages, or open a separate reading window. |
+| **Monitor** | Inspect timing, observed tool calls, model, available per-turn tokens, and an activity timeline. |
+
+<details>
+<summary><strong>See the detailed task monitor</strong></summary>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-monitor-dark.png" />
+    <img src="docs/assets/screenshots/readme-monitor-light.png" alt="English task monitor showing elapsed time, waiting time, tool calls, session information, and activity timeline" width="600" />
+  </picture>
+</p>
+
+Open the source conversation, reveal its local log, or jump to the project folder from the task details.
+
+</details>
+
+**Usage and costs:** live token and spend rates, daily totals, and day / week / month trends grouped by agent, model, or provider. Rates are editable locally; CC Switch can supply reported costs and provider attribution.
+
+**Optional desktop companion:** a cat that reacts to activity, with gear and a collection book. Monitoring works fully with the pet disabled. Sound is off by default.
+
+*Images show native previews with synthetic tasks and English labels prepared for documentation. They contain no private conversations. Light and dark images follow your GitHub theme.*
 
 ## Agent support
 
@@ -90,21 +110,12 @@ Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **S
 
 A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy does not infer per-turn start times. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
 
-## Usage and costs
-
-![Usage dashboard](docs/assets/screenshots/stats-dashboard.png)
-
-- Live token and spend rates, today's totals, and cumulative spend.
-- Day / week / month charts grouped by **agent, model, or provider / relay**.
-- Editable local rates, with reported real prices when available through CC Switch.
-- Optional CPU, GPU, memory, network, and thermal monitoring alongside AI task status.
-
 ## Start in 60 seconds
 
-1. Install and open Tokcat; it appears in the menu bar.
+1. [Install Tokcat](https://github.com/SelinLee/tokcat/releases) and open it from Applications.
 2. Use Codex or WorkBuddy as usual. For Claude Code task states, enable local hooks in **Settings → Agent**.
-3. Watch task dots beside your chosen metrics; click for quick status details.
-4. Open **Task Overview** to read conversations and inspect live or recent tasks. Use **Stats** for token and cost trends.
+3. Choose your metrics in **Settings → Menu Bar**, then watch task dots and click for context.
+4. Open **Tasks** to read conversations and inspect work, or **Usage** to review token and cost trends.
 
 ## Local data and privacy
 
@@ -115,16 +126,6 @@ Task monitoring reads local logs, explicit lifecycle events, and local state dat
 - Conversations: loaded on demand from the linked session, bounded to the last **4 MB / 200 messages**, with truncation notices. Text stays in view memory and is not copied to the archive. Attachments use placeholders; system messages, tool internals, and reasoning records are excluded.
 - Claude hooks store sanitized lifecycle metadata, not conversation text or tool arguments, in the local `session-inbox/` directory.
 - Usage statistics: local `tokencat.sqlite3`. Usage adapters start at the end of existing files rather than backfilling entire histories.
-
-## Optional desktop companion
-
-<p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="Optional Tokcat companion: idle, working, hungry, happy, wave, rest" width="720" />
-</p>
-
-The desktop cat reacts to activity and grows with usage, with optional gear, inventory, and a collection book. Monitoring and statistics work fully with the pet disabled. Sound is off by default.
-
----
 
 ## Requirements
 

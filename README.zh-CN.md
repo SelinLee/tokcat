@@ -1,8 +1,8 @@
 # Tokcat
 
-**菜单栏里的多 Agent AI 任务监控工具：谁还在运行、谁已完成、谁需要你，一眼看清。**
+**菜单栏里的多 Agent AI 任务监控工具。**
 
-将 **Codex、Claude Code、WorkBuddy 等本地 AI 工具**汇总到一个监控界面。菜单栏用状态点提醒，主界面按时间整理任务，点开即可阅读对话、查看耗时与活动记录；同时保留 Token、费用、系统指标与可选桌面猫咪。
+谁还在运行、谁已完成、谁需要你输入，一眼看清。Tokcat 将 **Codex、Claude Code、WorkBuddy** 汇总到同一套监控中：先看菜单栏，点开下拉面板了解情况，再进入主界面阅读对话、查看活动详情。
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -10,66 +10,86 @@
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#环境要求)
 [![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
 
-## 菜单栏：一眼看清 AI 任务状态
+**[下载 Tokcat](https://github.com/SelinLee/tokcat/releases)** · [快速开始](#60-秒开始使用) · [Agent 接入能力](#agent-接入能力)
+
+## 1. 顶部菜单栏：随时掌握 AI 状态
+
+将 AI 任务状态放在日常监控指标旁边。**每个任务一个点**，排列在已选指标后方。
 
 <p align="center">
-  <img src="docs/assets/screenshots/ai-monitor-light.png" alt="浅色模式：菜单栏监控指标、任务状态点与详情面板" width="430" />
-  <img src="docs/assets/screenshots/ai-monitor-dark.png" alt="深色模式：菜单栏指标与 AI 任务详情面板" width="430" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
+    <img src="docs/assets/screenshots/readme-menubar-light.png" alt="菜单栏英文预览：实时指标、Codex 额度和任务状态点" width="900" />
+  </picture>
 </p>
 
-*浅色与深色原生面板预览，任务均为演示数据。状态点和监控指标可在「设置 → 菜单栏」分别开关。*
+- **按需选择指标**：CPU、GPU、内存、网速、Token 吞吐与费用速率。
+- **留意 Codex 额度**：可选显示 5 小时与周窗口的剩余额度，使用本机登录信息。
+- **保持紧凑**：每列最多 3 个点，最多显示 6 个，其余显示 `+N`；状态点与监控指标可独立开关。
 
-任务点放在**已选监控指标后方**。以左侧文字的上下边缘为限，每列固定按上、中、下的顺序排列；即使只有 2 个点，也占上、中两个位置。第 4 个从右侧新列顶部开始。最多展示 6 个，其余显示 `+N`。
-
-![1 到 7 个任务点的排列示例，包含超出数量提示](docs/assets/screenshots/task-dot-spacing-light.png)
-
-*示例覆盖运行、等待、完成、失败及暂无更新状态，并展示运行黄点呼吸最暗时的效果。*
-
-| 圆点 | 含义 |
+| 状态点 | 含义 |
 |---|---|
-| 🟡 黄色呼吸 | 正在运行；呼吸最暗时也保持清晰 |
-| 🟢 绿色 | 对应 Agent 在前台时闪烁 3 秒后消失；后台完成则常亮保留，查看后再计时 |
-| 🟡🔴 黄红交替闪烁 | 等待输入或批准，每 0.8 秒切换颜色；开启系统“减少动态效果”时显示红色常亮 |
-| 🔴 红色常亮 | 本轮失败 |
-| ◯ 灰色空心 | 暂无更新或已中断；安静不等于已完成 |
+| 🟡 黄色呼吸 | 任务正在运行。 |
+| 🟡🔴 黄红交替 | 需要输入或批准，每 0.8 秒切换颜色。 |
+| 🟢 绿色 | 本轮回复已结束。对应 Agent 在前台时闪烁 3 秒后自动消失；后台完成则保留到你查看。 |
+| 🔴 红色常亮 | 本轮失败。 |
+| ◯ 灰色空心 | 暂无更新或本轮已中断。 |
 
-下拉栏优先显示对话标题，并列出 Agent、项目、状态、耗时及最近活动。Codex 标题读取自本地会话索引，WorkBuddy 使用本地数据库标题；没有标题时回退显示项目名。已识别的 Codex、WorkBuddy / WorkBuddy AI、Claude 桌面应用在前台时，每个新出现的完成绿点闪烁 3 秒后自动消失，无需切出再进入。后台完成的绿点会保留，切回对应 Agent 后再开始 3 秒计时；中途离开会保留提醒，回来后重新计时。普通终端无法区分其中的 Agent，仍可手动标为已读；已读状态重启后保留。
+即使一直停留在同一个 Agent，完成绿点也会自动清除，无需切走再回来。3 秒计时期间离开，会保留提醒，等下次查看。开启系统**“减少动态效果”**时，等待点保持红色，完成点在计时期间保持绿色。
 
-任务点与 CPU / GPU / 内存 / 网速 / Token / 费用指标可分别开关；任务点排在已选指标后面，两者可以同时显示。可选系统通知用于提醒任务结束或等待操作，启动时不重放历史通知。本机有 Codex 登录信息时，还可显示 5 小时与周窗口的剩余额度和重置时间。
+## 2. 下拉面板：点开就知道发生了什么
 
-## 不用来回切窗口，也知道 AI 的工作状态
-
-| 你关心的 | Tokcat 展示的 |
-|---|---|
-| 哪些 Agent 还在工作？ | 每个进行中或未读任务一个菜单栏状态点，与已有监控指标并排显示 |
-| 回复完成了吗？ | 绿点提醒，手动已读或回到对应桌面 Agent 后清除 |
-| 有没有任务正在等我？ | 数据源明确报告的输入 / 授权等待状态，以及累计等待时间 |
-| 最近在各工具里做了什么？ | 跨工具任务按最后活动时间排列，支持来源、时间范围、关键词筛选 |
-| AI 具体说了什么？ | 大面积对话详情，支持复制、刷新、跟随最新消息 |
-| 一个任务经历了什么？ | 耗时、可观测的工具调用、可用的 Token 数、模型与活动时间线 |
-| 花了多少 Token 和钱？ | 实时速率及日 / 周 / 月统计，按 Agent、模型、中转站分组 |
-
-## 主界面：左侧找任务，右侧读对话、看监控
-
-默认打开**任务总览**，收窄导航与任务列表，将大部分空间留给选中任务的详情。
-
-![多 Agent 任务总览与对话详情](docs/assets/screenshots/task-dashboard-light.png)
-
-- **实时任务**：当前状态、项目、耗时、等待时间与最近活动。
-- **最近任务**：汇总不同 Agent 的记录，按时间排序；按工具、24 小时 / 7 天 / 30 天、关键词筛选。同一 Codex 会话的不同轮次独立留存。
-- **对话**：直接阅读 Codex、Claude Code、WorkBuddy 的用户提问与 AI 回复，支持选择复制、自动刷新、跟随最新消息和独立阅读窗口。
-- **监控详情**：本轮耗时、等待时间、可观测的工具调用数、模型、可用的本轮 Token 与活动时间线；可打开项目文件夹、定位源记录，或跳转回有效的 Codex 会话。
-
-![深色任务总览与对话详情](docs/assets/screenshots/task-dashboard-dark.png)
-
-### 任务监控详情
+点击菜单栏，优先看到**对话标题**，再看对应 Agent、状态、耗时与最近活动。
 
 <p align="center">
-  <img src="docs/assets/screenshots/task-monitor-light.png" alt="任务监控详情：耗时、等待时间、工具调用、会话信息与活动时间线" width="650" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-dropdown-dark.png" />
+    <img src="docs/assets/screenshots/readme-dropdown-light.png" alt="英文下拉面板：对话标题、Agent、任务状态、耗时与快捷操作" width="430" />
+  </picture>
 </p>
 
+- 找到等待输入或批准的任务，查看已经等待多久。
+- 展开任务详情，打开对话或项目，或将完成提醒标为已读。
+- 查看最近完成的任务、Codex 额度，以及可选的用量和系统信息。
+- 快速进入主界面或设置。内容变长、变短时，面板始终贴着菜单栏。
 
-*任务截图均使用演示数据，不包含私人对话。*
+## 3. 主界面：左侧找任务，右侧看对话与监控
+
+**任务列表保持简洁，详情成为主体。** 不同 Agent 的最近工作汇总到同一个列表，大部分界面空间留给当前选中的任务。
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-tasks-dark.png" />
+    <img src="docs/assets/screenshots/readme-tasks-light.png" alt="英文任务总览：多 Agent 实时与最近任务，以及大面积对话详情" width="1100" />
+  </picture>
+</p>
+
+| 区域 | 能做什么 |
+|---|---|
+| **实时任务** | 查看当前状态、运行耗时、等待时间与最近活动。 |
+| **最近任务** | 按最后活动时间排序；按 Agent、24 小时 / 7 天 / 30 天或关键词筛选，Codex 各轮次独立留存。 |
+| **对话** | 阅读本地提问与 AI 回复，选择复制、跟随新消息，或打开独立阅读窗口。 |
+| **监控详情** | 查看耗时、可观测的工具调用、模型、可用的本轮 Token，以及活动时间线。 |
+
+<details>
+<summary><strong>展开查看任务监控详情</strong></summary>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-monitor-dark.png" />
+    <img src="docs/assets/screenshots/readme-monitor-light.png" alt="英文任务监控详情：运行与等待时间、工具调用、会话信息和活动时间线" width="600" />
+  </picture>
+</p>
+
+可从详情中打开原会话、定位本地日志，或跳转到项目文件夹。
+
+</details>
+
+**用量与费用**：实时 Token / 费用速率、今日用量，以及按 Agent、模型、中转站分组的日 / 周 / 月趋势。本地单价可编辑，CC Switch 可提供上报费用与中转站归因。
+
+**可选桌面猫咪**：随工作状态变化，支持装备与图鉴。关闭桌宠仍可完整使用监控功能，声音默认关闭。
+
+*图片使用原生界面与演示数据重新渲染，英文文字用于项目文档展示，不包含私人对话；浅色、深色图片随 GitHub 主题切换。*
 
 ## Agent 接入能力
 
@@ -90,21 +110,12 @@ Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**
 
 **日志安静不等于完成，本轮结束不等于项目完成或测试通过。** WorkBuddy 不推测每轮起点；仅有活动记录的来源不冒充实时任务状态。缺失的指标显示为未提供，没有明确步骤数据时不显示推测的进度百分比。
 
-## Token 与费用统计
+## 60 秒开始使用
 
-![用量统计看板](docs/assets/screenshots/stats-dashboard.png)
-
-- 实时 Token / 费用速率、今日用量与累计费用。
-- 日 / 周 / 月趋势，按 **Agent、模型、中转站 / Provider** 分组。
-- 可编辑本地费率，支持结合 CC Switch 上报的实际费用。
-- 可选 CPU、GPU、内存、网速与温度压力，与 AI 任务状态一起查看。
-
-## 60 秒上手
-
-1. 安装并打开 Tokcat，菜单栏出现图标。
-2. 正常使用 Codex 或 WorkBuddy；Claude Code 任务状态需在**设置 → Agent**启用本地接入。
-3. 在已有监控指标旁查看任务点，点击展开简要状态。
-4. 打开**任务总览**阅读对话、查看实时与最近任务；在**统计**页查看 Token 和费用趋势。
+1. [下载 Tokcat](https://github.com/SelinLee/tokcat/releases)，安装到 Applications 并打开。
+2. 照常使用 Codex 或 WorkBuddy；Claude Code 需在**设置 → Agent**启用本地状态接入。
+3. 在**设置 → 菜单栏**选择指标，观察状态点，点击查看详情。
+4. 进入**任务总览**阅读对话、检查任务，或在**用量统计**查看 Token 与费用趋势。
 
 ## 本地数据与隐私
 
@@ -115,16 +126,6 @@ Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**
 - 对话按需读取整个关联会话，最多读取末尾 **4 MB / 最近 200 条消息**，截断时明确提示。正文只在视图内存中，不写入任务存档；附件显示占位，不展示系统消息、工具内部数据与推理记录。
 - Claude hook 在本地 `session-inbox/` 写入经过筛选的生命周期信息，不保存对话正文或工具参数。
 - 用量统计写入本机 `tokencat.sqlite3`；用量适配器从已有文件末尾开始跟踪，避免回填大量历史。
-
-## 可选桌面猫咪
-
-<p align="center">
-  <img src="docs/assets/screenshots/tokcat-states-row.png?v=5" alt="可选桌面猫咪：空闲、工作、饥饿、开心、招手、休息" width="720" />
-</p>
-
-猫咪随活动改变状态、随用量成长，提供装备、背包与图鉴。关闭桌宠也能完整使用监控和统计；音效默认关闭。
-
----
 
 ## 环境要求
 
