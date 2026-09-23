@@ -19,7 +19,7 @@ Tokcat brings **Codex, Claude Code, WorkBuddy, and other local AI tools** into o
 
 *Native light and dark previews with demonstration tasks. Select metrics and task dots independently in Settings → Menu Bar.*
 
-Task dots appear **after the selected monitoring metrics**. Each column holds up to three dots, spaced within the text's top and bottom edges; a fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
+Task dots appear **after the selected monitoring metrics**. Each column fills fixed top, middle, then bottom positions within the text's vertical bounds; two tasks use the top and middle slots. A fourth starts a new column on the right. Up to six are shown, followed by `+N` for more tasks.
 
 ![Task dot layouts from one to seven tasks, including the overflow indicator](docs/assets/screenshots/task-dot-spacing-light.png)
 

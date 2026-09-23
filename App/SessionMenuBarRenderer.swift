@@ -15,7 +15,6 @@ enum SessionMenuBarRenderer {
         let overflowWidth = overflow.isEmpty ? 0 : (overflow as NSString).size(withAttributes: [.font: font]).width + 4
         let iconWidth = icon?.size.width ?? 0
         let gap: CGFloat = iconWidth > 0 && count > 0 ? 4 : 0
-        let rows = min(3, count)
         let columns = (count + 2) / 3
         let maximumDotDiameter: CGFloat = 4.5
         let columnPitch: CGFloat = 10
@@ -40,10 +39,11 @@ enum SessionMenuBarRenderer {
                 let lower = max(1, (textBounds?.lowerBound ?? 3) + imageOffset) + 0.5
                 let upper = min(rect.height - 1, (textBounds?.upperBound ?? (height - 3)) + imageOffset) - 0.5
                 let availableHeight = max(1, upper - lower)
-                let dotDiameter = min(maximumDotDiameter,
-                    max(1, (availableHeight - CGFloat(max(0, rows - 1)) * 0.75) / CGFloat(max(1, rows))))
-                let rowPitch = rows > 1 ? (availableHeight - dotDiameter) / CGFloat(rows - 1) : 0
-                let topY = rows > 1 ? lower + availableHeight - dotDiameter : lower + (availableHeight - dotDiameter) / 2
+                // Fixed slots keep task order top, middle, bottom even when a
+                // column has only one or two dots.
+                let dotDiameter = min(maximumDotDiameter, max(1, (availableHeight - 1.5) / 3))
+                let rowPitch = (availableHeight - dotDiameter) / 2
+                let topY = lower + availableHeight - dotDiameter
                 for (index, session) in tasks.prefix(6).enumerated() {
                     let state = session.displayState(at: now)
                     // Alternate every 0.8 seconds on the existing menu-bar timer.
