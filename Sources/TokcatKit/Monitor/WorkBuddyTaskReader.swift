@@ -6,14 +6,18 @@ import SQLite3
 public final class WorkBuddyTaskReader {
     public static var defaultDatabaseURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy/workbuddy.db") }
     public static var defaultProjectsDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy/projects") }
+    public static var aiDatabaseURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy-ai/workbuddy.db") }
+    public static var aiProjectsDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy-ai/projects") }
+    private let source: AgentSource
     private let databaseURL: URL
     private let projectsDirectory: URL
     private var lastPoll = Date.distantPast
     private var cached: [AgentTaskRecord] = []
     public private(set) var isAvailable = false
 
-    public init(databaseURL: URL = defaultDatabaseURL, projectsDirectory: URL = defaultProjectsDirectory) {
-        self.databaseURL = databaseURL; self.projectsDirectory = projectsDirectory
+    public init(databaseURL: URL = defaultDatabaseURL, projectsDirectory: URL = defaultProjectsDirectory,
+                source: AgentSource = .workBuddy) {
+        self.databaseURL = databaseURL; self.projectsDirectory = projectsDirectory; self.source = source
     }
 
     public func poll(now: Date = Date()) -> [AgentTaskRecord] {
@@ -47,11 +51,11 @@ public final class WorkBuddyTaskReader {
             case "terminated": state = .interrupted
             default: state = .unknown
             }
-            var session = AgentSession(event: AgentSessionEvent(sessionID: id, source: .workBuddy,
+            var session = AgentSession(event: AgentSessionEvent(sessionID: id, source: source,
                 timestamp: date, kind: .metadata, projectPath: string(1)), historical: true)
             session.state = state
             session.stateObservedAt = now
-            session.phase = "WorkBuddy 会话状态 · " + (state == .unknown ? "状态未识别" : state.title)
+            session.phase = source.displayName + " 会话状态 · " + (state == .unknown ? "状态未识别" : state.title)
             if state.isTerminal { session.endedAt = date }
             // Database times describe a conversation, so don't invent a per-turn start or duration.
             var record = AgentTaskRecord(session: session, title: string(2), modelName: string(6))

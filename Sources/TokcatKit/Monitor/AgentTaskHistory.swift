@@ -92,7 +92,8 @@ public struct AgentTaskHistory {
         }
         guard !records.values.contains(where: {
             !$0.activityOnly && $0.session.id == record.session.id
-                && (record.session.source == .workBuddy || $0.lastActivityAt >= record.lastActivityAt)
+                && ([AgentSource.workBuddy, .workBuddyAI].contains(record.session.source)
+                    || $0.lastActivityAt >= record.lastActivityAt)
         }) else { return }
         if let old = records[record.id], old.lastActivityAt > record.lastActivityAt { return }
         records[record.id] = record

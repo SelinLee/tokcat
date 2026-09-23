@@ -54,6 +54,14 @@ final class AgentConversationReaderTests: XCTestCase {
         XCTAssertEqual(result.messages.first?.timestamp?.timeIntervalSince1970, 1_700_000_000)
     }
 
+    func testWorkBuddyAIUsesItsOwnSourceAndReadsConversation() throws {
+        let record = try task(.workBuddyAI, rows: [
+            ["id": "1", "type": "message", "role": "user", "sessionId": "s", "content": "检查项目"],
+            ["id": "2", "type": "message", "role": "assistant", "sessionId": "s", "content": "检查完成"]
+        ])
+        XCTAssertEqual(try AgentConversationReader.read(task: record).messages.map(\.text), ["检查项目", "检查完成"])
+    }
+
     func testBoundsPartialWritesAndMismatchedHeader() throws {
         let record = try task(.codexCLI, rows: (0..<5).map { n in
             ["type": "response_item", "payload": ["type": "message", "role": "user", "content": "message \(n)"]]
@@ -100,6 +108,10 @@ final class AgentConversationReaderTests: XCTestCase {
         let records = reader.poll(now: now)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records[0].session.state, .completed)
+        let aiReader = WorkBuddyTaskReader(databaseURL: database, projectsDirectory: root, source: .workBuddyAI)
+        let aiRecords = aiReader.poll(now: now)
+        XCTAssertEqual(aiRecords.map(\.session.source), [.workBuddyAI])
+        XCTAssertEqual(aiRecords.first?.logPath, records.first?.logPath)
         XCTAssertFalse(records[0].session.unread)
         XCTAssertFalse(records[0].activityOnly)
         XCTAssertEqual(records[0].title, "项目检查")

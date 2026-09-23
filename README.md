@@ -2,7 +2,7 @@
 
 **Monitor AI work from your Mac’s menu bar.**
 
-See which agents are running, which replies are ready, and which tasks need your input. Tokcat brings **Codex, Claude Code, and WorkBuddy** into one view: glance at the menu bar, open the dropdown for context, then read conversations and inspect activity in the main window.
+See which agents are running, which replies are ready, and which tasks need your input. Tokcat brings **Codex, Claude Code, WorkBuddy, and WorkBuddy AI** into one view: glance at the menu bar, open the dropdown for context, then read conversations and inspect activity in the main window.
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -100,20 +100,21 @@ Task state, task history, conversations, and usage are separate capabilities. To
 | **Codex** | Local lifecycle events | Yes, per turn | Yes | Yes |
 | **Claude Code** | Opt-in local hooks | Yes | Yes | Yes |
 | **WorkBuddy** | Explicit local database status | Yes, per session | Yes | Yes |
+| **WorkBuddy AI** | Explicit local database status | Yes, per session | Yes | Yes |
 | **DeepSeek Harness** | Activity records only | Yes | — | Yes |
 | **OpenClaw** | Activity records only | Yes | — | Yes |
 | **Kimi** | Activity records only | Yes | — | Yes |
 | **Cursor / Gemini CLI** | — | — | — | When local data is available |
 | **CC Switch** | — | — | — | Provider attribution, reported cost, multiplier |
 
-Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy reads `~/.workbuddy/workbuddy.db` in read-only mode and links local conversation logs; an explicitly working session stays running while the database remains readable.
+Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy and WorkBuddy AI read their separate `~/.workbuddy` and `~/.workbuddy-ai` databases in read-only mode and link local conversation logs; an explicitly working session stays running while its database remains readable.
 
 A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy does not infer per-turn start times. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
 
 ## Start in 60 seconds
 
 1. [Install Tokcat](https://github.com/SelinLee/tokcat/releases) and open it from Applications.
-2. Use Codex or WorkBuddy as usual. For Claude Code task states, enable local hooks in **Settings → Agent**.
+2. Use Codex, WorkBuddy, or WorkBuddy AI as usual. For Claude Code task states, enable local hooks in **Settings → Agent**.
 3. Choose your metrics in **Settings → Menu Bar**, then watch task dots and click for context.
 4. Open **Tasks** to read conversations and inspect work, or **Usage** to review token and cost trends.
 
@@ -177,7 +178,7 @@ swift run TokcatApp
 ## Architecture
 
 ```text
-Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
+Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / WorkBuddy AI / Kimi / CC Switch
         │  local logs (read-only)
         ▼
   ├─ AgentSessionMonitor → task state / history / conversations
@@ -205,7 +206,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 ## Roadmap (summary)
 
-- [x] Multi-agent task monitor, menu-bar dots, conversation details, WorkBuddy state
+- [x] Multi-agent task monitor, menu-bar dots, conversation details, WorkBuddy and WorkBuddy AI state
 - [x] Multi-agent local log adapters + live tok/s / cost  
 - [x] Day / week / month stats (Agent / Model / Provider)  
 - [x] Menu-bar metrics & main window  

@@ -20,18 +20,30 @@ public final class AgentSessionMonitor {
     private var lastSavedTasks: [AgentTaskRecord] = []
     private let codexTitles: CodexSessionTitleReader
     private let recentReader: RecentAgentTaskReader
-    private let workBuddyReader: WorkBuddyTaskReader?
+    private let workBuddyReaders: [(source: AgentSource, reader: WorkBuddyTaskReader)]
 
     public init(codexDirectory: URL = CodexCLIAdapter.defaultSessionsDirectory,
                 supportDirectory: URL = AgentSessionMonitor.supportDirectory, now: Date = Date(),
                 recentRoots: [RecentAgentTaskReader.Root] = RecentAgentTaskReader.defaultRoots,
-                workBuddyDatabase: URL? = WorkBuddyTaskReader.defaultDatabaseURL) {
+                workBuddyDatabase: URL? = WorkBuddyTaskReader.defaultDatabaseURL,
+                workBuddyAIDatabase: URL? = WorkBuddyTaskReader.aiDatabaseURL,
+                workBuddyProjects: URL = WorkBuddyTaskReader.defaultProjectsDirectory,
+                workBuddyAIProjects: URL = WorkBuddyTaskReader.aiProjectsDirectory) {
         self.codexDirectory = codexDirectory
         self.codexTitles = CodexSessionTitleReader(url: codexDirectory.deletingLastPathComponent().appendingPathComponent("session_index.jsonl"))
         self.supportDirectory = supportDirectory
         self.launchedAt = now
         self.recentReader = RecentAgentTaskReader(roots: recentRoots)
-        self.workBuddyReader = workBuddyDatabase.map { WorkBuddyTaskReader(databaseURL: $0) }
+        var workBuddyReaders: [(source: AgentSource, reader: WorkBuddyTaskReader)] = []
+        if let workBuddyDatabase {
+            workBuddyReaders.append((.workBuddy, WorkBuddyTaskReader(databaseURL: workBuddyDatabase,
+                projectsDirectory: workBuddyProjects, source: .workBuddy)))
+        }
+        if let workBuddyAIDatabase {
+            workBuddyReaders.append((.workBuddyAI, WorkBuddyTaskReader(databaseURL: workBuddyAIDatabase,
+                projectsDirectory: workBuddyAIProjects, source: .workBuddyAI)))
+        }
+        self.workBuddyReaders = workBuddyReaders
         reader.fileListCacheTTL = 5
         if let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("agent-sessions.json")),
            let saved = try? JSONDecoder().decode([AgentSession].self, from: data) {
@@ -134,16 +146,16 @@ public final class AgentSessionMonitor {
             }
             try? FileManager.default.removeItem(at: url)
         }
-        if enabled.contains(.workBuddy), let workBuddyReader {
+        for (source, workBuddyReader) in workBuddyReaders where enabled.contains(source) {
             let records = workBuddyReader.poll(now: now)
             if workBuddyReader.isAvailable {
                 let visibleIDs = Set(records.map { $0.session.id })
-                sessions = sessions.filter { $0.value.source != .workBuddy || visibleIDs.contains($0.key) }
+                sessions = sessions.filter { $0.value.source != source || visibleIDs.contains($0.key) }
             }
             for var record in records where workBuddyReader.isAvailable {
                 let old = sessions[record.session.id]
                 record.session.unread = old?.unread ?? false
-                if let old, !firstPoll, previousEnabled.contains(.workBuddy),
+                if let old, !firstPoll, previousEnabled.contains(source),
                    record.lastActivityAt > old.lastActivityAt, old.state != record.session.state {
                     if record.session.state == .completed || record.session.state == .failed {
                         record.session.unread = true

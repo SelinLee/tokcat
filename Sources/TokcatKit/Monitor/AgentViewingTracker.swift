@@ -36,7 +36,8 @@ public struct AgentViewingTracker {
     public static func source(bundleIdentifier: String?) -> AgentSource? {
         switch bundleIdentifier {
         case "com.openai.codex", "com.openai.codex.helper": return .codexCLI
-        case "com.tencent.workbuddy.mac", "com.workbuddy.workbuddy-ai": return .workBuddy
+        case "com.tencent.workbuddy.mac": return .workBuddy
+        case "com.workbuddy.workbuddy-ai": return .workBuddyAI
         case "com.anthropic.claudefordesktop": return .claudeCode
         default: return nil
         }

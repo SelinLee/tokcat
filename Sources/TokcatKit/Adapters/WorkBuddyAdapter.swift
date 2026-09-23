@@ -19,7 +19,7 @@ import Foundation
 ///   of the same span can emit once usage lands.
 /// - `pollHistoricalBatch(maxFiles:)` resumes older files in small batches.
 public final class WorkBuddyAdapter: AgentAdapter {
-    public let source: AgentSource = .workBuddy
+    public let source: AgentSource
 
     private let tracesDirectory: URL
     private var pricingTable: PricingTable
@@ -52,6 +52,7 @@ public final class WorkBuddyAdapter: AgentAdapter {
 
     public init(
         tracesDirectory: URL = WorkBuddyAdapter.defaultTracesDirectory,
+        source: AgentSource = .workBuddy,
         pricingTable: PricingTable = .catalogDefault,
         fileManager: FileManager = .default,
         initialOffsets: [String: UInt64] = [:],
@@ -59,6 +60,7 @@ public final class WorkBuddyAdapter: AgentAdapter {
         recentImportWindow: TimeInterval = 24 * 60 * 60
     ) {
         self.tracesDirectory = tracesDirectory
+        self.source = source
         self.pricingTable = pricingTable
         self.fileManager = fileManager
         self.bootstrapUnknownFiles = bootstrapUnknownFiles
@@ -97,6 +99,11 @@ public final class WorkBuddyAdapter: AgentAdapter {
     public static var defaultTracesDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".workbuddy/traces", isDirectory: true)
+    }
+
+    public static var aiTracesDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".workbuddy-ai/traces", isDirectory: true)
     }
 
     public func updatePricingTable(_ table: PricingTable) {
@@ -540,7 +547,7 @@ public final class WorkBuddyAdapter: AgentAdapter {
 
         return TokenEvent(
             timestamp: timestamp,
-            source: .workBuddy,
+            source: source,
             model: model,
             requestId: completionId ?? requestId,
             inputTokens: billedInput,

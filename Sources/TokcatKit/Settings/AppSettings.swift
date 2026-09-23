@@ -557,6 +557,7 @@ public final class AppSettingsStore {
     /// Enables the DeepSeek Harness adapter for users who saved their source
     /// list before DSH support shipped (default-on, so it must be backfilled).
     public static let migratedDeepSeekHarnessKey = "tokcat.migrated.deepSeekHarness.v1"
+    public static let migratedWorkBuddyAIKey = "tokcat.migrated.workBuddyAI.v1"
     /// Ensures botcf / provider-scoped catalog rows are imported into saved settings.
     public static let migratedProviderPricingKey = "tokcat.migrated.providerPricing.v3"
 
@@ -623,6 +624,15 @@ public final class AppSettingsStore {
                 changed = true
             }
             defaults.set(true, forKey: Self.migratedDeepSeekHarnessKey)
+        }
+
+        if !defaults.bool(forKey: Self.migratedWorkBuddyAIKey) {
+            if !next.enabledAgentSources.contains(AgentSource.workBuddyAI.rawValue) {
+                next.enabledAgentSources.append(AgentSource.workBuddyAI.rawValue)
+                next.enabledAgentSources.sort()
+                changed = true
+            }
+            defaults.set(true, forKey: Self.migratedWorkBuddyAIKey)
         }
 
         // Always merge missing catalog rows once per version so botcf rates land

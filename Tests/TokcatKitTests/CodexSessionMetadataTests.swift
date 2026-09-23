@@ -67,7 +67,7 @@ final class CodexSessionMetadataTests: XCTestCase {
         try data.write(to: file)
         try Data("{\"id\":\"canonical\",\"thread_name\":\"真实对话标题\"}\n".utf8).write(to: root.appendingPathComponent("session_index.jsonl"))
         let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support,
-                                          recentRoots: [], workBuddyDatabase: nil)
+                                          recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
         let result = monitor.poll(enabled: [.codexCLI], now: now)
         XCTAssertEqual(result.sessions.count, 1)
         XCTAssertEqual(result.sessions.first?.sessionID, "canonical")
@@ -77,7 +77,7 @@ final class CodexSessionMetadataTests: XCTestCase {
         XCTAssertEqual(result.tasks.first?.displayTitle, "真实对话标题")
         XCTAssertTrue(result.alerts.isEmpty)
         let restarted = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support,
-                                            recentRoots: [], workBuddyDatabase: nil)
+                                            recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
         XCTAssertEqual(restarted.poll(enabled: [.codexCLI], now: now).sessions.count, 1)
     }
 
@@ -109,13 +109,13 @@ final class CodexSessionMetadataTests: XCTestCase {
         try write("rollout-review.jsonl", "review", "guardian_review")
         try write("rollout-user.jsonl", "user", "user")
         let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support,
-                                          recentRoots: [], workBuddyDatabase: nil)
+                                          recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
         let result = monitor.poll(enabled: [.codexCLI], now: now)
         XCTAssertEqual(result.sessions.map(\.sessionID), ["user"])
         XCTAssertTrue(result.tasks.allSatisfy { $0.session.sessionID == "user" })
         XCTAssertTrue(result.alerts.isEmpty)
         let restored = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support,
-                                           recentRoots: [], workBuddyDatabase: nil)
+                                           recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
         XCTAssertEqual(restored.snapshot(enabled: [.codexCLI]).map(\.sessionID), ["user"])
     }
 }

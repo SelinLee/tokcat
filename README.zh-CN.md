@@ -2,7 +2,7 @@
 
 **菜单栏里的多 Agent AI 任务监控工具。**
 
-谁还在运行、谁已完成、谁需要你输入，一眼看清。Tokcat 将 **Codex、Claude Code、WorkBuddy** 汇总到同一套监控中：先看菜单栏，点开下拉面板了解情况，再进入主界面阅读对话、查看活动详情。
+谁还在运行、谁已完成、谁需要你输入，一眼看清。Tokcat 将 **Codex、Claude Code、WorkBuddy 和 WorkBuddy AI** 汇总到同一套监控中：先看菜单栏，点开下拉面板了解情况，再进入主界面阅读对话、查看活动详情。
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -100,20 +100,21 @@
 | **Codex** | 本地生命周期事件 | 支持，按轮次 | 支持 | 支持 |
 | **Claude Code** | 可选本地事件接入 | 支持 | 支持 | 支持 |
 | **WorkBuddy** | 本地数据库明确状态 | 支持，按会话 | 支持 | 支持 |
+| **WorkBuddy AI** | 本地数据库明确状态 | 支持，按会话 | 支持 | 支持 |
 | **DeepSeek Harness** | 仅活动记录 | 支持 | — | 支持 |
 | **OpenClaw** | 仅活动记录 | 支持 | — | 支持 |
 | **Kimi** | 仅活动记录 | 支持 | — | 支持 |
 | **Cursor / Gemini CLI** | — | — | — | 本机有数据时显示 |
 | **CC Switch** | — | — | — | 中转站归因、上报费用与倍率 |
 
-Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**启用本地状态接入，再重启 Claude Code 会话；接入会备份、合并现有 hook 设置，移动 Tokcat 后需重新启用。WorkBuddy 只读 `~/.workbuddy/workbuddy.db` 并关联本地对话日志；只要数据库仍明确报告工作中，就不会仅因暂时没有新消息而变成空心点。
+Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**启用本地状态接入，再重启 Claude Code 会话；接入会备份、合并现有 hook 设置，移动 Tokcat 后需重新启用。WorkBuddy 与 WorkBuddy AI 分别只读 `~/.workbuddy` 和 `~/.workbuddy-ai` 下的会话数据库，并关联各自的本地对话日志；只要数据库仍明确报告工作中，就不会仅因暂时没有新消息而变成空心点。
 
 **日志安静不等于完成，本轮结束不等于项目完成或测试通过。** WorkBuddy 不推测每轮起点；仅有活动记录的来源不冒充实时任务状态。缺失的指标显示为未提供，没有明确步骤数据时不显示推测的进度百分比。
 
 ## 60 秒开始使用
 
 1. [下载 Tokcat](https://github.com/SelinLee/tokcat/releases)，安装到 Applications 并打开。
-2. 照常使用 Codex 或 WorkBuddy；Claude Code 需在**设置 → Agent**启用本地状态接入。
+2. 照常使用 Codex、WorkBuddy 或 WorkBuddy AI；Claude Code 需在**设置 → Agent**启用本地状态接入。
 3. 在**设置 → 菜单栏**选择指标，观察状态点，点击查看详情。
 4. 进入**任务总览**阅读对话、检查任务，或在**用量统计**查看 Token 与费用趋势。
 
@@ -177,7 +178,7 @@ swift run TokcatApp
 ## 架构
 
 ```text
-Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
+Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / WorkBuddy AI / Kimi / CC Switch
         │  本机日志（只读）
         ▼
   ├─ AgentSessionMonitor → task state / history / conversations
@@ -204,7 +205,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / Kimi / CC Switch
 
 ## 路线图（摘要）
 
-- [x] 多 Agent 任务监控、菜单栏状态点、对话详情与 WorkBuddy 状态接入
+- [x] 多 Agent 任务监控、菜单栏状态点、对话详情与 WorkBuddy、WorkBuddy AI 状态接入
 - [x] 多 Agent 本地日志适配 + 实时 tok/s / 费用  
 - [x] 日周月统计看板（Agent / 模型 / 中转站）  
 - [x] 菜单栏指标与主界面  

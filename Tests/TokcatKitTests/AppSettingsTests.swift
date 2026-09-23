@@ -90,6 +90,21 @@ final class AppSettingsTests: XCTestCase {
         )
     }
 
+    func testWorkBuddyAIMigrationEnablesOnceForExistingUsers() {
+        let suiteName = "tokcat.tests.workbuddy-ai-migrate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = AppSettingsStore(defaults: defaults)
+        var old = AppSettings.default
+        old.setAgent(.workBuddyAI, enabled: false)
+        store.save(old)
+        XCTAssertTrue(store.load().enabledAgents.contains(.workBuddyAI))
+        var disabled = store.load()
+        disabled.setAgent(.workBuddyAI, enabled: false)
+        store.save(disabled)
+        XCTAssertFalse(store.load().enabledAgents.contains(.workBuddyAI))
+    }
+
     func testCatIconScaleClamping() {
         var settings = AppSettings.default
         settings.menuBarCatIconScale = -1

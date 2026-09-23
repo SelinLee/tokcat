@@ -105,7 +105,7 @@ struct TaskDashboardContent: View {
                 if live.count > 3 { Button(showAllLive ? "收起" : "全部展开") { showAllLive.toggle() }.buttonStyle(.plain).foregroundStyle(.tint).font(.caption) }
             }
             if live.isEmpty {
-                empty("当前没有实时任务", detail: "Codex、WorkBuddy 自动读取本地状态；Claude Code 可在设置中启用。")
+                empty("当前没有实时任务", detail: "Codex、WorkBuddy 和 WorkBuddy AI 自动读取本地状态；Claude Code 可在设置中启用。")
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], spacing: 10) {
                     ForEach(Array(live.prefix(showAllLive ? live.count : 3))) { session in

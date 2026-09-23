@@ -6,6 +6,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
     case codexCLI
     case openClaw
     case workBuddy
+    case workBuddyAI
     case kimi
     case cursor
     case geminiCLI
@@ -26,6 +27,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .codexCLI: return "Codex"
         case .openClaw: return "OpenClaw"
         case .workBuddy: return "WorkBuddy"
+        case .workBuddyAI: return "WorkBuddy AI"
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
         case .geminiCLI: return "Gemini CLI"
@@ -43,7 +45,9 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .openClaw:
             return "读取 ~/.openclaw/agents/**/sessions/*.trajectory.jsonl 的 model.completed。"
         case .workBuddy:
-            return "读取本地 traces 用量、workbuddy.db 会话状态与 projects 对话记录。"
+            return "读取 ~/.workbuddy 的 traces 用量、会话状态与对话记录。"
+        case .workBuddyAI:
+            return "读取 ~/.workbuddy-ai 的 traces 用量、会话状态与对话记录。"
         case .kimi:
             return "读取 Kimi Desktop wire.jsonl 的 usage.record。"
         case .cursor:
@@ -59,6 +63,6 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
 
     /// Sources enabled by default for a fresh install.
     public static var defaultEnabled: Set<AgentSource> {
-        [.claudeCode, .codexCLI, .openClaw, .workBuddy, .kimi, .deepseekHarness, .ccSwitch]
+        [.claudeCode, .codexCLI, .openClaw, .workBuddy, .workBuddyAI, .kimi, .deepseekHarness, .ccSwitch]
     }
 }

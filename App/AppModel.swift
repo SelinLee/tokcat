@@ -201,6 +201,8 @@ final class AppModel: ObservableObject {
             CodexCLIAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             OpenClawAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             WorkBuddyAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
+            WorkBuddyAdapter(tracesDirectory: WorkBuddyAdapter.aiTracesDirectory, source: .workBuddyAI,
+                             pricingTable: pricing, initialOffsets: initialOffsets),
             KimiAdapter(pricingTable: pricing, initialOffsets: initialOffsets),
             DeepSeekHarnessAdapter(pricingTable: pricing),
             CursorAdapter(pricingTable: pricing, initialOffsets: initialOffsets),

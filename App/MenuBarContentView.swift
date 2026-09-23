@@ -565,6 +565,7 @@ struct MenuBarContentView: View {
         case .codexCLI: return "Codex"
         case .openClaw: return "OpenClaw"
         case .workBuddy: return "WorkBuddy"
+        case .workBuddyAI: return "WorkBuddy AI"
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
         case .geminiCLI: return "Gemini"

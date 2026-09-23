@@ -33,7 +33,9 @@ public enum AgentConversationReader {
         }
     }
 
-    public static func supports(_ source: AgentSource) -> Bool { source == .codexCLI || source == .claudeCode || source == .workBuddy }
+    public static func supports(_ source: AgentSource) -> Bool {
+        source == .codexCLI || source == .claudeCode || source == .workBuddy || source == .workBuddyAI
+    }
 
     /// Reads a bounded tail on demand. Only user/assistant text and attachment placeholders are exposed;
     /// system/developer messages, reasoning, tool inputs/results and embedded binary data are excluded.
@@ -73,7 +75,7 @@ public enum AgentConversationReader {
                 guard row["type"] as? String == "response_item",
                       let payload = row["payload"] as? [String: Any], payload["type"] as? String == "message" else { continue }
                 message = payload
-            } else if task.session.source == .workBuddy {
+            } else if task.session.source == .workBuddy || task.session.source == .workBuddyAI {
                 guard row["type"] as? String == "message" else { continue }
                 if let id = row["sessionId"] as? String, id != task.session.sessionID { continue }
                 message = row

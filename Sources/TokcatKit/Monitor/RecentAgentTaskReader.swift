@@ -17,6 +17,7 @@ public final class RecentAgentTaskReader {
     public static var defaultRoots: [Root] {
         [Root(source: .claudeCode, url: ClaudeCodeAdapter.defaultProjectsDirectory),
          Root(source: .workBuddy, url: WorkBuddyTaskReader.defaultProjectsDirectory),
+         Root(source: .workBuddyAI, url: WorkBuddyTaskReader.aiProjectsDirectory),
          Root(source: .openClaw, url: OpenClawAdapter.defaultAgentsDirectory)]
             + KimiAdapter.defaultSearchRoots.map { Root(source: .kimi, url: $0) }
             + DeepSeekHarnessAdapter.defaultSearchRoots.map { Root(source: .deepseekHarness, url: $0, fileExtension: "json") }
@@ -90,7 +91,7 @@ public final class RecentAgentTaskReader {
                 path = row["cwd"] as? String ?? path
                 if kind == "custom-title" { title = row["customTitle"] as? String ?? title }
                 model = (row["message"] as? [String: Any])?["model"] as? String ?? model
-            } else if source == .workBuddy {
+            } else if source == .workBuddy || source == .workBuddyAI {
                 guard ["message", "ai-title", "function_call", "function_call_result"].contains(kind) else { continue }
                 id = row["sessionId"] as? String ?? id
                 path = row["cwd"] as? String ?? path

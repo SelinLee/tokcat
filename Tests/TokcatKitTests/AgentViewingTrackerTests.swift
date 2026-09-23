@@ -41,7 +41,15 @@ final class AgentViewingTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.update(sessions: [task], bundleIdentifier: "com.tencent.workbuddy.mac", now: time(50)).nextDeadline, time(53))
         XCTAssertTrue(tracker.update(sessions: [task], bundleIdentifier: "com.tencent.workbuddy.mac", now: time(52.99)).acknowledgements.isEmpty)
         XCTAssertEqual(tracker.update(sessions: [task], bundleIdentifier: "com.tencent.workbuddy.mac", now: time(53)).acknowledgements.map(\.id), [task.id])
-        XCTAssertEqual(AgentViewingTracker.source(bundleIdentifier: "com.workbuddy.workbuddy-ai"), .workBuddy)
+        XCTAssertEqual(AgentViewingTracker.source(bundleIdentifier: "com.workbuddy.workbuddy-ai"), .workBuddyAI)
+    }
+
+    func testWorkBuddyAICompletionClearsInItsOwnForegroundApp() {
+        var tracker = AgentViewingTracker()
+        let ai = completed("ai", at: 0, source: .workBuddyAI)
+        let legacy = completed("legacy", at: 0, source: .workBuddy)
+        XCTAssertEqual(tracker.update(sessions: [ai, legacy], bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(0)).nextDeadline, time(3))
+        XCTAssertEqual(tracker.update(sessions: [ai, legacy], bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(3)).acknowledgements.map(\.id), [ai.id])
     }
 
     func testNewTurnGetsNewDeadlineAndOnlyForegroundSourceIsAcknowledged() {

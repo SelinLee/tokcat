@@ -284,6 +284,8 @@ final class DomesticAgentAdapterTests: XCTestCase {
         XCTAssertEqual(events.count, 1, "recent write-once traces should emit on first sight")
         guard let event = events.first else { return }
         XCTAssertEqual(event.source, .workBuddy)
+        let aiAdapter = WorkBuddyAdapter(tracesDirectory: tempDir, source: .workBuddyAI)
+        XCTAssertEqual(aiAdapter.pollNewEvents().map(\.source), [.workBuddyAI])
         XCTAssertEqual(event.model, "hy3-preview-agent")
         XCTAssertEqual(event.inputTokens, 90) // 100-10
         XCTAssertEqual(event.outputTokens, 20)
@@ -486,9 +488,10 @@ final class DomesticAgentAdapterTests: XCTestCase {
 
     func testDefaultEnabledIncludesDomesticAgents() {
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.workBuddy))
+        XCTAssertTrue(AgentSource.defaultEnabled.contains(.workBuddyAI))
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.kimi))
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.ccSwitch))
         XCTAssertTrue(AgentSource.defaultEnabled.contains(.deepseekHarness))
-        XCTAssertEqual(AgentSource.allCases.count, 9)
+        XCTAssertEqual(AgentSource.allCases.count, 10)
     }
 }
