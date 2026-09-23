@@ -83,6 +83,24 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
         state == .running && now.timeIntervalSince(stateObservedAt ?? lastActivityAt) >= 120 ? .unknown : state
     }
 
+    /// Unknown database states must not renew this deadline merely because they
+    /// were polled again. Only a fresh activity/status change restores the dot.
+    public func menuBarUncertaintyAge(at now: Date) -> TimeInterval? {
+        switch displayState(at: now) {
+        case .unknown:
+            let since = state == .running
+                ? (stateObservedAt ?? lastActivityAt).addingTimeInterval(120) : lastActivityAt
+            return max(0, now.timeIntervalSince(since))
+        case .interrupted: return max(0, now.timeIntervalSince(lastActivityAt))
+        default: return nil
+        }
+    }
+
+    public func showsMenuBarDot(at now: Date) -> Bool {
+        guard !state.isTerminal || unread else { return false }
+        return menuBarUncertaintyAge(at: now).map { $0 < 13 } ?? true
+    }
+
     public func elapsed(at now: Date) -> TimeInterval? {
         startedAt.map { max(0, (endedAt ?? now).timeIntervalSince($0)) }
     }

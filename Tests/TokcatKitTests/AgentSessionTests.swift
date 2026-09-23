@@ -8,6 +8,32 @@ final class AgentSessionTests: XCTestCase {
                           timestamp: start.addingTimeInterval(seconds), kind: kind, turnID: turn)
     }
 
+    func testUncertainDotExpiresAfterTenSecondsAndThreeSecondFlashThenActivityRestoresIt() {
+        var session = AgentSession(event: event(.started, 0))
+        XCTAssertEqual(session.menuBarUncertaintyAge(at: start.addingTimeInterval(120)), 0)
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(129.99)))
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(132.99)))
+        XCTAssertFalse(session.showsMenuBarDot(at: start.addingTimeInterval(133)))
+        XCTAssertEqual(session.state, .running)
+        session.apply(event(.activity, 150))
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(150)))
+        XCTAssertNil(session.menuBarUncertaintyAge(at: start.addingTimeInterval(150)))
+    }
+
+    func testPollingAnUnknownStateDoesNotKeepItsDotAlive() {
+        var session = AgentSession(event: event(.started, 0))
+        session.state = .unknown
+        session.stateObservedAt = start.addingTimeInterval(50)
+        XCTAssertFalse(session.showsMenuBarDot(at: start.addingTimeInterval(50)))
+        session.state = .waitingForInput
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(50)))
+        session.state = .failed
+        session.unread = true
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(50)))
+        session.state = .interrupted
+        XCTAssertFalse(session.showsMenuBarDot(at: start.addingTimeInterval(50)))
+    }
+
     func testSilenceDoesNotCompleteAndLongToolCanResume() {
         var session = AgentSession(event: event(.started, 0))
         XCTAssertEqual(session.displayState(at: start.addingTimeInterval(180)), .unknown)

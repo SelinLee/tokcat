@@ -87,10 +87,18 @@ public final class AgentSessionMonitor {
                 }
                 let start = bootstrap ? (size > 524_288 ? size - 524_288 : 0) : offsets[path]!
                 try? handle.seek(toOffset: start)
-                guard let data = try? handle.read(upToCount: 2_097_152),
-                      let newline = data.lastIndex(of: 10) else { continue }
+                let batchSize = 2_097_152
+                guard var data = try? handle.read(upToCount: batchSize) else { continue }
+                // Tool outputs can be several MB on a single line. Stream past
+                // oversized records so later lifecycle events remain reachable.
+                var skipped: UInt64 = 0
+                while data.lastIndex(of: 10) == nil && data.count == batchSize {
+                    skipped += UInt64(data.count)
+                    data = (try? handle.read(upToCount: batchSize)) ?? Data()
+                }
+                guard let newline = data.lastIndex(of: 10) else { continue }
                 var lines = data.prefix(through: newline).split(separator: 10)
-                if bootstrap && start > 0 && !lines.isEmpty { lines.removeFirst() }
+                if (skipped > 0 || (bootstrap && start > 0)) && !lines.isEmpty { lines.removeFirst() }
                 var historicalSession: AgentSession?
                 for line in lines {
                     guard let event = parser.parse(Data(line)) else { continue }
@@ -106,7 +114,7 @@ public final class AgentSessionMonitor {
                         || event.timestamp < launchedAt
                     ingest(event, historical: historical, replay: bootstrap, alerts: &alerts, logPath: path)
                 }
-                offsets[path] = start + UInt64(newline + 1)
+                offsets[path] = start + skipped + UInt64(newline + 1)
                 parsers[path] = parser
             }
         }

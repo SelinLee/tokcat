@@ -8,7 +8,7 @@ enum SessionMenuBarRenderer {
     static func image(icon: NSImage?, sessions: [AgentSession], phase: TimeInterval,
                       reduceMotion: Bool, now: Date = Date(), textBounds: ClosedRange<CGFloat>? = nil,
                       completionFlashingSince: [String: Date] = [:]) -> NSImage {
-        let tasks = SessionPresentation.visibleTasks(sessions)
+        let tasks = SessionPresentation.visibleTasks(sessions).filter { $0.showsMenuBarDot(at: now) }
         let count = min(tasks.count, 6)
         let overflow = tasks.count > 6 ? "+\(tasks.count - 6)" : ""
         let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
@@ -64,8 +64,11 @@ enum SessionMenuBarRenderer {
                         let elapsed = max(0, now.timeIntervalSince(seenAt))
                         alpha = elapsed.truncatingRemainder(dividingBy: 0.8) < 0.4 ? 1 : 0.2
                     }
+                    if !reduceMotion, let age = session.menuBarUncertaintyAge(at: now), age >= 10 {
+                        alpha = (age - 10).truncatingRemainder(dividingBy: 0.8) < 0.4 ? 1 : 0.2
+                    }
                     color.withAlphaComponent(alpha).setFill()
-                    color.setStroke()
+                    color.withAlphaComponent(alpha).setStroke()
                     let x = iconWidth + gap + CGFloat(index / 3) * columnPitch + 2
                     let y = topY - CGFloat(index % 3) * rowPitch
                     let dot = NSBezierPath(ovalIn: NSRect(x: x, y: y, width: dotDiameter, height: dotDiameter))
@@ -85,10 +88,6 @@ enum SessionMenuBarRenderer {
                     let x = iconWidth + gap + CGFloat(columns) * columnPitch
                     (overflow as NSString).draw(at: NSPoint(x: x + 2, y: (height - 12) / 2),
                                                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor])
-                }
-                if icon == nil && count == 0 {
-                    NSColor.secondaryLabelColor.setStroke()
-                    NSBezierPath(ovalIn: NSRect(x: 3, y: (height - 6) / 2, width: 6, height: 6)).stroke()
                 }
             }
             return true

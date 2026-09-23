@@ -31,7 +31,7 @@ enum AgentSessionPreview {
             session("d", "数据导入", .codexCLI, .failed, 90)
         ]
         var unknown = session("e", "长任务", .codexCLI, .activity, 600)
-        unknown.lastActivityAt = now.addingTimeInterval(-180)
+        unknown.lastActivityAt = now.addingTimeInterval(-125)
         let all = tasks + [unknown, session("f", "客户端", .codexCLI, .activity, 20),
                            session("g", "接口", .codexCLI, .activity, 30)]
         for dark in [false, true] {

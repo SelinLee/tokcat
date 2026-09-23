@@ -33,7 +33,7 @@ Keep AI task status beside the metrics you already watch. **One dot per task**, 
 | 🟡🔴 Alternating yellow / red | Your input or approval is needed; colors switch every 0.8 seconds. |
 | 🟢 Green | A reply has finished. In the foreground agent, it flashes for 3 seconds and clears automatically. Background completions stay visible until viewed. |
 | 🔴 Solid red | The turn failed. |
-| ◯ Hollow gray | Updates are unavailable or the turn was interrupted. |
+| ◯ Hollow gray | Updates are unavailable or the turn was interrupted; after 10 seconds, flashes for 3 seconds and hides until a fresh update. Details remain available. |
 
 Completed tasks clear even when you have stayed in the same agent throughout the task. Switching away during the 3-second countdown keeps the reminder for your next visit. With **Reduce Motion**, waiting dots stay red and completion dots stay green during the countdown.
 

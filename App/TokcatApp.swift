@@ -88,7 +88,7 @@ private struct MenuBarLabelView: View {
     /// Hover text: activity mode, plus Codex remaining + reset countdown when shown.
     private var menuBarTooltip: String {
         var lines = ["Tokcat · AI 工作监控", live.menuBarActivity.mode.title]
-        lines += SessionPresentation.visibleTasks(live.agentSessions).map {
+        lines += SessionPresentation.visibleTasks(live.agentSessions).filter { $0.showsMenuBarDot(at: Date()) }.map {
             "\($0.source.displayName) · \($0.projectName) · \($0.displayState(at: Date()).title)"
         }
         if model.settings.menuBarShowCodexUsage {

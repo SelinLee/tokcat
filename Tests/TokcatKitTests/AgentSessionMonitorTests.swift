@@ -45,6 +45,26 @@ final class AgentSessionMonitorTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(again.poll(enabled: [.codexCLI]).sessions.first).unread)
     }
 
+    func testOversizedPartialToolOutputDoesNotBlockLaterCompletion() throws {
+        let (logs, support, file) = try fixture()
+        let now = Date().addingTimeInterval(-100)
+        try append(file, at: now, type: "session_meta", payload: ["id": "large"])
+        try append(file, at: now, payload: ["type": "task_started", "turn_id": "t"])
+        let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, now: now,
+                                          recentRoots: [], workBuddyDatabase: nil)
+        XCTAssertEqual(monitor.poll(enabled: [.codexCLI]).sessions.first?.state, .running)
+        try append(file, at: now.addingTimeInterval(1), type: "response_item",
+                   payload: ["type": "custom_tool_call_output", "output": String(repeating: "x", count: 4_300_000)], newline: false)
+        XCTAssertEqual(monitor.poll(enabled: [.codexCLI]).sessions.first?.state, .running)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd(); try handle.write(contentsOf: Data([10])); try handle.close()
+        try append(file, at: now.addingTimeInterval(2), payload: ["type": "task_complete", "turn_id": "t"])
+        let result = monitor.poll(enabled: [.codexCLI])
+        XCTAssertEqual(result.sessions.first?.state, .completed)
+        XCTAssertEqual(result.alerts.count, 1)
+        XCTAssertTrue(monitor.poll(enabled: [.codexCLI]).alerts.isEmpty)
+    }
+
     func testPartialLineIsRetriedAndDisablingHidesSource() throws {
         let (logs, support, file) = try fixture()
         let now = Date().addingTimeInterval(-100)
