@@ -63,25 +63,30 @@ struct AgentSessionList: View {
     var tasks: [AgentTaskRecord] = []
 
     var body: some View {
-        let tasks = SessionPresentation.visibleTasks(sessions)
-        let recent = sessions.filter { $0.state.isTerminal && !$0.unread }.prefix(3)
-        VStack(alignment: .leading, spacing: 10) {
-            if tasks.isEmpty {
-                Text("暂无进行中的任务").font(.subheadline.weight(.medium))
-                Text("Codex 自动读取本轮状态；Claude Code 可在设置 → Agent 中启用。其他工具继续记录用量。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(tasks) { session in
-                AgentSessionRow(session: session, task: self.tasks.first { $0.id == AgentTaskRecord.key(for: session) }, markRead: { markRead(session.id) })
-            }
-            if !recent.isEmpty {
-                DisclosureGroup("最近结束 · \(recent.count)") {
-                    VStack(spacing: 10) {
-                        ForEach(recent) { session in
-                            AgentSessionRow(session: session, task: self.tasks.first { $0.id == AgentTaskRecord.key(for: session) }, markRead: { markRead(session.id) })
-                        }
-                    }.padding(.top, 6)
-                }.font(.caption)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = context.date
+            let tasks = SessionPresentation.visibleTasks(sessions).filter { $0.showsMenuBarDot(at: now) }
+            let recent = sessions.filter {
+                $0.state.isTerminal && !$0.unread && $0.menuBarUncertaintyAge(at: now) == nil
+            }.prefix(3)
+            VStack(alignment: .leading, spacing: 10) {
+                if tasks.isEmpty {
+                    Text("暂无进行中的任务").font(.subheadline.weight(.medium))
+                    Text("Codex 自动读取本轮状态；Claude Code 可在设置 → Agent 中启用。其他工具继续记录用量。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(tasks) { session in
+                    AgentSessionRow(session: session, task: self.tasks.first { $0.id == AgentTaskRecord.key(for: session) }, markRead: { markRead(session.id) })
+                }
+                if !recent.isEmpty {
+                    DisclosureGroup("最近结束 · \(recent.count)") {
+                        VStack(spacing: 10) {
+                            ForEach(recent) { session in
+                                AgentSessionRow(session: session, task: self.tasks.first { $0.id == AgentTaskRecord.key(for: session) }, markRead: { markRead(session.id) })
+                            }
+                        }.padding(.top, 6)
+                    }.font(.caption)
+                }
             }
         }
     }
