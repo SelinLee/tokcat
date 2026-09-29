@@ -137,7 +137,12 @@ public final class DeepSeekHarnessTaskReader: ExternalTaskReader {
         let isWorking = openStep != nil && !(openStep is NSNull)
         let hasPendingCall = !(dictionary(stats?["pendingCalls"]) ?? [:]).isEmpty
         let questions = dictionary(dictionary(value("userQuestions"))?["questions"])
-        let isAsking = !(array(questions?["active"]) ?? []).isEmpty
+        let isAsking = (array(questions?["active"]) ?? []).contains { item in
+            // `open` means the agent is blocked on the answer. `continued` means a
+            // timed wait already expired and the agent moved on — the question stays
+            // answerable in the DSH UI, but it is no longer holding the agent up.
+            dictionary(item).flatMap { JSONDict.string($0["state"]) } != "continued"
+        }
         let boundaryKind = JSONDict.string(dictionary(dictionary(value("turnBoundary"))?["lastStepBoundary"])?["kind"])
 
         let state: AgentSessionState

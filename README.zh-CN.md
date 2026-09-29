@@ -107,7 +107,7 @@
 | **Cursor / Gemini CLI** | — | — | — | 本机有数据时显示 |
 | **CC Switch** | — | — | — | 中转站归因、上报费用与倍率 |
 
-Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**启用本地状态接入，再重启 Claude Code 会话；接入会备份、合并现有 hook 设置，移动 Tokcat 后需重新启用。WorkBuddy 与 WorkBuddy AI 分别只读 `~/.workbuddy` 和 `~/.workbuddy-ai` 下的会话数据库，并关联各自的本地对话日志；只要数据库仍明确报告工作中，就不会仅因暂时没有新消息而变成空心点。DeepSeek Harness 读取它自己的会话投影缓存 `~/.dsh/storages/session_projcache/sessions`（`dsh web` 网页版与 DSH Desktop 共用同一数据根）：有未结束的步骤即为运行中，有待回答的提问即为等待回答；对话直接取自该缓存已保存的轮次大纲，无需解开 zstd 压缩的原始日志。
+Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**启用本地状态接入，再重启 Claude Code 会话；接入会备份、合并现有 hook 设置，移动 Tokcat 后需重新启用。WorkBuddy 与 WorkBuddy AI 分别只读 `~/.workbuddy` 和 `~/.workbuddy-ai` 下的会话数据库，并关联各自的本地对话日志；只要数据库仍明确报告工作中，就不会仅因暂时没有新消息而变成空心点。DeepSeek Harness 读取它自己的会话投影缓存 `~/.dsh/storages/session_projcache/sessions`（`dsh web` 网页版与 DSH Desktop 共用同一数据根）：有未结束的步骤即为运行中，有待回答的提问即为等待回答；对话直接取自该缓存已保存的轮次大纲，无需解开 zstd 压缩的原始日志。等待状态取决于 harness：只有 timed 版 `ask_user_question` schema 会写进该缓存，随附 preset 默认的阻塞式 schema 看起来与普通工作无异。把 `tool-ask-user` 插件设为 `mode: timed`（配 `timeout: -1` 可无限期等待）即可显示这类等待。
 
 **日志安静不等于完成，本轮结束不等于项目完成或测试通过。** WorkBuddy 与 DeepSeek Harness 不推测每轮起点；只要数据源仍报告在进行中，即使暂时没有写入也保持运行状态（长工具调用不等于安静），内部委派的子任务不会列为任务。仅有活动记录的来源不冒充实时任务状态。缺失的指标显示为未提供，没有明确步骤数据时不显示推测的进度百分比。
 

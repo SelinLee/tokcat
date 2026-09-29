@@ -97,11 +97,23 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
     func testActiveQuestionOutranksTheOpenStepItBlocks() throws {
         let now = Date()
         try writeSession(id: "session-b", openStep: true,
-                         activeQuestions: [["id": "q1", "prompt": "选哪个？"]],
+                         activeQuestions: [["id": "q1", "question": "选哪个？", "state": "open"]],
                          modifiedAt: now.addingTimeInterval(-1))
         let record = try XCTUnwrap(makeReader().poll(now: now).first)
         XCTAssertEqual(record.session.state, .waitingForInput)
         XCTAssertEqual(record.session.phase, "等待回答")
+    }
+
+    /// A timed question that outlived its wait stays answerable in the DSH UI, but
+    /// the agent already continued, so it must not hold the task in "waiting".
+    func testContinuedQuestionNoLongerCountsAsWaiting() throws {
+        let now = Date()
+        try writeSession(id: "session-continued", steps: 4,
+                         activeQuestions: [["id": "q1", "question": "选哪个？", "state": "continued"]],
+                         boundary: "start", modifiedAt: now.addingTimeInterval(-5))
+        let record = try XCTUnwrap(makeReader().poll(now: now).first)
+        XCTAssertEqual(record.session.state, .running)
+        XCTAssertFalse(record.session.state.isWaiting)
     }
 
     func testEndedBoundaryReportsCompletedTurn() throws {
