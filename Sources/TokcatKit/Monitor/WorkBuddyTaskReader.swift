@@ -3,7 +3,7 @@ import SQLite3
 
 /// Session status and titles come from WorkBuddy's own database, opened strictly read-only.
 /// Model-generation traces are billing records, not proof that a conversation has finished.
-public final class WorkBuddyTaskReader {
+public final class WorkBuddyTaskReader: ExternalTaskReader {
     public static var defaultDatabaseURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy/workbuddy.db") }
     public static var defaultProjectsDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy/projects") }
     public static var aiDatabaseURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy-ai/workbuddy.db") }

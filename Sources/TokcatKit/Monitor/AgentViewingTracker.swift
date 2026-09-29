@@ -39,6 +39,15 @@ public struct AgentViewingTracker {
         case "com.tencent.workbuddy.mac": return .workBuddy
         case "com.workbuddy.workbuddy-ai": return .workBuddyAI
         case "com.anthropic.claudefordesktop": return .claudeCode
+        // DSH Desktop (`DeepSeek Harness.app`) hosts the same runtime as `dsh web`.
+        // The web UI in a browser is deliberately unmapped: a browser window cannot
+        // tell which session is on screen, so those completions stay until read.
+        case "com.deepseek.dsh",
+             "com.deepseek.dsh.helper",
+             "com.deepseek.dsh.helper.GPU",
+             "com.deepseek.dsh.helper.Plugin",
+             "com.deepseek.dsh.helper.Renderer":
+            return .deepseekHarness
         default: return nil
         }
     }

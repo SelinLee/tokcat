@@ -20,7 +20,8 @@ public final class AgentSessionMonitor {
     private var lastSavedTasks: [AgentTaskRecord] = []
     private let codexTitles: CodexSessionTitleReader
     private let recentReader: RecentAgentTaskReader
-    private let workBuddyReaders: [(source: AgentSource, reader: WorkBuddyTaskReader)]
+    /// Sources that publish their own state instead of being inferred from logs.
+    private let externalReaders: [(source: AgentSource, reader: ExternalTaskReader)]
 
     public init(codexDirectory: URL = CodexCLIAdapter.defaultSessionsDirectory,
                 supportDirectory: URL = AgentSessionMonitor.supportDirectory, now: Date = Date(),
@@ -28,22 +29,27 @@ public final class AgentSessionMonitor {
                 workBuddyDatabase: URL? = WorkBuddyTaskReader.defaultDatabaseURL,
                 workBuddyAIDatabase: URL? = WorkBuddyTaskReader.aiDatabaseURL,
                 workBuddyProjects: URL = WorkBuddyTaskReader.defaultProjectsDirectory,
-                workBuddyAIProjects: URL = WorkBuddyTaskReader.aiProjectsDirectory) {
+                workBuddyAIProjects: URL = WorkBuddyTaskReader.aiProjectsDirectory,
+                deepSeekHarnessDirectories: [URL]? = DeepSeekHarnessTaskReader.defaultDirectories) {
         self.codexDirectory = codexDirectory
         self.codexTitles = CodexSessionTitleReader(url: codexDirectory.deletingLastPathComponent().appendingPathComponent("session_index.jsonl"))
         self.supportDirectory = supportDirectory
         self.launchedAt = now
         self.recentReader = RecentAgentTaskReader(roots: recentRoots)
-        var workBuddyReaders: [(source: AgentSource, reader: WorkBuddyTaskReader)] = []
+        var externalReaders: [(source: AgentSource, reader: ExternalTaskReader)] = []
         if let workBuddyDatabase {
-            workBuddyReaders.append((.workBuddy, WorkBuddyTaskReader(databaseURL: workBuddyDatabase,
+            externalReaders.append((.workBuddy, WorkBuddyTaskReader(databaseURL: workBuddyDatabase,
                 projectsDirectory: workBuddyProjects, source: .workBuddy)))
         }
         if let workBuddyAIDatabase {
-            workBuddyReaders.append((.workBuddyAI, WorkBuddyTaskReader(databaseURL: workBuddyAIDatabase,
+            externalReaders.append((.workBuddyAI, WorkBuddyTaskReader(databaseURL: workBuddyAIDatabase,
                 projectsDirectory: workBuddyAIProjects, source: .workBuddyAI)))
         }
-        self.workBuddyReaders = workBuddyReaders
+        if let deepSeekHarnessDirectories, !deepSeekHarnessDirectories.isEmpty {
+            externalReaders.append((.deepseekHarness,
+                DeepSeekHarnessTaskReader(directories: deepSeekHarnessDirectories)))
+        }
+        self.externalReaders = externalReaders
         reader.fileListCacheTTL = 5
         if let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("agent-sessions.json")),
            let saved = try? JSONDecoder().decode([AgentSession].self, from: data) {
@@ -56,6 +62,9 @@ public final class AgentSessionMonitor {
             history = AgentTaskHistory(records: records)
         }
         for session in sessions.values { history.observe(session, event: nil) }
+        // DSH publishes its own state now, so activity-only records left behind by
+        // the earlier passive-only scan can never be superseded — they are clutter.
+        history.removeActivityOnly(source: .deepseekHarness)
     }
 
     public struct PollResult: Sendable {
@@ -146,13 +155,16 @@ public final class AgentSessionMonitor {
             }
             try? FileManager.default.removeItem(at: url)
         }
-        for (source, workBuddyReader) in workBuddyReaders where enabled.contains(source) {
-            let records = workBuddyReader.poll(now: now)
-            if workBuddyReader.isAvailable {
+        for (source, externalReader) in externalReaders where enabled.contains(source) {
+            let records = externalReader.poll(now: now)
+            // Runs the reader calls internal must not survive as tasks, even when an
+            // earlier build already archived them.
+            history.removeSessions(source: source, ids: externalReader.ignoredSessionIDs)
+            if externalReader.isAvailable {
                 let visibleIDs = Set(records.map { $0.session.id })
                 sessions = sessions.filter { $0.value.source != source || visibleIDs.contains($0.key) }
             }
-            for var record in records where workBuddyReader.isAvailable {
+            for var record in records where externalReader.isAvailable {
                 let old = sessions[record.session.id]
                 record.session.unread = old?.unread ?? false
                 if let old, !firstPoll, previousEnabled.contains(source),

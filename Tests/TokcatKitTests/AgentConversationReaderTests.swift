@@ -88,6 +88,60 @@ final class AgentConversationReaderTests: XCTestCase {
         XCTAssertEqual(history.records.values.first?.logPath, "/tmp/s.jsonl")
     }
 
+    /// Builds the DSH projection-cache file (`<session-id>.json`) the harness rewrites
+    /// on every step. Transcripts themselves are zstd-compressed and unreadable here.
+    private func harnessTask(id: String, outline: [String: Any]) throws -> AgentTaskRecord {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("\(id).json")
+        let object: [String: Any] = [
+            "version": 4,
+            "record": ["identity": ["cwd": "/demo"],
+                       "rows": ["turnOutline": ["ver": 2, "seq": 1, "val": outline]]]
+        ]
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        return AgentTaskRecord(session: AgentSession(event: AgentSessionEvent(
+            sessionID: id, source: .deepseekHarness, timestamp: Date(), kind: .completed)), logPath: url.path)
+    }
+
+    func testDeepSeekHarnessReadsTurnOutlineAndStreamingDraft() throws {
+        let record = try harnessTask(id: "session-1", outline: [
+            "turns": [
+                ["turn": 1, "prompt": "接入 DSH", "response": "好的，我来看看"],
+                ["turn": 2, "prompt": "继续", "response": ""]
+            ],
+            "draft": "正在读取投影缓存"
+        ])
+        let result = try AgentConversationReader.read(task: record)
+        XCTAssertEqual(result.messages.map(\.role), [.user, .assistant, .user, .assistant])
+        XCTAssertEqual(result.messages.map(\.text), ["接入 DSH", "好的，我来看看", "继续", "正在读取投影缓存"])
+        XCTAssertEqual(result.messages.map(\.id), ["dsh:1:user", "dsh:1:assistant", "dsh:2:user", "dsh:draft"])
+        XCTAssertFalse(result.truncated)
+    }
+
+    func testDeepSeekHarnessBoundsLongHistories() throws {
+        let turns = (1...5).map { ["turn": $0, "prompt": "问 \($0)", "response": "答 \($0)"] }
+        let record = try harnessTask(id: "session-1", outline: ["turns": turns, "draft": ""])
+        let result = try AgentConversationReader.read(task: record, maxMessages: 3)
+        XCTAssertEqual(result.messages.map(\.text), ["答 4", "问 5", "答 5"])
+        XCTAssertTrue(result.truncated)
+    }
+
+    func testDeepSeekHarnessRejectsAProjectionForAnotherSession() throws {
+        let record = try harnessTask(id: "session-1", outline: ["turns": [], "draft": ""])
+        XCTAssertTrue(try AgentConversationReader.read(task: record).messages.isEmpty)
+        let other = AgentTaskRecord(session: AgentSession(event: AgentSessionEvent(
+            sessionID: "session-2", source: .deepseekHarness, timestamp: Date(), kind: .completed)),
+            logPath: record.logPath)
+        XCTAssertThrowsError(try AgentConversationReader.read(task: other))
+    }
+
+    func testDeepSeekHarnessIsSupported() {
+        XCTAssertTrue(AgentConversationReader.supports(.deepseekHarness))
+        XCTAssertFalse(AgentConversationReader.supports(.kimi))
+    }
+
     func testWorkBuddyDatabaseLifecycleAndLocalConversationMapping() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

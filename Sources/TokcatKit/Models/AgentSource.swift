@@ -55,7 +55,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .geminiCLI:
             return "探测 ~/.gemini 下的会话日志（有数据才显示）。"
         case .deepseekHarness:
-            return "读取 ~/.dsh 会话用量快照：网页版（npx @deepseek-ai/dsh web）与 DSH Desktop 共用同一数据根。"
+            return "读取 ~/.dsh 会话投影缓存：用量、运行状态与对话。网页版（npx @deepseek-ai/dsh web）与 DSH Desktop 共用同一数据根。"
         case .ccSwitch:
             return "读取 ~/.cc-switch/cc-switch.db 的 proxy 请求日志：中转站 / 真实费用 / 倍率。"
         }

@@ -64,6 +64,8 @@ public final class RecentAgentTaskReader {
                   let identity = record["identity"] as? [String: Any],
                   let rows = record["rows"] as? [String: Any] else { return nil }
             func value(_ key: String) -> Any? { (rows[key] as? [String: Any])?["val"] }
+            // Delegated runs are internal bookkeeping; the live DSH reader hides them too.
+            guard ((value("subagent") as? [String: Any])?["identity"]) == nil else { return nil }
             let title = value("title") as? String
             let selection = value("modelSelection") as? [String: Any]
             let model = (selection?["lastUsed"] as? [String: Any])?["model"] as? String

@@ -101,15 +101,15 @@ Task state, task history, conversations, and usage are separate capabilities. To
 | **Claude Code** | Opt-in local hooks | Yes | Yes | Yes |
 | **WorkBuddy** | Explicit local database status | Yes, per session | Yes | Yes |
 | **WorkBuddy AI** | Explicit local database status | Yes, per session | Yes | Yes |
-| **DeepSeek Harness** | Activity records only | Yes | — | Yes |
+| **DeepSeek Harness** | Local session projection state | Yes, per session | Yes | Yes |
 | **OpenClaw** | Activity records only | Yes | — | Yes |
 | **Kimi** | Activity records only | Yes | — | Yes |
 | **Cursor / Gemini CLI** | — | — | — | When local data is available |
 | **CC Switch** | — | — | — | Provider attribution, reported cost, multiplier |
 
-Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy and WorkBuddy AI read their separate `~/.workbuddy` and `~/.workbuddy-ai` databases in read-only mode and link local conversation logs; an explicitly working session stays running while its database remains readable.
+Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy and WorkBuddy AI read their separate `~/.workbuddy` and `~/.workbuddy-ai` databases in read-only mode and link local conversation logs; an explicitly working session stays running while its database remains readable. DeepSeek Harness reads the harness's own session projection cache under `~/.dsh/storages/session_projcache/sessions` — the same root used by the `dsh web` UI and DSH Desktop — where an open step means running and an active question means waiting for you. Conversations come from the turn outline that cache already holds, so the zstd-compressed transcripts are never needed.
 
-A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy does not infer per-turn start times. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
+A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy and DeepSeek Harness do not infer per-turn start times. A session whose source still reports work in progress stays running even while it writes nothing, because a long tool call is not silence; delegated subagent runs are internal and are not listed as tasks. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
 
 ## Start in 60 seconds
 

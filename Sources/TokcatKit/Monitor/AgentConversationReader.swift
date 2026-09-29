@@ -35,6 +35,7 @@ public enum AgentConversationReader {
 
     public static func supports(_ source: AgentSource) -> Bool {
         source == .codexCLI || source == .claudeCode || source == .workBuddy || source == .workBuddyAI
+            || source == .deepseekHarness
     }
 
     /// Reads a bounded tail on demand. Only user/assistant text and attachment placeholders are exposed;
@@ -44,6 +45,9 @@ public enum AgentConversationReader {
         guard supports(task.session.source) else { throw ReadError.unsupported }
         guard let path = task.logPath else { throw ReadError.missingLog }
         let url = URL(fileURLWithPath: path)
+        if task.session.source == .deepseekHarness {
+            return try readDeepSeekHarness(task: task, url: url, maxMessages: maxMessages)
+        }
         guard url.pathExtension == "jsonl",
               (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
               let handle = try? FileHandle(forReadingFrom: url) else { throw ReadError.invalidFile }
@@ -111,6 +115,61 @@ public enum AgentConversationReader {
 
     private static func json(_ data: Data) -> [String: Any]? {
         (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    /// DSH transcripts are zstd-compressed and macOS ships no public zstd decoder, but the
+    /// session projection cache keeps the turn outline the harness itself renders: every
+    /// turn's prompt and response, plus the streaming draft of the still-open turn.
+    private static func readDeepSeekHarness(task: AgentTaskRecord, url: URL,
+                                            maxMessages: Int) throws -> AgentConversationSnapshot {
+        guard url.pathExtension == "json",
+              (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              let data = try? Data(contentsOf: url), !data.isEmpty else { throw ReadError.invalidFile }
+        guard url.deletingPathExtension().lastPathComponent == task.session.sessionID else {
+            throw ReadError.wrongSession
+        }
+        guard let root = json(data),
+              let record = root["record"] as? [String: Any],
+              let rows = record["rows"] as? [String: Any],
+              let outline = (rows["turnOutline"] as? [String: Any])?["val"] as? [String: Any]
+        else { throw ReadError.invalidFile }
+
+        var result = AgentConversationSnapshot()
+        var characters = 0
+        let limit = max(1, min(maxMessages, 200))
+        for turn in (outline["turns"] as? [[String: Any]]) ?? [] {
+            let number = turn["turn"] as? Int ?? 0
+            if let prompt = turn["prompt"] as? String {
+                append(id: "dsh:\(number):user", role: .user, text: prompt,
+                       limit: limit, into: &result, characters: &characters)
+            }
+            if let response = turn["response"] as? String {
+                append(id: "dsh:\(number):assistant", role: .assistant, text: response,
+                       limit: limit, into: &result, characters: &characters)
+            }
+        }
+        if let draft = outline["draft"] as? String {
+            append(id: "dsh:draft", role: .assistant, text: draft,
+                   limit: limit, into: &result, characters: &characters)
+        }
+        return result
+    }
+
+    /// Shared bounds: one message is clipped at 20,000 characters and the snapshot keeps at
+    /// most `limit` messages or 200,000 characters, whichever comes first.
+    private static func append(id: String, role: AgentConversationMessage.Role, text: String,
+                               limit: Int, into result: inout AgentConversationSnapshot,
+                               characters: inout Int) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let clipped = text.count > 20_000
+        let visible = clipped ? String(text.prefix(20_000)) + "\n[消息较长，仅显示前 20,000 字]" : text
+        result.messages.append(AgentConversationMessage(id: id, role: role, text: visible))
+        characters += visible.count
+        result.truncated = result.truncated || clipped
+        while result.messages.count > limit || characters > 200_000 {
+            characters -= result.messages.removeFirst().text.count
+            result.truncated = true
+        }
     }
 
     private static func visibleText(_ content: Any?) -> String {

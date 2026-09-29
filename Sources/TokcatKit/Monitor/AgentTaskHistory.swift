@@ -92,12 +92,16 @@ public struct AgentTaskHistory {
         }
         guard !records.values.contains(where: {
             !$0.activityOnly && $0.session.id == record.session.id
-                && ([AgentSource.workBuddy, .workBuddyAI].contains(record.session.source)
+                && (Self.externallyPublished.contains(record.session.source)
                     || $0.lastActivityAt >= record.lastActivityAt)
         }) else { return }
         if let old = records[record.id], old.lastActivityAt > record.lastActivityAt { return }
         records[record.id] = record
     }
+
+    /// Sources that publish their own state. A passive log scan must never replace
+    /// their record with an activity-only one, even when the file it read is newer.
+    private static let externallyPublished: Set<AgentSource> = [.workBuddy, .workBuddyAI, .deepseekHarness]
 
     public mutating func observeExternal(_ incoming: AgentTaskRecord) {
         var record = incoming
@@ -124,6 +128,20 @@ public struct AgentTaskHistory {
         for (id, task) in records where task.session.source == source && task.session.sessionID == sessionID {
             records.removeValue(forKey: id)
         }
+    }
+
+    /// Drops passive-only records for a source that has since gained a live reader.
+    /// Such a record can never be superseded by `observeExternal`, so it would
+    /// otherwise linger as a duplicate task until the retention window expires.
+    public mutating func removeActivityOnly(source: AgentSource) {
+        records = records.filter { !($0.value.activityOnly && $0.value.session.source == source) }
+    }
+
+    /// Drops records for sessions a reader now declares internal, so runs that were
+    /// briefly surfaced as tasks stop showing up as tasks.
+    public mutating func removeSessions(source: AgentSource, ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        records = records.filter { !($0.value.session.source == source && ids.contains($0.value.session.sessionID)) }
     }
 
     /// Migrate filename-based identities written by older monitors without dropping

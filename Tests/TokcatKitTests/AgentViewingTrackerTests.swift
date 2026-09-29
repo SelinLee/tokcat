@@ -52,6 +52,26 @@ final class AgentViewingTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.update(sessions: [ai, legacy], bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(3)).acknowledgements.map(\.id), [ai.id])
     }
 
+    /// DSH Desktop hosts the same runtime as `dsh web`, so focusing it must clear
+    /// its finished tasks the way focusing Codex or WorkBuddy does.
+    func testDeepSeekHarnessCompletionFlashesThenClearsInItsOwnForegroundApp() {
+        var tracker = AgentViewingTracker()
+        let dsh = completed("dsh", at: 0, source: .deepseekHarness)
+        let other = completed("other", at: 0)
+        XCTAssertEqual(AgentViewingTracker.source(bundleIdentifier: "com.deepseek.dsh"), .deepseekHarness)
+        XCTAssertEqual(AgentViewingTracker.source(bundleIdentifier: "com.deepseek.dsh.helper.Renderer"), .deepseekHarness)
+
+        let focused = tracker.update(sessions: [dsh, other], bundleIdentifier: "com.deepseek.dsh", now: time(0))
+        XCTAssertEqual(Set(focused.flashingSince.keys), [dsh.id])
+        XCTAssertEqual(focused.nextDeadline, time(3))
+        // Only the foreground source is acknowledged; the Codex task keeps its dot.
+        XCTAssertTrue(tracker.update(sessions: [dsh, other], bundleIdentifier: "com.deepseek.dsh", now: time(2.9)).acknowledgements.isEmpty)
+        XCTAssertEqual(tracker.update(sessions: [dsh, other], bundleIdentifier: "com.deepseek.dsh", now: time(3)).acknowledgements.map(\.id), [dsh.id])
+        // A browser cannot identify which session is on screen, so it stays unmapped.
+        XCTAssertNil(AgentViewingTracker.source(bundleIdentifier: "com.google.Chrome"))
+        XCTAssertTrue(tracker.update(sessions: [dsh, other], bundleIdentifier: "com.google.Chrome", now: time(10)).acknowledgements.isEmpty)
+    }
+
     func testNewTurnGetsNewDeadlineAndOnlyForegroundSourceIsAcknowledged() {
         var tracker = AgentViewingTracker()
         let old = completed("task", at: 0)

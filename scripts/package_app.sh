@@ -28,7 +28,8 @@ fi
 if [[ "${TOKCAT_SKIP_DSYM:-0}" == "1" ]]; then
   SWIFT_BUILD_ARGS+=(-debug-info-format none)
 fi
-swift build "${SWIFT_BUILD_ARGS[@]}" -c release --product TokcatApp
+# macOS ships bash 3.2, where `set -u` rejects an empty array expansion.
+swift build ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"} -c release --product TokcatApp
 
 TRIPLE="$(swift -print-target-info 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["target"]["triple"])' 2>/dev/null || true)"
 if [[ -z "${TRIPLE:-}" ]]; then
