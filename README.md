@@ -152,12 +152,12 @@ Download from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
 Build a release locally:
 
 ```bash
-TOKCAT_VERSION=0.5.0 scripts/package_app.sh
+TOKCAT_VERSION=0.6.0 scripts/package_app.sh
 # Artifacts under dist/ (not committed):
 #   Tokcat.app
-#   Tokcat-0.5.0-macos.zip
-#   Tokcat-0.5.0-macos.dmg
-#   Tokcat-0.5.0-macos.sha256
+#   Tokcat-0.6.0-macos.zip
+#   Tokcat-0.6.0-macos.dmg
+#   Tokcat-0.6.0-macos.sha256
 #   INSTALL.txt
 ```
 

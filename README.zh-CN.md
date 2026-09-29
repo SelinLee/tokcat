@@ -152,12 +152,12 @@ Codex 自动读取本地 rollout 事件。Claude Code 需在**设置 → Agent**
 本地打包：
 
 ```bash
-TOKCAT_VERSION=0.5.0 scripts/package_app.sh
+TOKCAT_VERSION=0.6.0 scripts/package_app.sh
 # 产物在 dist/（不入库）：
 #   Tokcat.app
-#   Tokcat-0.5.0-macos.zip
-#   Tokcat-0.5.0-macos.dmg
-#   Tokcat-0.5.0-macos.sha256
+#   Tokcat-0.6.0-macos.zip
+#   Tokcat-0.6.0-macos.dmg
+#   Tokcat-0.6.0-macos.sha256
 #   INSTALL.txt
 ```
 
