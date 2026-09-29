@@ -10,8 +10,7 @@ final class LiveMetricsStore: ObservableObject {
     @Published private(set) var tokensPerSecond: Double = 0
     @Published private(set) var usdPerSecond: Double = 0
     @Published private(set) var menuBarActivity: MenuBarAgentActivity = .idle
-    /// Codex 5h / weekly remaining. `nil` when the feature is off or no local
-    /// Codex login exists — the menu bar cell is hidden in that case.
+    /// Local Codex quota. `nil` while disabled or the desktop client is closed.
     @Published private(set) var codexUsage: CodexUsageSnapshot?
 
     @Published private(set) var agentSessions: [AgentSession] = []

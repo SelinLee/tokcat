@@ -156,8 +156,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Dual-line token throughput + spend rate (`tok 10.2k/s` over `$ 0.04/m`).
     public var menuBarShowTokenRate: Bool
     /// Dual-line Codex rate-limit remaining (`5h 21%` over `wk 20%`).
-    /// The only feature that contacts the network, and only when a local
-    /// Codex `auth.json` exists — otherwise no cell is drawn and no request is made.
+    /// Reads local session quota records only while the Codex desktop client runs.
     public var menuBarShowCodexUsage: Bool
     public var menuBarShowThermal: Bool
     public var menuBarShowGPU: Bool
@@ -485,7 +484,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowNetwork = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowNetwork) ?? false
             // New metric defaults on for upgrades so users immediately see tok/$ rates.
             menuBarShowTokenRate = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowTokenRate) ?? true
-            // Codex usage also defaults on; it stays invisible unless Codex is logged in locally.
+            // Codex usage also defaults on; it stays invisible unless the Codex desktop client is running.
             menuBarShowCodexUsage = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCodexUsage) ?? true
             menuBarShowThermal = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowThermal) ?? false
             menuBarShowGPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowGPU) ?? false

@@ -24,7 +24,7 @@ Keep AI task status beside the metrics you already watch. **One dot per task**, 
 </p>
 
 - **Choose your metrics:** CPU, GPU, memory, network traffic, token throughput, and spend rate.
-- **Watch Codex limits:** optional 5-hour and weekly remaining quota, using your local login.
+- **Watch Codex limits:** optional 5-hour and weekly remaining quota from local client logs, shown only while the Codex desktop client is running.
 - **Keep it compact:** up to three dots per column, six visible dots, then `+N`. Metrics and task dots can be enabled independently.
 
 | Task dot | What it means |
@@ -120,7 +120,7 @@ A quiet log is **not proof of completion**. An ended turn is not proof that a pr
 
 ## Local data and privacy
 
-Task monitoring reads local logs, explicit lifecycle events, and local state databases. No account or cloud sync is required, and usage and conversations are not uploaded. **The optional Codex quota readout** contacts the ChatGPT usage endpoint using a local Codex login; it can be disabled in settings.
+Task monitoring reads local logs, explicit lifecycle events, and local state databases. No account or cloud sync is required, and usage and conversations are not uploaded. **The optional Codex quota readout** reads quota snapshots already saved in local Codex session logs, only while the desktop client is running. It never reads login tokens or sends network requests. It checks files every 15 seconds; values retain the client record timestamp and expired windows are hidden until a newer record appears.
 
 - Task metadata and read state: `~/Library/Application Support/TokenCat/agent-sessions.json` and `agent-task-history.json`.
 - Task archive: up to **30 days / 500 records**. Initial import scans logs modified in the last seven days with bounded reads, so older turns may be absent.
@@ -195,7 +195,7 @@ Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / WorkBuddy AI / Ki
 | `Sources/TokcatKit/Monitor/` | Agent lifecycle, task history, conversation readers, optional quota |
 | `Sources/TokcatKit/Adapters/` | Per-agent log parsing & provider attribution |
 | `Sources/TokcatKit/Economy/` | Pricing, nutrition tiers, **UsageStats** |
-| `Sources/TokcatKit/Monitor/CodexUsageMonitor.swift` | Optional Codex 5h/weekly quota fetch (local `auth.json` → ChatGPT usage endpoint) |
+| `Sources/TokcatKit/Monitor/CodexUsageMonitor.swift` | Local Codex 5h/weekly quota reader (`sessions` / `archived_sessions` → latest `token_count.rate_limits`) |
 | `Sources/TokcatKit/Persistence/` | Local SQLite |
 | `App/` | Menu bar, main window, floating pet |
 | `App/PixelPet/` | Pixel animation |

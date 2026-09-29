@@ -43,11 +43,15 @@ struct SettingsView: View {
     var embedded: Bool = false
     @State private var tab: SettingsTab = .menuBar
     @State private var settings: AppSettings
+    @State private var codexUsage: CodexUsageSnapshot?
+    @State private var isCodexClientRunning: Bool
 
     init(model: AppModel, embedded: Bool = false) {
         self.model = model
         self.embedded = embedded
         _settings = State(initialValue: model.settings)
+        _codexUsage = State(initialValue: model.codexUsage)
+        _isCodexClientRunning = State(initialValue: model.isCodexClientRunning)
     }
 
     var body: some View {
@@ -93,6 +97,8 @@ struct SettingsView: View {
         .background(embedded ? GameUITheme.windowBackground : Color.clear)
         .modifier(SettingsRootFrame(embedded: embedded))
         .onReceive(model.$settings) { settings = $0 }
+        .onReceive(model.liveMetrics.$codexUsage) { codexUsage = $0 }
+        .onReceive(model.$isCodexClientRunning) { isCodexClientRunning = $0 }
     }
 
     // MARK: - Tabs
@@ -159,14 +165,14 @@ struct SettingsView: View {
                         usdPerSecond: model.usdPerSecond,
                         activity: model.menuBarActivity,
                         hatID: nil,
-                        codexUsage: model.codexUsage
+                        codexUsage: codexUsage
                     ))
                     .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
                 }
             } header: {
                 Text("图标旁指标")
             } footer: {
-                Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。Codex 用量需要本机存在 ~/.codex/auth.json。")
+                Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。Codex 额度仅在客户端运行时显示，读取本地会话记录。")
             }
 
             Section {
@@ -223,22 +229,23 @@ struct SettingsView: View {
         .padding(8)
     }
 
-    /// Codex rate-limit readout. Reads the local Codex login and, only then,
-    /// queries the ChatGPT usage endpoint — so the footer spells that out.
+    /// Local client quota, with the source timestamp visible.
     private var codexUsageSection: some View {
         Section {
             Toggle("显示 Codex 剩余用量（5 小时 / 周）", isOn: binding(\.showCodexUsageSummary))
 
-            if let usage = model.codexUsage {
+            if isCodexClientRunning, let usage = codexUsage {
                 if usage.hasUsage {
                     ForEach([CodexUsageWindowKind.fiveHour, .weekly], id: \.rawValue) { kind in
                         LabeledContent("\(kind.title)剩余") {
                             HStack(spacing: 8) {
                                 Text(CodexUsageFormatting.remainingPercent(usage, kind: kind))
                                     .font(.body.weight(.semibold).monospacedDigit())
-                                Text(CodexUsageFormatting.resetLine(usage, kind: kind))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                TimelineView(.periodic(from: .now, by: 60)) { context in
+                                    Text(CodexUsageFormatting.resetLine(usage, kind: kind, now: context.date))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -249,37 +256,38 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                Text("未检测到 Codex 登录信息")
+                Text(isCodexClientRunning ? "等待本地 Codex 用量记录" : "Codex 客户端未运行，额度已隐藏")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             LabeledContent("状态") {
                 HStack(spacing: 8) {
-                    Text(codexUsageStatusLine)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("刷新") {
+                    TimelineView(.periodic(from: .now, by: 60)) { _ in
+                        Text(codexUsageStatusLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("读取本地记录") {
                         model.refreshCodexUsageNow()
                     }
+                    .disabled(!isCodexClientRunning || !(settings.menuBarShowCodexUsage || settings.showCodexUsageSummary))
                     .controlSize(.small)
                 }
             }
         } header: {
             Text("Codex 用量")
         } footer: {
-            Text("读取 ~/.codex/auth.json（或 $CODEX_HOME/auth.json）中的登录令牌，并访问 chatgpt.com 的用量接口获取 5 小时与周窗口剩余额度。这是本应用唯一的联网功能；未安装 / 未登录 Codex 时不会发起任何请求。")
+            Text("仅在 Codex 客户端运行时，每 15 秒读取 ~/.codex（或 $CODEX_HOME）中的本地会话额度记录。无需登录令牌，不发送网络请求。数值随客户端写入日志更新；客户端退出后隐藏。")
         }
     }
 
     private var codexUsageStatusLine: String {
-        guard let usage = model.codexUsage else {
-            return model.settings.showCodexUsageSummary ? "等待首次读取" : "已关闭"
-        }
-        guard let fetchedAt = usage.fetchedAt else { return "上次读取失败" }
-        let seconds = Date().timeIntervalSince(fetchedAt)
-        if seconds < 60 { return "刚刚更新" }
-        return "\(Int(seconds / 60)) 分钟前更新"
+        guard settings.menuBarShowCodexUsage || settings.showCodexUsageSummary else { return "已关闭" }
+        guard isCodexClientRunning else { return "客户端未运行" }
+        guard let usage = codexUsage else { return "等待首次读取" }
+        guard usage.hasUsage else { return usage.errorMessage ?? "等待客户端写入记录" }
+        return CodexUsageFormatting.localRecordLine(usage)
     }
 
     private var petTab: some View {

@@ -78,7 +78,16 @@ private final class MenuBarResizePreviewDriver: ObservableObject {
                 if menuWindow != nil { break }
                 try? await Task.sleep(for: .milliseconds(50))
             }
-            var topEdge: CGFloat?
+            guard let openedWindow = menuWindow else {
+                log("FAIL: preview menu did not open")
+                exit(1)
+            }
+            // Reproduce a popup that AppKit placed below the menu bar. The
+            // sizing view must correct the gap without changing its content.
+            openedWindow.setFrameOrigin(NSPoint(
+                x: openedWindow.frame.minX,
+                y: openedWindow.frame.minY - 80
+            ))
             var samples = 0
             var failures = 0
             for next in [240.0, 460.0, 140.0, 400.0, 140.0] {
@@ -88,12 +97,12 @@ private final class MenuBarResizePreviewDriver: ObservableObject {
                     guard let content = window.contentView,
                           let probe = descendant(MenuBarResizeProbe.View.self, in: content) else { continue }
                     let root = probe.convert(probe.bounds, to: nil)
-                    if topEdge == nil { topEdge = window.frame.maxY }
+                    let screenTop = window.screen?.visibleFrame.maxY ?? window.frame.maxY
                     samples += 1
-                    if abs(window.frame.maxY - topEdge!) > 1 || abs(content.bounds.height - root.height) > 1 {
+                    if abs(window.frame.maxY - screenTop) > 1 || abs(content.bounds.height - root.height) > 1 {
                         failures += 1
                     }
-                    log("height=\(next) window=\(window.frame) content=\(content.bounds) root=\(root) screenTop=\(window.screen?.visibleFrame.maxY ?? 0)")
+                    log("height=\(next) window=\(window.frame) content=\(content.bounds) root=\(root) screenTop=\(screenTop)")
                 }
             }
             log("\(samples == 5 && failures == 0 ? "PASS" : "FAIL"): \(samples) resize samples, \(failures) geometry failures")

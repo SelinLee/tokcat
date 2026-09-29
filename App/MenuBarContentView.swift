@@ -241,10 +241,14 @@ struct MenuBarContentView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
-                .help("立即刷新 Codex 用量")
-                .accessibilityLabel("刷新 Codex 用量")
+                .help("重新读取本地 Codex 用量")
+                .accessibilityLabel("读取本地 Codex 用量")
             }
 
+            if let usage = live.codexUsage, usage.fetchedAt != nil {
+                Text(CodexUsageFormatting.localRecordLine(usage))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if let usage = live.codexUsage, usage.hasUsage {
                 VStack(spacing: 5) {
                     codexWindowRow(kind: .fiveHour, usage: usage)
@@ -268,7 +272,7 @@ struct MenuBarContentView: View {
         let remaining = window?.remainingPercent ?? 0
         let tint = codexRemainingTint(remaining)
         let detail = window == nil
-            ? "服务端未返回该用量窗口"
+            ? "本地记录无该窗口，或已过重置时间"
             : CodexUsageFormatting.resetLine(usage, kind: kind)
 
         return VStack(alignment: .leading, spacing: 3) {

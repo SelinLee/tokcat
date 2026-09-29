@@ -4,15 +4,8 @@ import Combine
 import UserNotifications
 import AppKit
 
-/// Ties together monitoring, the pet engine, settings, and local persistence,
-/// and republishes state for SwiftUI to observe. Runs almost entirely offline —
-/// the only I/O is reading local log files, local process metrics, and the
-/// local SQLite / UserDefaults stores.
-///
-/// One exception: the optional Codex usage readout. When a local Codex
-/// `auth.json` exists *and* the user has the feature enabled, Tokcat queries
-/// `chatgpt.com/backend-api/wham/usage` to show remaining rate-limit windows.
-/// With no local login it stays completely silent.
+/// Ties together local monitoring, the pet engine, settings, and persistence.
+/// Codex quota is read from client-written logs only while its desktop app runs.
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var petState: PetState
@@ -60,8 +53,9 @@ final class AppModel: ObservableObject {
     var tokensPerSecond: Double { liveMetrics.tokensPerSecond }
     var usdPerSecond: Double { liveMetrics.usdPerSecond }
     var menuBarActivity: MenuBarAgentActivity { liveMetrics.menuBarActivity }
-    /// Codex 5h / weekly remaining, or nil when off / no local Codex login.
+    /// Local Codex quota, hidden when disabled or the desktop client is closed.
     var codexUsage: CodexUsageSnapshot? { liveMetrics.codexUsage }
+    @Published private(set) var isCodexClientRunning = false
     @Published private(set) var latestModel: String?
     @Published private(set) var latestSource: AgentSource?
     @Published private(set) var isProviderBackfilling = false
@@ -101,16 +95,12 @@ final class AppModel: ObservableObject {
     /// Dedicated cadence for network sampling + status-bar metric refresh,
     /// independent of the general poll (which adaptively backs off when idle).
     private var networkTimer: Timer?
-    /// Codex rate-limit windows move slowly; a slow poll is plenty.
     private var codexUsageTimer: Timer?
-    private let codexUsageFetcher = CodexUsageFetcher()
-    private var isCodexUsageFetching = false
-    private var lastCodexUsageFetchAt: Date?
-
-    /// Codex usage poll cadence (5 minutes).
-    static let codexUsageRefreshInterval: TimeInterval = 300
-    /// Floor for on-demand refreshes (settings toggle / panel open).
-    static let codexUsageMinimumInterval: TimeInterval = 60
+    private let codexUsageReader = CodexLocalUsageReader()
+    private var isCodexUsageReading = false
+    private var codexUsageGeneration: UInt64 = 0
+    private var codexClientObservers: [NSObjectProtocol] = []
+    static let codexUsageRefreshInterval: TimeInterval = 15
     private var lastTick = Date()
     private weak var petWindowController: PetWindowController?
     /// Last offsets written to SQLite so polls only flush deltas.
@@ -261,7 +251,16 @@ final class AppModel: ObservableObject {
         RunLoop.main.add(sessionTimer, forMode: .common)
         self.sessionTimer = sessionTimer
         rescheduleNetworkTimer(resetSampling: true)
-        rescheduleCodexUsageTimer()
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            codexClientObservers.append(NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                    .bundleIdentifier == "com.openai.codex" else { return }
+                Task { @MainActor in self?.updateCodexClientState() }
+            })
+        }
+        updateCodexClientState()
         poll()
         rescheduleTimer()
         scheduleHistoricalScan(after: 1.5)
@@ -273,6 +272,10 @@ final class AppModel: ObservableObject {
 
 
     func stop() {
+        for observer in codexClientObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        codexClientObservers.removeAll()
+        codexUsageGeneration &+= 1
+        liveMetrics.setCodexUsage(nil)
         if let agentActivationObserver { NSWorkspace.shared.notificationCenter.removeObserver(agentActivationObserver) }
         agentActivationObserver = nil
         viewedCompletionTimer?.invalidate()
@@ -447,59 +450,62 @@ final class AppModel: ObservableObject {
         settings.menuBarShowCodexUsage || settings.showCodexUsageSummary
     }
 
-    /// Starts / stops / re-cadences the Codex usage poll and paints immediately
-    /// so toggling the setting updates the menu bar without a 5-minute wait.
+    private static var codexDesktopIsRunning: Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex")
+            .contains { !$0.isTerminated }
+    }
+
+    private func updateCodexClientState() {
+        isCodexClientRunning = Self.codexDesktopIsRunning
+        rescheduleCodexUsageTimer()
+    }
+
     private func rescheduleCodexUsageTimer() {
+        codexUsageGeneration &+= 1
         codexUsageTimer?.invalidate()
         codexUsageTimer = nil
-
-        guard isCodexUsageEnabled else {
-            // Drop stale numbers so the cell disappears at once.
+        guard isCodexUsageEnabled, isCodexClientRunning else {
             liveMetrics.setCodexUsage(nil)
             return
         }
-
         let timer = Timer(timeInterval: Self.codexUsageRefreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshCodexUsage() }
         }
         RunLoop.main.add(timer, forMode: .common)
         codexUsageTimer = timer
-        refreshCodexUsage(force: true)
+        refreshCodexUsage()
     }
 
-    /// Reads the local Codex credential, asks the usage endpoint, and publishes
-    /// the snapshot. Silently no-ops when Codex was never logged in on this Mac —
-    /// no cell and no outbound request in that case.
-    private func refreshCodexUsage(force: Bool = false) {
-        guard isCodexUsageEnabled else { return }
-        guard !isCodexUsageFetching else { return }
-
-        let now = Date()
-        if !force,
-           let last = lastCodexUsageFetchAt,
-           now.timeIntervalSince(last) < Self.codexUsageMinimumInterval {
+    private func refreshCodexUsage() {
+        guard isCodexUsageEnabled, codexUsageTimer != nil else { return }
+        guard Self.codexDesktopIsRunning else {
+            updateCodexClientState()
             return
         }
-
-        guard codexUsageFetcher.hasCredentials() else {
-            liveMetrics.setCodexUsage(nil)
-            return
-        }
-
-        isCodexUsageFetching = true
-        lastCodexUsageFetchAt = now
-        let fetcher = codexUsageFetcher
+        guard !isCodexUsageReading else { return }
+        isCodexUsageReading = true
+        let generation = codexUsageGeneration
+        let reader = codexUsageReader
         Task { [weak self] in
-            let snapshot = await fetcher.fetch()
+            let snapshot = await reader.read()
             guard let self else { return }
-            self.isCodexUsageFetching = false
+            self.isCodexUsageReading = false
+            // A close/disable/reopen during disk I/O must not restore stale UI.
+            guard generation == self.codexUsageGeneration else {
+                self.refreshCodexUsage()
+                return
+            }
+            guard Self.codexDesktopIsRunning else {
+                self.updateCodexClientState()
+                return
+            }
             self.liveMetrics.setCodexUsage(snapshot)
         }
     }
 
-    /// Manual refresh from the dropdown panel / settings.
+    /// Re-read local files; never asks the client or a server to refresh usage.
     func refreshCodexUsageNow() {
-        refreshCodexUsage(force: true)
+        refreshCodexUsage()
     }
 
     /// Stretch the poll timer while the machine is quiet so idle cost drops

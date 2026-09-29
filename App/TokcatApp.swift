@@ -91,8 +91,8 @@ private struct MenuBarLabelView: View {
         lines += SessionPresentation.visibleTasks(live.agentSessions).filter { $0.showsMenuBarDot(at: Date()) }.map {
             "\($0.source.displayName) · \($0.projectName) · \($0.displayState(at: Date()).title)"
         }
-        if model.settings.menuBarShowCodexUsage {
-            lines.append(CodexUsageFormatting.tooltip(live.codexUsage))
+        if model.settings.menuBarShowCodexUsage, let usage = live.codexUsage {
+            lines.append(CodexUsageFormatting.tooltip(usage))
         }
         return lines.joined(separator: "\n")
     }
