@@ -66,7 +66,9 @@ public struct AgentTaskHistory {
             if event.toolName != nil { record.toolCalls = (record.toolCalls ?? 0) + 1 }
             if event.kind != .metadata {
                 let label = event.phase ?? session.state.title
-                if record.timeline.last?.label != label {
+                // Each actual tool invocation is a live observation, even when
+                // consecutive calls use the same tool/phase label.
+                if record.timeline.last?.label != label || event.toolName != nil {
                     record.timeline.append(AgentTaskActivity(timestamp: event.timestamp, label: label))
                     record.timeline = Array(record.timeline.suffix(60))
                 }

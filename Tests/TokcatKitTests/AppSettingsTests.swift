@@ -2,6 +2,24 @@ import XCTest
 @testable import TokcatKit
 
 final class AppSettingsTests: XCTestCase {
+    func testRetiredPetSettingsDoNotResetMonitoringOrReturnWhenSaved() throws {
+        let data = Data("""
+            {"desktopPetSkin":"custom", "customPetModelFileName":"old.usdz",
+             "showPetSummary":true, "enablePetSoundEffects":true,
+             "desktopCompanionAppearance":"toki", "desktopPetDockPosition":"screenLeft",
+             "menuBarShowCPU":false, "menuBarShowNetwork":true, "pollIntervalSeconds":5}
+            """.utf8)
+        let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+        XCTAssertEqual(settings.desktopCompanionAppearance, .toki)
+        XCTAssertEqual(settings.desktopPetDockPosition, .screenLeft)
+        XCTAssertEqual(settings.pollIntervalSeconds, 5)
+        XCTAssertFalse(settings.menuBarShowCPU)
+        XCTAssertTrue(settings.menuBarShowNetwork)
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        for key in ["desktopPetSkin", "customPetModelFileName", "showPetSummary", "enablePetSoundEffects"] {
+            XCTAssertNil(saved[key])
+        }
+    }
     func testDefaultRoundTripThroughStore() {
         let suiteName = "tokcat.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -19,8 +37,6 @@ final class AppSettingsTests: XCTestCase {
         settings.menuBarCatIconScale = 0.75
         settings.menuBarIconStyle = .lineCPU
         settings.showDesktopPet = false
-        settings.desktopPetSkin = .procedural
-        settings.customPetModelFileName = "demo.usdz"
         settings.pollIntervalSeconds = 7
         settings.menuBarRefreshIntervalSeconds = 2.5
         store.save(settings)
@@ -33,8 +49,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(loaded.menuBarShowCatIcon)
         XCTAssertEqual(loaded.menuBarIconStyle, .lineCPU)
         XCTAssertFalse(loaded.showDesktopPet)
-        XCTAssertEqual(loaded.desktopPetSkin, .procedural)
-        XCTAssertEqual(loaded.customPetModelFileName, "demo.usdz")
         XCTAssertEqual(loaded.menuBarCatIconPointSize, AppSettings.catIconBasePointSize * (0.5 + 0.75), accuracy: 0.001)
     }
 
@@ -230,82 +244,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.default.showDesktopPet)
     }
 
-    func testDesktopPetSkinDefaultIsHDTokcat() {
-        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pixelTokcat)
-        XCTAssertEqual(DesktopPetSkin.allCases.count, 3)
-        XCTAssertEqual(DesktopPetSkin.pixelTokcat.displayName, "高清 Tokcat")
-        XCTAssertTrue(DesktopPetSkin.pixelTokcat.isPixel)
-        XCTAssertEqual(DesktopPetSkin.procedural.displayName, "方块猫")
-        XCTAssertEqual(DesktopPetSkin.custom.displayName, "自定义 3D")
-        XCTAssertEqual(DesktopPetSkin.hdTokcat, .pixelTokcat)
-    }
-
-    func testDesktopPetSkinPersistsAndLegacyDefaultsToPixelTokcat() throws {
-        let suiteName = "tokcat.tests.skin.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        var settings = AppSettings.default
-        settings.desktopPetSkin = .procedural
-        AppSettingsStore(defaults: defaults).save(settings)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .procedural)
-
-        // Legacy payloads without desktopPetSkin default to pixelTokcat.
-        let legacyJSON = """
-        {
-          "showCPU": true,
-          "showMemory": true,
-          "showNetwork": true,
-          "showThermal": true,
-          "showGPU": true,
-          "showTokenSummary": true,
-          "showRecentTokenEvents": true,
-          "showPetSummary": true,
-          "showDesktopPet": true,
-          "pollIntervalSeconds": 2
-        }
-        """.data(using: .utf8)!
-        defaults.set(legacyJSON, forKey: AppSettingsStore.defaultsKey)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).load().desktopPetSkin, .pixelTokcat)
-    }
-
-    func testLegacyCatgirlSkinMigratesToHDTokcat() throws {
-        let suite = "tokcat.tests.catgirl-migrate.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let payload: [String: Any] = [
-            "showCPU": true,
-            "showMemory": true,
-            "showNetwork": true,
-            "showThermal": true,
-            "showGPU": true,
-            "menuBarShowCPU": true,
-            "menuBarShowMemory": false,
-            "menuBarShowNetwork": false,
-            "menuBarShowThermal": false,
-            "menuBarShowGPU": false,
-            "menuBarShowCatIcon": true,
-            "menuBarCatIconScale": 0.5,
-            "menuBarCatIconScaleVersion": 2,
-            "menuBarIconStyle": "tokcat",
-            "menuBarTextScale": 1.4,
-            "menuBarVerticalOffset": -2.5,
-            "showTokenSummary": true,
-            "showRecentTokenEvents": true,
-            "showPetSummary": true,
-            "showDesktopPet": true,
-            "desktopPetSkin": "catgirl",
-            "pollIntervalSeconds": 2,
-            "enabledAgentSources": AgentSource.defaultEnabled.map(\.rawValue).sorted()
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        defaults.set(data, forKey: AppSettingsStore.defaultsKey)
-        let loaded = AppSettingsStore(defaults: defaults).load()
-        XCTAssertEqual(loaded.desktopPetSkin, .pixelTokcat)
-    }
-
-
     func testProviderPricingMigrationImportsBotcf() throws {
         let suiteName = "tokcat.tests.pricing-migrate.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -324,26 +262,6 @@ final class AppSettingsTests: XCTestCase {
         let sol = try XCTUnwrap(botcf.first { $0.modelKey == "gpt-5.6-sol" })
         XCTAssertEqual(sol.pricing.inputPerMillion, 0.395, accuracy: 0.0001)
     }
-    func testPixelTokcatSkinRoundTrip() {
-        let suiteName = "tokcat.tests.pixel.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = AppSettingsStore(defaults: defaults)
-        XCTAssertEqual(AppSettings.default.desktopPetSkin, .pixelTokcat)
-        XCTAssertTrue(DesktopPetSkin.pixelTokcat.isPixel)
-
-        var settings = AppSettings.default
-        settings.desktopPetSkin = .pixelTokcat
-        store.save(settings)
-        XCTAssertEqual(store.load().desktopPetSkin, .pixelTokcat)
-
-        settings.desktopPetSkin = .custom
-        store.save(settings)
-        XCTAssertEqual(store.load().desktopPetSkin, .custom)
-        XCTAssertFalse(DesktopPetSkin.custom.isPixel)
-    }
-
 }
 
 final class SystemMetricsMonitorTests: XCTestCase {
@@ -389,18 +307,5 @@ final class SystemMetricsMonitorTests: XCTestCase {
     }
 
 
-
-    func testEnablePetSoundEffectsDefaultAndPersistence() throws {
-        let suiteName = "tokcat.tests.petsfx.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = AppSettingsStore(defaults: defaults)
-        XCTAssertFalse(store.load().enablePetSoundEffects)
-
-        var settings = AppSettings.default
-        settings.enablePetSoundEffects = true
-        store.save(settings)
-        XCTAssertTrue(store.load().enablePetSoundEffects)
-    }
 
 }

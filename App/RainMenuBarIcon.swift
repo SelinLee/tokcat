@@ -12,8 +12,7 @@ enum RainMenuBarIcon {
 
     static func draw(
         in rect: NSRect,
-        activity: MenuBarAgentActivity = .idle,
-        hatID: String? = nil
+        activity: MenuBarAgentActivity = .idle
     ) {
         // Reserve a column on the right for floating glyphs, matching the
         // vector expression layout so both styles align.
@@ -33,7 +32,7 @@ enum RainMenuBarIcon {
 
         guard let image = loadedImage() else {
             // Fall back to the vector face if the asset is missing.
-            MenuBarCatExpression.draw(in: rect, activity: activity, hatID: hatID)
+            MenuBarCatExpression.draw(in: rect, activity: activity)
             return
         }
 

@@ -1,171 +1,151 @@
+<div align="center">
+
 # Tokcat
 
-**Monitor AI work from your Mac’s menu bar.**
+**Keep your agents' work in view.**
 
-See which agents are running, which replies are ready, and which tasks need your input. Tokcat brings **Codex, Claude Code, WorkBuddy, and WorkBuddy AI** into one view: glance at the menu bar, open the dropdown for context, then read conversations and inspect activity in the main window.
+A native macOS monitor for multiple AI agents: live task states, waiting alerts, local conversations, usage trends, and a quiet companion at the edge of your desktop.
 
-[English](README.md) | [中文](README.zh-CN.md)
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#requirements)
-[![Release](https://img.shields.io/github/v/release/SelinLee/tokcat)](https://github.com/SelinLee/tokcat/releases)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install) [![Swift](https://img.shields.io/badge/Swift-native-F05138.svg)](#build-from-source) [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**[Download Tokcat](https://github.com/SelinLee/tokcat/releases)** · [Get started](#start-in-60-seconds) · [Agent support](#agent-support)
+**[Download](https://github.com/SelinLee/tokcat/releases)** · [Supported agents](#supported-agents) · [Get started](#get-started)
 
-## 1. Monitor from the menu bar
+</div>
 
-Keep AI task status beside the metrics you already watch. **One dot per task**, placed after your selected monitoring indicators.
+## Follow multiple agents in one place
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
-    <img src="docs/assets/screenshots/readme-menubar-light.png" alt="Tokcat menu-bar close-up: live metrics, Codex quota, and colored task dots" width="900" />
-  </picture>
-</p>
+See who is running, who needs an answer, and whose reply is ready. The shared task list brings work across agents together, with the selected conversation taking most of the window.
 
-- **Choose your metrics:** CPU, GPU, memory, network traffic, token throughput, and spend rate.
-- **Watch Codex limits:** optional 5-hour and weekly remaining quota from local client logs, shown only while the Codex desktop client is running.
-- **Keep it compact:** up to three dots per column, six visible dots, then `+N`. Metrics and task dots can be enabled independently.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-tasks-dark.png" />
+  <img src="docs/assets/screenshots/readme-tasks-light.png" alt="Multi-agent tasks beside the selected local conversation" width="1180" />
+</picture>
 
-| Task dot | What it means |
+- **Live tasks:** running, waiting for input, waiting for approval, completed, failed, or interrupted.
+- **Recent work:** filter by agent, keyword, or 24 hours / 7 days / 30 days. Codex history separates individual turns.
+- **Local conversations:** read prompts and replies, copy text, follow new messages, or open a separate reading window.
+
+## Glance at the menu bar
+
+One status dot per task, next to the metrics you choose. Keep several agents in sight while working in another app.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
+  <img src="docs/assets/screenshots/readme-menubar-light.png" alt="Task status dots, token throughput, spend rate, system metrics and Codex quota" width="1040" />
+</picture>
+
+| Indicator | Meaning |
 |---|---|
-| 🟡 Pulsing yellow | The task is running. |
-| 🟡🔴 Alternating yellow / red | Your input or approval is needed; colors switch every 0.8 seconds. |
-| 🟢 Green | A reply has finished. In the foreground agent, it flashes for 3 seconds and clears automatically. Background completions stay visible until viewed. |
-| 🔴 Solid red | The turn failed. |
-| ◯ Hollow gray | Updates are unavailable or the turn was interrupted; after 10 seconds, flashes for 3 seconds and hides until a fresh update. Details remain available. |
+| Pulsing yellow | Running |
+| Alternating yellow / red | Needs your input or approval |
+| Green | The turn finished; background replies remain until viewed |
+| Red | Failed |
+| Hollow gray | No recent updates or interrupted; see details for context |
 
-Completed tasks clear even when you have stayed in the same agent throughout the task. Switching away during the 3-second countdown keeps the reminder for your next visit. With **Reduce Motion**, waiting dots stay red and completion dots stay green during the countdown.
+The strip shows up to six dots, then `+N`. Foreground completions flash for three seconds and clear automatically. Reduce Motion uses steady colors. CPU, GPU, memory, network, token throughput, spend rate and local Codex quota are optional.
 
-## 2. Open the dropdown for context
+## Click for context
 
-Click the menu-bar item to see **conversation titles first**, with the agent, state, duration, and recent activity underneath.
+The dropdown shows conversation titles, source agents, current states, elapsed time, and waiting time. Expand a task, open its conversation or project, mark a completion as read, or jump to the main window.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-dropdown-dark.png" />
-    <img src="docs/assets/screenshots/readme-dropdown-light.png" alt="English dropdown preview with named tasks, agent status, elapsed time, and quick actions" width="430" />
-  </picture>
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-dropdown-dark.png" />
+  <img src="docs/assets/screenshots/readme-dropdown-light.png" alt="Named multi-agent tasks and waiting durations in the dropdown" width="430" />
+</picture>
 
-- Spot tasks waiting for input or approval, and see how long they have been waiting.
-- Expand a task for more context, open its conversation or project, or mark its completion as read.
-- Check recent completions, Codex quota, and optional usage or system details.
-- Jump straight to the main window or settings. The dropdown stays attached to the menu bar as its content grows or shrinks.
+## Inspect each task
 
-## 3. Explore tasks in the main window
+Open **Monitor** for timing, the latest phase, observed tool calls, model, available per-turn tokens, and the activity timeline. Open the source conversation, project folder, or local log from the same view.
 
-**Tasks on the left. The conversation in focus.** A shared task list brings recent work across agents into one place, with most of the window reserved for the selected task.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-monitor-dark.png" />
+  <img src="docs/assets/screenshots/readme-monitor-light.png" alt="Task timing, waiting, tool calls, model and activity timeline" width="600" />
+</picture>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-tasks-dark.png" />
-    <img src="docs/assets/screenshots/readme-tasks-light.png" alt="English task dashboard: live and recent multi-agent tasks beside a large conversation pane" width="1100" />
-  </picture>
-</p>
+## Understand usage and costs
 
-| Area | What you can do |
-|---|---|
-| **Live tasks** | Check current status, elapsed time, waiting time, and latest activity. |
-| **Recent tasks** | Browse by last activity; filter by agent, 24 hours / 7 days / 30 days, or keyword. Codex turns are archived separately. |
-| **Conversation** | Read local prompts and AI replies, select and copy text, follow new messages, or open a separate reading window. |
-| **Monitor** | Inspect timing, observed tool calls, model, available per-turn tokens, and an activity timeline. |
+Compare day, week, or month trends by **agent, model, or provider**. See input/output tokens, costs, billing rates, and each group's share. Reported costs and pricing estimates are labeled separately; rates are editable locally.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-usage-dark.png" />
+  <img src="docs/assets/screenshots/readme-usage-light.png" alt="Weekly token trends and usage breakdown across five agents" width="1180" />
+</picture>
 
 <details>
-<summary><strong>See the detailed task monitor</strong></summary>
+<summary>See the cost view</summary>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-monitor-dark.png" />
-    <img src="docs/assets/screenshots/readme-monitor-light.png" alt="English task monitor showing elapsed time, waiting time, tool calls, session information, and activity timeline" width="600" />
-  </picture>
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-costs-dark.png" />
+  <img src="docs/assets/screenshots/readme-costs-light.png" alt="Cost trends and per-agent reported cost breakdown" width="1180" />
+</picture>
 
-Open the source conversation, reveal its local log, or jump to the project folder from the task details.
+CC Switch can add provider attribution, reported charges, and pricing multipliers. Codex 5-hour / weekly remaining quota comes from local client logs and appears only while the desktop client runs.
 
 </details>
 
-**Usage and costs:** live token and spend rates, daily totals, and day / week / month trends grouped by agent, model, or provider. Rates are editable locally; CC Switch can supply reported costs and provider attribution.
+## A quiet desktop companion
 
-**Optional desktop companion:** a cat that reacts to activity, with gear and a collection book. Monitoring works fully with the pet disabled. Sound is off by default.
+The new companion stays attached to a screen edge, the bottom-right corner, or either side of the Dock. Dragging only adjusts along the selected edge.
 
-*Images show native previews with synthetic tasks and English labels prepared for documentation. They contain no private conversations. Light and dark images follow your GitHub theme.*
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
+  <img src="docs/assets/screenshots/readme-companion-light.png" alt="Edge-attached companions with a narrow transparent ticker, input bubble and click-open details" width="1040" />
+</picture>
 
-## Agent support
+- **Quiet by default:** no persistent bubble. Recent tools and phases scroll upward one line at a time above the character, within its width.
+- **Details when needed:** click the character or wait for an input/approval request to open a bubble above it. Click the bubble to open Tasks.
+- **Your choice of character:** male **toki**, or **biti** in coral, whale, or violet outfits. All use calm, neutral expressions. Model families determine activity text colors independently of the character.
 
-Task state, task history, conversations, and usage are separate capabilities. Tokcat shows only what each local source provides.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
+  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="Manually selectable neutral-faced toki boy and three biti outfits" width="1040" />
+</picture>
 
-| Source | Task state | Recent tasks | Conversation | Token / cost usage |
+Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. [Companion behavior](docs/DesktopCompanion.md)
+
+## Supported agents
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-agents-dark.png" />
+  <img src="docs/assets/screenshots/readme-agents-light.png" alt="Agent support grouped by live state and conversations, activity and usage, and optional usage adapters" width="1040" />
+</picture>
+
+| Agent | Live task state | Recent tasks | Conversation | Usage / cost |
 |---|---|---|---|---|
-| **Codex** | Local lifecycle events | Yes, per turn | Yes | Yes |
-| **Claude Code** | Opt-in local hooks | Yes | Yes | Yes |
-| **WorkBuddy** | Explicit local database status | Yes, per session | Yes | Yes |
-| **WorkBuddy AI** | Explicit local database status | Yes, per session | Yes | Yes |
-| **DeepSeek Harness** | Local session projection state | Yes, per session | Yes | Yes |
-| **OpenClaw** | Activity records only | Yes | — | Yes |
-| **Kimi** | Activity records only | Yes | — | Yes |
-| **Cursor / Gemini CLI** | — | — | — | When local data is available |
-| **CC Switch** | — | — | — | Provider attribution, reported cost, multiplier |
+| **Codex** | Local lifecycle events | Per turn | ✓ | ✓ |
+| **Claude Code** | Enable local hooks | ✓ | ✓ | ✓ |
+| **WorkBuddy** | Local database state | Per session | ✓ | ✓ |
+| **WorkBuddy AI** | Local database state | Per session | ✓ | ✓ |
+| **DeepSeek Harness** | Local session projection | Per session | ✓ | ✓ |
+| **OpenClaw** | Activity records only | Activity | — | ✓ |
+| **Kimi** | Activity records only | Activity | — | ✓ |
+| **Cursor** | — | — | — | Compatible JSONL logs, optional |
+| **Gemini CLI** | — | — | — | Compatible JSONL logs, optional |
 
-Codex reads local rollout events. Enable Claude Code lifecycle monitoring in **Settings → Agent**, then restart Claude Code sessions. Installation backs up and merges local hook settings; moving Tokcat requires re-enabling the hooks. WorkBuddy and WorkBuddy AI read their separate `~/.workbuddy` and `~/.workbuddy-ai` databases in read-only mode and link local conversation logs; an explicitly working session stays running while its database remains readable. DeepSeek Harness reads the harness's own session projection cache under `~/.dsh/storages/session_projcache/sessions` — the same root used by the `dsh web` UI and DSH Desktop — where an open step means running and an active question means waiting for you. Conversations come from the turn outline that cache already holds, so the zstd-compressed transcripts are never needed. Its waiting state depends on the harness: only the timed `ask_user_question` schema reaches that cache, so the blocking schema the bundled preset ships looks like ordinary work. Set the `tool-ask-user` plugin to `mode: timed` (with `timeout: -1` to keep waiting indefinitely) to make those prompts visible.
+**CC Switch** is a billing integration for provider attribution and reported costs. It does not supply task lifecycle states.
 
-A quiet log is **not proof of completion**. An ended turn is not proof that a project is complete or tests passed. WorkBuddy and DeepSeek Harness do not infer per-turn start times. A session whose source still reports work in progress stays running even while it writes nothing, because a long tool call is not silence; delegated subagent runs are internal and are not listed as tasks. Activity-only records do not claim live execution state, and missing metrics remain unavailable. No estimated progress percentage is displayed without explicit step data.
+Claude Code hooks are opt-in. DeepSeek Harness covers `dsh web` and DSH Desktop; waiting prompts require the harness's **timed ask-user** mode. Cursor and Gemini CLI adapters are disabled by default and require compatible local usage records. [Setup and data sources](docs/AgentSupport.md)
 
-## Start in 60 seconds
+Tokcat displays what local sources report. A quiet log does not prove completion, and a finished turn does not prove the whole project is done. Missing metrics stay unavailable; no invented progress percentages are shown.
 
-1. [Install Tokcat](https://github.com/SelinLee/tokcat/releases) and open it from Applications.
-2. Use Codex, WorkBuddy, or WorkBuddy AI as usual. For Claude Code task states, enable local hooks in **Settings → Agent**.
-3. Choose your metrics in **Settings → Menu Bar**, then watch task dots and click for context.
-4. Open **Tasks** to read conversations and inspect work, or **Usage** to review token and cost trends.
+## Get started
 
-## Local data and privacy
-
-Task monitoring reads local logs, explicit lifecycle events, and local state databases. No account or cloud sync is required, and usage and conversations are not uploaded. **The optional Codex quota readout** reads quota snapshots already saved in local Codex session logs, only while the desktop client is running. It never reads login tokens or sends network requests. It checks files every 15 seconds; values retain the client record timestamp and expired windows are hidden until a newer record appears.
-
-- Task metadata and read state: `~/Library/Application Support/TokenCat/agent-sessions.json` and `agent-task-history.json`.
-- Task archive: up to **30 days / 500 records**. Initial import scans logs modified in the last seven days with bounded reads, so older turns may be absent.
-- Conversations: loaded on demand from the linked session, bounded to the last **4 MB / 200 messages**, with truncation notices. Text stays in view memory and is not copied to the archive. Attachments use placeholders; system messages, tool internals, and reasoning records are excluded.
-- Claude hooks store sanitized lifecycle metadata, not conversation text or tool arguments, in the local `session-inbox/` directory.
-- Usage statistics: local `tokencat.sqlite3`. Usage adapters start at the end of existing files rather than backfilling entire histories.
-
-## Requirements
-
-- macOS 13 Ventura or later  
-- Dev build: Xcode 15+ / Swift 5.10+  
-
----
+1. Install and open Tokcat, then use your agents as usual.
+2. Enable Claude Code hooks in **Settings → Agent** if you want its task states; restart existing Claude Code sessions.
+3. Pick menu-bar metrics and watch the task dots. Open **Tasks** for conversations, or **Usage** for trends.
+4. Choose toki / biti and an attachment in **Settings → Desktop companion**.
 
 ## Install
 
-Download from [GitHub Releases](https://github.com/SelinLee/tokcat/releases):
+Requires **macOS 13+**. Download a DMG or ZIP from [Releases](https://github.com/SelinLee/tokcat/releases), place `Tokcat.app` in Applications, then right-click → **Open** on first launch. Builds are ad-hoc signed; Developer ID notarization is not included. The release asset's architecture follows the build host.
 
-### Recommended: DMG
-1. Open `Tokcat-*-macos.dmg`  
-2. Drag `Tokcat.app` into **Applications**  
-3. **First launch**: right-click → **Open** (ad-hoc signed; one-time Gatekeeper bypass)  
+Monitoring reads local records; no API key is required. Usage data stays in `~/Library/Application Support/Tokcat/`, and task caches / optional Claude hooks in `~/Library/Application Support/TokenCat/`. The companion shares the task monitor's state. Upgrading preserves usage history and monitoring preferences.
 
-### Alternative: Zip
-1. Download `Tokcat-*-macos.zip` and unzip → `Tokcat.app`  
-2. Drag into **Applications**  
-3. Same first-launch step: right-click → **Open**  
+## Build from source
 
-Build a release locally:
-
-```bash
-TOKCAT_VERSION=0.6.0 scripts/package_app.sh
-# Artifacts under dist/ (not committed):
-#   Tokcat.app
-#   Tokcat-0.6.0-macos.zip
-#   Tokcat-0.6.0-macos.dmg
-#   Tokcat-0.6.0-macos.sha256
-#   INSTALL.txt
-```
-
----
-
-## Run from source
-
-```bash
+```sh
 git clone https://github.com/SelinLee/tokcat.git
 cd tokcat
 swift build
@@ -173,61 +153,16 @@ swift test
 swift run TokcatApp
 ```
 
----
+Package a release with `TOKCAT_VERSION=0.7.0 scripts/package_app.sh`. Build artifacts stay in `dist/`.
 
-## Architecture
+| Location | Purpose |
+|---|---|
+| `App/` | Menu bar, task/conversation views, usage dashboard and settings |
+| `App/Companion/` | Transparent companion window, bubbles, ticker and attachment |
+| `Sources/TokcatKit/` | Local adapters, task lifecycle/history, pricing and usage persistence |
+| `Tests/` | Monitor, adapter, usage, settings and companion regression checks |
+| `scripts/docs_screenshots/` | Reproducible native documentation previews |
 
-```text
-Claude Code / Codex / Cursor / Gemini / OpenClaw / WorkBuddy / WorkBuddy AI / Kimi / CC Switch
-        │  local logs (read-only)
-        ▼
-  ├─ AgentSessionMonitor → task state / history / conversations
-  └─ Adapters → TokenEvent (tokens, cost, model, provider)
-        │
-        ├─ Throughput / daily totals / menu-bar live UI
-        ├─ UsageStats (day·week·month · Agent/Model/Provider)
-        ├─ SQLite persistence
-        └─ PetEngine / Loot (optional)
-```
+Images use native views with synthetic data and English documentation labels; they do not contain personal conversations or imply full app localization. Light/dark images follow your GitHub theme. [Rendering instructions](scripts/docs_screenshots/README.md)
 
-| Path | Role |
-|------|------|
-| `Sources/TokcatKit/Monitor/` | Agent lifecycle, task history, conversation readers, optional quota |
-| `Sources/TokcatKit/Adapters/` | Per-agent log parsing & provider attribution |
-| `Sources/TokcatKit/Economy/` | Pricing, nutrition tiers, **UsageStats** |
-| `Sources/TokcatKit/Monitor/CodexUsageMonitor.swift` | Local Codex 5h/weekly quota reader (`sessions` / `archived_sessions` → latest `token_count.rate_limits`) |
-| `Sources/TokcatKit/Persistence/` | Local SQLite |
-| `App/` | Menu bar, main window, floating pet |
-| `App/PixelPet/` | Pixel animation |
-| `docs/assets/screenshots/` | Product screenshots used in this README |
-| `docs/` | Pixel / pet design notes (secondary) |
-
----
-
-## Roadmap (summary)
-
-- [x] Multi-agent task monitor, menu-bar dots, conversation details, WorkBuddy and WorkBuddy AI state
-- [x] Multi-agent local log adapters + live tok/s / cost  
-- [x] Day / week / month stats (Agent / Model / Provider)  
-- [x] Menu-bar metrics & main window  
-- [x] Pixel pet / loot / bag / codex  
-- [x] DMG + Zip release packaging  
-- [ ] More agents / log formats  
-- [ ] Developer ID signing & notarization  
-
----
-
-## Contributing
-
-Issues and PRs welcome. Please **do not** commit:
-
-- `dist/`, `.build/`, local `*.sqlite` / personal logs  
-- API keys, account paths, private usage exports  
-
----
-
-## License
-
-[MIT](LICENSE)
-
-Third-party model assets: see corresponding `ATTRIBUTION.md` / model READMEs.
+[MIT](LICENSE). Companion interaction is inspired by [DeepSeek Balance Whale Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget); original toki / biti artwork uses the project's character references.

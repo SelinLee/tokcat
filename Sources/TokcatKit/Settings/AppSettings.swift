@@ -2,7 +2,7 @@ import Foundation
 
 /// User-configurable preferences for menu-bar monitoring and app surfaces.
 /// Persisted with `UserDefaults` so the Settings window can change behavior
-/// without touching the pet SQLite store.
+/// without touching the usage SQLite store.
 
 /// Built-in menu bar glyphs users can choose from (DockX-style library).
 /// SF Symbols + the hand-drawn Tokcat face. No third-party assets.
@@ -91,52 +91,6 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 }
 
 
-/// Desktop pet visual style / skin library entry.
-/// Built-ins ship with the app; `custom` loads a user-imported USDZ/SCN.
-public enum DesktopPetSkin: String, Codable, CaseIterable, Sendable, Identifiable {
-    /// High-definition 2D illustrated Tokcat (sprite atlas). Raw value kept for settings compat.
-    case pixelTokcat
-    case procedural
-    case custom
-
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .pixelTokcat: return "高清 Tokcat"
-        case .procedural: return "方块猫"
-        case .custom: return "自定义 3D"
-        }
-    }
-
-    public var detail: String {
-        switch self {
-        case .pixelTokcat:
-            return "高清插画风 Tokcat：128×128 平滑帧动画，支持皮肤/道具/装备叠层。"
-        case .procedural:
-            return "低多边形方块猫，由 SceneKit 几何体拼装。"
-        case .custom:
-            return "使用你导入的 .usdz / .scn / .reality 模型。可在设置中导入或清除。"
-        }
-    }
-
-    /// Whether this skin expects an external 3D model file.
-    public var usesExternalModel: Bool {
-        switch self {
-        case .custom: return true
-        case .pixelTokcat, .procedural: return false
-        }
-    }
-
-    /// 2D sprite atlas path (SceneKit not used). Name kept for call sites.
-    public var isPixel: Bool {
-        self == .pixelTokcat
-    }
-
-    /// Preferred high-definition 2D Tokcat skin.
-    public static var hdTokcat: DesktopPetSkin { .pixelTokcat }
-}
-
 public struct AppSettings: Codable, Equatable, Sendable {
     /// Append AI status dots after the selected metrics. Legacy key retained for saved settings.
     public var compactAIMenuBar: Bool
@@ -179,26 +133,20 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showTokenSummary: Bool
     public var showRecentTokenEvents: Bool
 
-    /// Pet mood/hunger strip in the menu bar panel.
-    public var showPetSummary: Bool
 
-    /// Floating desktop pet window (pixel or 3D).
+    /// Floating desktop companion window.
     public var showDesktopPet: Bool
 
-    /// Soft system UI sounds for feed / level / interact (default off; opt-in in Settings).
-    public var enablePetSoundEffects: Bool
 
-    /// Visual skin for the floating desktop pet.
-    public var desktopPetSkin: DesktopPetSkin
+    public var desktopPetDockPosition: PetDockPosition
+    public var desktopCompanionAppearance: CompanionAppearance
 
-    /// File name of a user-imported model under Application Support (for `.custom`).
-    public var customPetModelFileName: String?
 
     /// Remembered desktop pet window origin (screen coordinates). Nil = default corner.
     public var desktopPetWindowX: Double?
     public var desktopPetWindowY: Double?
 
-    /// Polling interval for monitors and pet ticks, in seconds.
+    /// Polling interval for usage monitors, in seconds.
     public var pollIntervalSeconds: Double
 
     /// Status bar (menu bar) metric refresh interval, in seconds. Drives the
@@ -260,11 +208,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showTokenSummary: Bool = true,
         showRecentTokenEvents: Bool = true,
         showCodexUsageSummary: Bool = true,
-        showPetSummary: Bool = true,
         showDesktopPet: Bool = true,
-        enablePetSoundEffects: Bool = false,
-        desktopPetSkin: DesktopPetSkin = .pixelTokcat,
-        customPetModelFileName: String? = nil,
+        desktopPetDockPosition: PetDockPosition = .bottomRight,
+        desktopCompanionAppearance: CompanionAppearance = .biti,
         desktopPetWindowX: Double? = nil,
         desktopPetWindowY: Double? = nil,
         pollIntervalSeconds: Double = 2,
@@ -295,11 +241,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showTokenSummary = showTokenSummary
         self.showRecentTokenEvents = showRecentTokenEvents
         self.showCodexUsageSummary = showCodexUsageSummary
-        self.showPetSummary = showPetSummary
         self.showDesktopPet = showDesktopPet
-        self.enablePetSoundEffects = enablePetSoundEffects
-        self.desktopPetSkin = desktopPetSkin
-        self.customPetModelFileName = customPetModelFileName
+        self.desktopPetDockPosition = desktopPetDockPosition.fixedPosition
+        self.desktopCompanionAppearance = desktopCompanionAppearance
         self.desktopPetWindowX = desktopPetWindowX
         self.desktopPetWindowY = desktopPetWindowY
         self.pollIntervalSeconds = pollIntervalSeconds
@@ -414,7 +358,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCodexUsage
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
-        case showTokenSummary, showRecentTokenEvents, showCodexUsageSummary, showPetSummary, showDesktopPet, enablePetSoundEffects, desktopPetSkin, customPetModelFileName, desktopPetWindowX, desktopPetWindowY
+        case showTokenSummary, showRecentTokenEvents, showCodexUsageSummary, showDesktopPet, desktopPetDockPosition, desktopCompanionAppearance, desktopPetWindowX, desktopPetWindowY
         case pollIntervalSeconds, menuBarRefreshIntervalSeconds
         case enabledAgentSources, pricingEntries, fallbackPricing
         case menuBarAccessory // legacy
@@ -432,20 +376,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showTokenSummary = try container.decodeIfPresent(Bool.self, forKey: .showTokenSummary) ?? true
         showRecentTokenEvents = try container.decodeIfPresent(Bool.self, forKey: .showRecentTokenEvents) ?? true
         showCodexUsageSummary = try container.decodeIfPresent(Bool.self, forKey: .showCodexUsageSummary) ?? true
-        showPetSummary = try container.decodeIfPresent(Bool.self, forKey: .showPetSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
-        enablePetSoundEffects = try container.decodeIfPresent(Bool.self, forKey: .enablePetSoundEffects) ?? false
-        // Default is HD Tokcat (pixelTokcat raw value). Legacy pinkCat/catgirl → HD 2D.
-        if let raw = try container.decodeIfPresent(String.self, forKey: .desktopPetSkin) {
-            if raw == "catgirl" || raw == "pinkCat" {
-                desktopPetSkin = .pixelTokcat
-            } else {
-                desktopPetSkin = DesktopPetSkin(rawValue: raw) ?? .pixelTokcat
-            }
-        } else {
-            desktopPetSkin = .pixelTokcat
-        }
-        customPetModelFileName = try container.decodeIfPresent(String.self, forKey: .customPetModelFileName)
+        desktopPetDockPosition = (try container.decodeIfPresent(PetDockPosition.self, forKey: .desktopPetDockPosition) ?? .bottomRight).fixedPosition
+        desktopCompanionAppearance = try container.decodeIfPresent(CompanionAppearance.self, forKey: .desktopCompanionAppearance) ?? .biti
         desktopPetWindowX = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowX)
         desktopPetWindowY = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowY)
         pollIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 2
@@ -532,11 +465,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showTokenSummary, forKey: .showTokenSummary)
         try container.encode(showRecentTokenEvents, forKey: .showRecentTokenEvents)
         try container.encode(showCodexUsageSummary, forKey: .showCodexUsageSummary)
-        try container.encode(showPetSummary, forKey: .showPetSummary)
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
-        try container.encode(enablePetSoundEffects, forKey: .enablePetSoundEffects)
-        try container.encode(desktopPetSkin, forKey: .desktopPetSkin)
-        try container.encodeIfPresent(customPetModelFileName, forKey: .customPetModelFileName)
+        try container.encode(desktopPetDockPosition, forKey: .desktopPetDockPosition)
+        try container.encode(desktopCompanionAppearance, forKey: .desktopCompanionAppearance)
         try container.encodeIfPresent(desktopPetWindowX, forKey: .desktopPetWindowX)
         try container.encodeIfPresent(desktopPetWindowY, forKey: .desktopPetWindowY)
         try container.encode(pollIntervalSeconds, forKey: .pollIntervalSeconds)
@@ -584,18 +515,11 @@ public final class AppSettingsStore {
         defaults.set(data, forKey: Self.defaultsKey)
     }
 
-    public static let migratedPinkCatToHDKey = "tokcat.migrated.pinkCatToHD.v1"
     public static let migratedRainMenuIconKey = "tokcat.migrated.rainMenuIcon.v1"
 
     private func migrateSettings(_ settings: AppSettings) -> AppSettings {
         var next = settings
         var changed = false
-
-        // Retired bundled pinkCat USDZ → default HD 2D Tokcat once.
-        if !defaults.bool(forKey: Self.migratedPinkCatToHDKey) {
-            // pinkCat raw may still appear only via legacy decode path; keep flag for future.
-            defaults.set(true, forKey: Self.migratedPinkCatToHDKey)
-        }
 
         // One-time: promote the generated rain Tokcat menu-bar icon to the
         // default for users who were still on the old drawn cat.

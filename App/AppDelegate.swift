@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Owns the app's single `AppModel` and the floating desktop-pet window.
+/// Owns the app's single `AppModel` and the floating desktop companion window.
 /// The menu bar extra (declared in `TokcatApp`) reads the same model via
 /// this delegate so both surfaces stay in sync.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
-    private var petWindowController: PetWindowController?
+    private var companionWindowController: DesktopCompanionWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -28,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.applicationIconImage = icon
         }
 
-        let petWindow = PetWindowController(model: model)
-        petWindowController = petWindow
-        model.attachPetWindow(petWindow)
+        let petWindow = DesktopCompanionWindowController(model: model)
+        companionWindowController = petWindow
+        model.attachCompanionWindow(petWindow)
 
         model.start()
     }

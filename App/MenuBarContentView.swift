@@ -25,7 +25,6 @@ struct MenuBarContentView: View {
                     VStack(spacing: 10) {
                         if showsAnySystemMetric { systemMetricsGrid }
                         if model.settings.showRecentTokenEvents, !model.recentEvents.isEmpty { recentEventsBlock }
-                        if model.settings.showPetSummary { petStatusRow }
                     }
                 }
                 .font(.caption)
@@ -42,7 +41,7 @@ struct MenuBarContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tokcat")
                     .font(.headline.weight(.semibold))
-                Text("AI 工作监控")
+                Text("多 Agent 状态监控")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -75,84 +74,6 @@ struct MenuBarContentView: View {
     private var activityLabel: String {
         let summary = AgentSessionSummary(sessions: live.agentSessions)
         return summary.label.isEmpty ? "空闲" : summary.label
-    }
-
-    // MARK: - Pet (horizontal)
-
-    private var petStatusRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Label(model.petProgress.status.title, systemImage: model.petProgress.status.systemImage)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if model.petState.streakDays > 0 {
-                    Text("🔥\(model.petState.streakDays)d")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 6) {
-                miniMeter(title: "心情", value: model.petState.mood, tint: .pink)
-                miniMeter(title: "饱食", value: model.petState.hunger, tint: .orange)
-                miniStat(
-                    title: CompactCopy.Stat.intelligence.plain,
-                    value: model.petState.stats.intelligence,
-                    tint: GameUITheme.reader
-                )
-                miniStat(
-                    title: CompactCopy.Stat.vitality.plain,
-                    value: model.petState.stats.vitality,
-                    tint: GameUITheme.warden
-                )
-                miniStat(
-                    title: CompactCopy.Stat.energy.plain,
-                    value: model.petState.stats.energy,
-                    tint: GameUITheme.flash
-                )
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private func miniMeter(title: String, value: Double, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
-            ProgressView(value: min(1, max(0, value)))
-                .progressViewStyle(.linear)
-                .tint(tint)
-                .frame(height: 4)
-            Text("\(Int((value * 100).rounded()))%")
-                .font(.system(size: 10, weight: .bold).monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityValue("\(Int((value * 100).rounded()))%")
-    }
-
-    private func miniStat(title: String, value: Double, tint: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(tint)
-            Text(String(format: "%.0f", value))
-                .font(.system(size: 12, weight: .bold).monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityValue(String(format: "%.0f", value))
     }
 
     // MARK: - Token summary (compact grid)
@@ -374,8 +295,8 @@ struct MenuBarContentView: View {
                     .frame(width: 28, height: 26)
             }
             .buttonStyle(.bordered)
-            .help(model.settings.showDesktopPet ? "隐藏桌面宠物" : "显示桌面宠物")
-            .accessibilityLabel(model.settings.showDesktopPet ? "隐藏桌面宠物" : "显示桌面宠物")
+            .help(model.settings.showDesktopPet ? "隐藏桌边挂件" : "显示桌边挂件")
+            .accessibilityLabel(model.settings.showDesktopPet ? "隐藏桌边挂件" : "显示桌边挂件")
 
             Button("主界面") {
                 MainWindowController.show(model: model, tab: .tasks)
@@ -383,12 +304,6 @@ struct MenuBarContentView: View {
             .buttonStyle(.bordered)
             .keyboardShortcut("o", modifiers: .command)
             .help("打开主界面")
-
-            Button("宠物") {
-                MainWindowController.show(model: model, tab: .pet)
-            }
-            .buttonStyle(.bordered)
-            .help("打开宠物档案")
 
             Button {
                 MainWindowController.show(model: model, tab: .settings)

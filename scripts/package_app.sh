@@ -9,7 +9,7 @@ APP_NAME="Tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.6.0}"
+VERSION="${TOKCAT_VERSION:-0.7.0}"
 BUILD_NUMBER="${TOKCAT_BUILD:-1}"
 
 DIST_DIR="$ROOT/dist"
@@ -27,6 +27,9 @@ if [[ "${TOKCAT_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
 fi
 if [[ "${TOKCAT_SKIP_DSYM:-0}" == "1" ]]; then
   SWIFT_BUILD_ARGS+=(-debug-info-format none)
+fi
+if [[ -n "${TOKCAT_SWIFTPM_CACHE_PATH:-}" ]]; then
+  SWIFT_BUILD_ARGS+=(--cache-path "$TOKCAT_SWIFTPM_CACHE_PATH")
 fi
 # macOS ships bash 3.2, where `set -u` rejects an empty array expansion.
 swift build ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"} -c release --product TokcatApp
@@ -78,11 +81,22 @@ copy_resource_bundle() {
   local dest="$1"
   rm -rf "$dest"
   mkdir -p "$dest"
-  # Copy payload files
-  rsync -a --delete "$RES_BUNDLE_SRC"/ "$dest"/
+  # Copy only current source assets. Incremental SwiftPM builds can leave retired
+  # sprite/gear/model files in the output bundle after their sources are deleted.
+  mkdir -p "$dest/Contents/Resources"
+  while IFS= read -r source_file; do
+    local resource_name resource_path
+    resource_name="$(basename "$source_file")"
+    resource_path="$(find "$RES_BUNDLE_SRC" -type f -name "$resource_name" | head -1)"
+    if [[ -z "$resource_path" ]]; then
+      echo "Missing built resource: $resource_name" >&2
+      exit 1
+    fi
+    cp "$resource_path" "$dest/Contents/Resources/$resource_name"
+  done < <(find "$ROOT/App/Resources" -type f ! -name '.DS_Store')
   # Ensure bundle Info.plist exists (SwiftPM loose bundles often lack it).
   if [[ ! -f "$dest/Contents/Info.plist" && ! -f "$dest/Info.plist" ]]; then
-    cat > "$dest/Info.plist" <<'BUNDLEPLIST'
+    cat > "$dest/Contents/Info.plist" <<'BUNDLEPLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -235,10 +249,9 @@ Tokcat ${VERSION} — macOS 多 Agent AI 任务监控、用量统计与可选桌
 说明：
 - 当前为 ad-hoc 签名，未做 Apple Developer ID 公证
 - macOS 13+，架构以本机构建为准（通常 Apple Silicon）
-- 数据仅存本地：~/Library/Application Support/TokenCat/
-- 唯一联网项：可选的 Codex 额度显示（读取本机 ~/.codex/auth.json 的
-  access_token 请求 chatgpt.com，仅用于展示 5 小时 / 周剩余额度）；关闭该
-  开关后应用完全离线
+- 数据仅存本地；用量数据库：~/Library/Application Support/Tokcat/
+- 任务缓存与可选 Claude Code 本地 hooks：~/Library/Application Support/TokenCat/
+- Codex 额度来自客户端写入的本地日志，仅在客户端运行时显示；无需 API key
 
 卸载：
 - 删除 Tokcat.app

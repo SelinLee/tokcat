@@ -175,7 +175,6 @@ enum MenuBarStatusRenderer {
         tokensPerSecond: Double = 0,
         usdPerSecond: Double = 0,
         activity: MenuBarAgentActivity = .idle,
-        hatID: String? = nil,
         codexUsage: CodexUsageSnapshot? = nil
     ) -> NSImage {
         let key = cacheKey(
@@ -184,7 +183,6 @@ enum MenuBarStatusRenderer {
             tokensPerSecond: tokensPerSecond,
             usdPerSecond: usdPerSecond,
             activity: activity,
-            hatID: hatID,
             codexUsage: codexUsage
         )
         if key == cachedKey, let cachedImage {
@@ -235,8 +233,7 @@ enum MenuBarStatusRenderer {
                 MenuBarIconLibrary.draw(
                     style: settings.menuBarIconStyle,
                     in: iconRect,
-                    activity: activity,
-                    hatID: hatID
+                    activity: activity
                 )
                 cursorX = iconWidth + 4 * scale
             }
@@ -362,7 +359,6 @@ enum MenuBarStatusRenderer {
         tokensPerSecond: Double,
         usdPerSecond: Double,
         activity: MenuBarAgentActivity,
-        hatID: String? = nil,
         codexUsage: CodexUsageSnapshot? = nil
     ) -> String {
         // Quantize live numbers so tiny jitter does not thrash redraw.
@@ -399,7 +395,6 @@ enum MenuBarStatusRenderer {
             metrics.thermalState.rawValue,
             "\(tok)", "\(usd)",
             activity.mode.rawValue, "\(intensity)", "\(phase)", "\(completion)",
-            hatID ?? "-",
             codexKey
         ].joined(separator: "|")
     }

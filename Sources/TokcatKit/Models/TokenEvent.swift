@@ -11,7 +11,7 @@ public enum TokenDataOrigin: String, Codable, Sendable, Equatable {
 /// A single usage event parsed from an AI coding agent's local log
 /// and/or CC Switch proxy usage records.
 public struct TokenEvent: Codable, Sendable {
-    /// SQLite `rowid` when loaded from / written via `PetStore`. Not persisted as a column.
+    /// SQLite `rowid` when loaded from / written via `UsageStore`. Not persisted as a column.
     public var rowID: Int64?
     public var timestamp: Date
     public var source: AgentSource

@@ -7,7 +7,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case metrics
     case agents
     case pricing
-    case pet
+    case companion
     case general
 
     var id: String { rawValue }
@@ -18,7 +18,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .metrics: return "监控"
         case .agents: return "Agent"
         case .pricing: return "费率"
-        case .pet: return "宠物"
+        case .companion: return "桌边挂件"
         case .general: return "通用"
         }
     }
@@ -29,7 +29,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .metrics: return "gauge.with.dots.needle.67percent"
         case .agents: return "cpu"
         case .pricing: return "yensign.circle"
-        case .pet: return "cat.fill"
+        case .companion: return "cat.fill"
         case .general: return "gearshape"
         }
     }
@@ -58,7 +58,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 if embedded {
-                    GameScreenTitle(title: "设置", subtitle: "SETTINGS", icon: "gearshape")
+                    MonitorScreenTitle(title: "设置", subtitle: "SETTINGS", icon: "gearshape")
                 }
                 Picker("设置分页", selection: $tab) {
                     ForEach(SettingsTab.allCases) { item in
@@ -86,15 +86,15 @@ struct SettingsView: View {
                     agentsTab
                 case .pricing:
                     pricingTab
-                case .pet:
-                    petTab
+                case .companion:
+                    companionTab
                 case .general:
                     generalTab
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .background(embedded ? GameUITheme.windowBackground : Color.clear)
+        .background(embedded ? MonitorTheme.windowBackground : Color.clear)
         .modifier(SettingsRootFrame(embedded: embedded))
         .onReceive(model.$settings) { settings = $0 }
         .onReceive(model.liveMetrics.$codexUsage) { codexUsage = $0 }
@@ -107,7 +107,7 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("在监控指标后显示 AI 任务状态点", isOn: binding(\.compactAIMenuBar))
-                Text("状态点排在监控指标后方，每列从上到下最多 3 个点：黄点呼吸表示运行，绿点常亮表示本轮结束，黄点常亮表示等待你，红点失败，灰色空心点暂无更新。最多 6 个点，其余显示 +N。切回对应桌面 Agent 并停留片刻，会清除该 Agent 已完成的绿点。")
+                Text("每个任务对应一个状态点，排在监控指标后方：运行时黄点呼吸，等待回答或授权时黄红交替，完成时绿点，失败时红点。前台完成提示闪烁 3 秒后消失，后台完成保留至查看。每列最多 3 个点，最多显示 6 个，其余显示 +N。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("显示菜单栏图标", isOn: binding(\.menuBarShowCatIcon))
 
@@ -164,7 +164,6 @@ struct SettingsView: View {
                         tokensPerSecond: model.tokensPerSecond,
                         usdPerSecond: model.usdPerSecond,
                         activity: model.menuBarActivity,
-                        hatID: nil,
                         codexUsage: codexUsage
                     ))
                     .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
@@ -219,11 +218,6 @@ struct SettingsView: View {
 
             codexUsageSection
 
-            Section {
-                Toggle("显示宠物心情 / 饥饿", isOn: binding(\.showPetSummary))
-            } header: {
-                Text("下拉菜单 · 宠物摘要")
-            }
         }
         .formStyle(.grouped)
         .padding(8)
@@ -290,91 +284,48 @@ struct SettingsView: View {
         return CodexUsageFormatting.localRecordLine(usage)
     }
 
-    private var petTab: some View {
+    private var companionTab: some View {
         Form {
             Section {
-                Toggle("显示桌面宠物", isOn: binding(\.showDesktopPet))
-                Toggle("宠物演出音效（默认关闭）", isOn: binding(\.enablePetSoundEffects))
+                Toggle("显示桌边挂件", isOn: binding(\.showDesktopPet))
+                Picker("吸附位置", selection: Binding(
+                    get: { settings.desktopPetDockPosition },
+                    set: { position in
+                        settings.desktopPetDockPosition = position
+                        settings.showDesktopPet = true
+                        model.selectDesktopPetPosition(position)
+                    })) {
+                    ForEach(PetDockPosition.allCases) { position in
+                        Text(position.title).tag(position)
+                    }
+                }
             } header: {
-                Text("显示")
+                Text("显示与吸附")
             } footer: {
-                Text("音效使用系统轻提示音：喂食 / 升级 / 互动。可随时关闭。")
+                Text("选择位置立即显示并贴边。左右边缘可上下微调，下边缘可左右微调；右下角和 Dock 两侧固定。")
             }
-
             Section {
-                Picker("皮肤库", selection: binding(\.desktopPetSkin)) {
-                    ForEach(DesktopPetSkin.allCases) { skin in
-                        Text(skin.displayName).tag(skin)
+                Picker("人物形象", selection: Binding(
+                    get: { settings.desktopCompanionAppearance },
+                    set: { appearance in
+                        settings.desktopCompanionAppearance = appearance
+                        settings.showDesktopPet = true
+                        model.selectCompanionAppearance(appearance)
+                    })) {
+                    ForEach(CompanionAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
                     }
                 }
-                .pickerStyle(.menu)
-
-                // Quick chips for common skins
-                HStack(spacing: 8) {
-                    ForEach(DesktopPetSkin.allCases) { skin in
-                        Button(skin.displayName) {
-                            model.updateSettings { $0.desktopPetSkin = skin }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(settings.desktopPetSkin == skin ? .accentColor : .secondary)
-                    }
-                }
-
-                Text(settings.desktopPetSkin.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                CompanionSettingsPreview(snapshot: DesktopCompanionSnapshot(
+                    sessions: model.taskMonitor.sessions, tasks: model.taskMonitor.tasks,
+                    fallbackModel: model.latestModel, fallbackSource: model.latestSource),
+                    position: settings.desktopPetDockPosition, appearance: settings.desktopCompanionAppearance)
+                    .frame(width: settings.desktopPetDockPosition.companionWindowSize.width,
+                           height: settings.desktopPetDockPosition.companionWindowSize.height)
             } header: {
-                Text("皮肤库")
+                Text("toki / biti")
             } footer: {
-                Text("高清 Tokcat = 默认插画动画；方块猫 = 低模 3D；自定义 = 导入 USDZ。")
-            }
-
-            Section {
-                if let name = settings.customPetModelFileName, !name.isEmpty {
-                    LabeledContent("当前模型") {
-                        Text(name)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("尚未导入自定义模型")
-                        .foregroundStyle(.secondary)
-                }
-
-                Button("导入模型…") {
-                    PetModelLibrary.presentOpenPanel { url in
-                        guard let url else { return }
-                        do {
-                            let fileName = try PetModelLibrary.importModel(from: url)
-                            model.updateSettings {
-                                $0.customPetModelFileName = fileName
-                                $0.desktopPetSkin = .custom
-                            }
-                        } catch {
-                            let alert = NSAlert()
-                            alert.messageText = "导入失败"
-                            alert.informativeText = error.localizedDescription
-                            alert.alertStyle = .warning
-                            alert.runModal()
-                        }
-                    }
-                }
-
-                Button("清除自定义模型", role: .destructive) {
-                    PetModelLibrary.removeCustomModel(fileName: settings.customPetModelFileName)
-                    model.updateSettings {
-                        $0.customPetModelFileName = nil
-                        if $0.desktopPetSkin == .custom {
-                            $0.desktopPetSkin = .hdTokcat
-                        }
-                    }
-                }
-                .disabled(settings.customPetModelFileName == nil)
-            } header: {
-                Text("自定义模型")
-            } footer: {
-                Text("支持 .usdz / .usda / .usdc / .scn / .reality。导入后自动切换到“自定义”皮肤，文件保存在本地 Application Support。")
+                Text("人物手动选择。工具动态在人物上方逐行向上滚动，透明背景、颜色跟随模型。点击人物或等待回答／授权时展开详细气泡。")
             }
         }
         .formStyle(.grouped)

@@ -7,62 +7,33 @@ enum MenuBarIconLibrary {
     static func draw(
         style: MenuBarIconStyle,
         in rect: NSRect,
-        activity: MenuBarAgentActivity = .idle,
-        hatID: String? = nil
+        activity: MenuBarAgentActivity = .idle
     ) {
         switch style {
         case .tokcat:
             // Expression face + floating glyphs (zzz / steam / OK).
-            MenuBarCatExpression.draw(in: rect, activity: activity, hatID: hatID)
+            MenuBarCatExpression.draw(in: rect, activity: activity)
         case .rainTokcat:
-            RainMenuBarIcon.draw(in: rect, activity: activity, hatID: hatID)
+            RainMenuBarIcon.draw(in: rect, activity: activity)
         case .lineCPU, .lineMemory, .lineNetwork, .lineGPU:
             MenuBarLineIcons.draw(style, in: rect)
-            drawHatBadgeIfNeeded(hatID, in: rect, compact: true)
         default:
             drawSystemSymbol(candidates: symbolCandidates(for: style), in: rect)
-            drawHatBadgeIfNeeded(hatID, in: rect, compact: true)
         }
     }
 
     /// Non-tokcat styles: tiny corner mark so hat presence is still visible without breaking glyphs.
-    private static func drawHatBadgeIfNeeded(_ hatID: String?, in rect: NSRect, compact: Bool) {
-        guard let hatID, !hatID.isEmpty else { return }
-        let size = min(rect.width, rect.height) * (compact ? 0.18 : 0.22)
-        let badge = NSRect(
-            x: rect.maxX - size * 1.1,
-            y: rect.maxY - size * 1.05,
-            width: size,
-            height: size
-        )
-        NSColor.black.setFill()
-        switch hatID {
-        case "hat_crown":
-            let p = NSBezierPath()
-            p.move(to: NSPoint(x: badge.minX, y: badge.minY + size * 0.2))
-            p.line(to: NSPoint(x: badge.minX + size * 0.25, y: badge.maxY))
-            p.line(to: NSPoint(x: badge.midX, y: badge.minY + size * 0.45))
-            p.line(to: NSPoint(x: badge.maxX - size * 0.25, y: badge.maxY))
-            p.line(to: NSPoint(x: badge.maxX, y: badge.minY + size * 0.2))
-            p.close()
-            p.fill()
-        default:
-            NSBezierPath(ovalIn: badge.insetBy(dx: size * 0.15, dy: size * 0.15)).fill()
-        }
-    }
-
     static func templateImage(
         style: MenuBarIconStyle,
         pointSize: CGFloat,
-        activity: MenuBarAgentActivity = .idle,
-        hatID: String? = nil
+        activity: MenuBarAgentActivity = .idle
     ) -> NSImage {
         // Tokcat expressions need a bit of horizontal room for badges.
         let widthMul: CGFloat = (style == .tokcat || style == .rainTokcat) ? 1.55 : 1.0
         let pixelW = ceil(pointSize * 2 * widthMul)
         let pixelH = ceil(pointSize * 2)
         let image = NSImage(size: NSSize(width: pixelW, height: pixelH), flipped: false) { rect in
-            draw(style: style, in: rect, activity: activity, hatID: hatID)
+            draw(style: style, in: rect, activity: activity)
             return true
         }
         image.isTemplate = true

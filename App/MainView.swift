@@ -29,7 +29,7 @@ struct MainView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
 
             Rectangle()
-                .fill(GameUITheme.frameStroke)
+                .fill(MonitorTheme.frameStroke)
                 .frame(width: 1)
                 .frame(maxHeight: .infinity)
 
@@ -47,7 +47,7 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 900, idealWidth: 1180, minHeight: 620, idealHeight: 780)
-        .background(GameUITheme.windowBackground)
+        .background(MonitorTheme.windowBackground)
         .onAppear {
             ensureMounted(tabHolder.tab)
             warmStatsIfNeeded(for: tabHolder.tab)
@@ -84,12 +84,6 @@ struct MainView: View {
             TaskDashboardView(store: model.taskMonitor, markRead: model.markSessionRead)
         case .stats:
             StatsDashboardView(model: model)
-        case .pet:
-            PetProfileView(model: model)
-        case .bag:
-            InventoryView(model: model)
-        case .codex:
-            CodexView(model: model)
         case .settings:
             SettingsView(model: model, embedded: true)
         }
@@ -118,10 +112,6 @@ struct MainSidebar: View {
             .padding(.horizontal, 10)
 
             VStack(alignment: .leading, spacing: 4) {
-                sidebarSectionLabel("桌宠")
-                sidebarButton(.pet)
-                sidebarButton(.bag)
-                sidebarButton(.codex)
             }
             .padding(.horizontal, 10)
             .padding(.top, 24)
@@ -135,42 +125,44 @@ struct MainSidebar: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 14)
         }
-        .background(GameUITheme.panelFill.opacity(0.72))
+        .background(MonitorTheme.panelFill.opacity(0.72))
     }
 
     private var brandHeader: some View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(GameUITheme.token.opacity(0.14))
+                    .fill(MonitorTheme.token.opacity(0.14))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(GameUITheme.token.opacity(0.22), lineWidth: 1)
+                            .strokeBorder(MonitorTheme.token.opacity(0.22), lineWidth: 1)
                     )
                     .frame(width: 34, height: 34)
                 Image(systemName: "cat.fill")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(GameUITheme.token)
+                    .foregroundStyle(MonitorTheme.token)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Tokcat")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(GameUITheme.primaryText)
-                Text("AI 工作监控")
+                    .foregroundStyle(MonitorTheme.primaryText)
+                Text("多 Agent 状态监控")
                     .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(GameUITheme.secondaryText)
+                    .foregroundStyle(MonitorTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tokcat AI 工作监控")
+        .accessibilityLabel("Tokcat 多 Agent 状态监控")
     }
 
     private func sidebarSectionLabel(_ title: String) -> some View {
         Text(title)
             .font(.caption2.weight(.bold))
-            .foregroundStyle(GameUITheme.mutedText)
+            .foregroundStyle(MonitorTheme.mutedText)
             .tracking(0.6)
             .padding(.horizontal, 10)
             .padding(.bottom, 2)
@@ -189,14 +181,14 @@ struct MainSidebar: View {
                 Image(systemName: item.systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 18, alignment: .center)
-                    .foregroundStyle(selected ? GameUITheme.token : GameUITheme.secondaryText)
+                    .foregroundStyle(selected ? MonitorTheme.token : MonitorTheme.secondaryText)
                 Text(item.title)
                     .font(.subheadline.weight(selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? GameUITheme.primaryText : GameUITheme.secondaryText)
+                    .foregroundStyle(selected ? MonitorTheme.primaryText : MonitorTheme.secondaryText)
                 Spacer(minLength: 0)
                 if selected {
                     Circle()
-                        .fill(GameUITheme.token)
+                        .fill(MonitorTheme.token)
                         .frame(width: 6, height: 6)
                 }
             }
@@ -205,12 +197,12 @@ struct MainSidebar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? GameUITheme.token.opacity(0.12) : Color.clear)
+                    .fill(selected ? MonitorTheme.token.opacity(0.12) : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
-                        selected ? GameUITheme.token.opacity(0.22) : Color.clear,
+                        selected ? MonitorTheme.token.opacity(0.22) : Color.clear,
                         lineWidth: 1
                     )
             )
@@ -225,9 +217,6 @@ struct MainSidebar: View {
 enum MainTab: String, CaseIterable, Identifiable, Hashable {
     case tasks
     case stats
-    case pet
-    case bag
-    case codex
     case settings
 
     var id: String { rawValue }
@@ -240,9 +229,6 @@ enum MainTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .tasks: return "任务总览"
         case .stats: return "用量统计"
-        case .pet: return "宠物"
-        case .bag: return "背包"
-        case .codex: return "图鉴"
         case .settings: return "设置"
         }
     }
@@ -251,9 +237,6 @@ enum MainTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .tasks: return "rectangle.stack"
         case .stats: return "chart.xyaxis.line"
-        case .pet: return "cat.fill"
-        case .bag: return "bag.fill"
-        case .codex: return "books.vertical.fill"
         case .settings: return "gearshape"
         }
     }

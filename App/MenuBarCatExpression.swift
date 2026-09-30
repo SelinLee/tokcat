@@ -10,8 +10,7 @@ enum MenuBarCatExpression {
 
     static func draw(
         in rect: NSRect,
-        activity: MenuBarAgentActivity,
-        hatID: String? = nil
+        activity: MenuBarAgentActivity
     ) {
         // Leave a column on the right for floating glyphs (bulb / zzz / OK).
         let faceWidth = rect.width * 0.72
@@ -29,128 +28,7 @@ enum MenuBarCatExpression {
         )
 
         drawFace(in: faceRect, activity: activity)
-        drawHat(hatID, in: faceRect)
         drawBadge(in: badgeRect, activity: activity)
-    }
-
-    // MARK: - Hat sigils (C5)
-
-    private static func drawHat(_ hatID: String?, in rect: NSRect) {
-        guard let hatID, !hatID.isEmpty else { return }
-        let bounds = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.10)
-        let stroke = max(1.0, min(bounds.width, bounds.height) * 0.075)
-        NSColor.black.setStroke()
-        NSColor.black.setFill()
-
-        // Crown of the new V3 head sits near the top of the face rect.
-        let headTopY = bounds.minY + bounds.height * 0.85
-        let midX = bounds.midX
-
-        switch hatID {
-        case "hat_bow":
-            // Small bow on the crown.
-            let left = NSBezierPath(ovalIn: NSRect(x: midX - bounds.width * 0.16, y: headTopY, width: bounds.width * 0.12, height: bounds.height * 0.10))
-            let right = NSBezierPath(ovalIn: NSRect(x: midX + bounds.width * 0.04, y: headTopY, width: bounds.width * 0.12, height: bounds.height * 0.10))
-            left.lineWidth = stroke * 0.8
-            right.lineWidth = stroke * 0.8
-            left.stroke(); right.stroke()
-            let knot = NSBezierPath(ovalIn: NSRect(x: midX - bounds.width * 0.035, y: headTopY + bounds.height * 0.015, width: bounds.width * 0.07, height: bounds.height * 0.07))
-            knot.fill()
-        case "hat_beanie":
-            // Beanie dome + brim.
-            let dome = NSBezierPath()
-            dome.move(to: NSPoint(x: midX - bounds.width * 0.22, y: headTopY))
-            dome.curve(
-                to: NSPoint(x: midX + bounds.width * 0.22, y: headTopY),
-                controlPoint1: NSPoint(x: midX - bounds.width * 0.18, y: headTopY + bounds.height * 0.22),
-                controlPoint2: NSPoint(x: midX + bounds.width * 0.18, y: headTopY + bounds.height * 0.22)
-            )
-            dome.lineWidth = stroke
-            dome.stroke()
-            let brim = NSBezierPath()
-            brim.move(to: NSPoint(x: midX - bounds.width * 0.26, y: headTopY))
-            brim.line(to: NSPoint(x: midX + bounds.width * 0.26, y: headTopY))
-            brim.lineWidth = stroke
-            brim.lineCapStyle = .round
-            brim.stroke()
-        case "hat_crown":
-            // Simple 3-point crown.
-            let crown = NSBezierPath()
-            let baseY = headTopY
-            let tipY = headTopY + bounds.height * 0.20
-            crown.move(to: NSPoint(x: midX - bounds.width * 0.20, y: baseY))
-            crown.line(to: NSPoint(x: midX - bounds.width * 0.12, y: tipY))
-            crown.line(to: NSPoint(x: midX - bounds.width * 0.04, y: baseY + bounds.height * 0.08))
-            crown.line(to: NSPoint(x: midX, y: tipY + bounds.height * 0.02))
-            crown.line(to: NSPoint(x: midX + bounds.width * 0.04, y: baseY + bounds.height * 0.08))
-            crown.line(to: NSPoint(x: midX + bounds.width * 0.12, y: tipY))
-            crown.line(to: NSPoint(x: midX + bounds.width * 0.20, y: baseY))
-            crown.lineWidth = stroke
-            crown.lineJoinStyle = .round
-            crown.stroke()
-        case "hat_paper":
-            // Folded sticky note triangle.
-            let paper = NSBezierPath()
-            paper.move(to: NSPoint(x: midX - bounds.width * 0.16, y: headTopY))
-            paper.line(to: NSPoint(x: midX, y: headTopY + bounds.height * 0.16))
-            paper.line(to: NSPoint(x: midX + bounds.width * 0.16, y: headTopY))
-            paper.close()
-            paper.lineWidth = stroke
-            paper.stroke()
-        case "hat_headphones":
-            // Arc band + two ear cups.
-            let band = NSBezierPath()
-            band.move(to: NSPoint(x: midX - bounds.width * 0.24, y: headTopY - bounds.height * 0.02))
-            band.curve(
-                to: NSPoint(x: midX + bounds.width * 0.24, y: headTopY - bounds.height * 0.02),
-                controlPoint1: NSPoint(x: midX - bounds.width * 0.16, y: headTopY + bounds.height * 0.18),
-                controlPoint2: NSPoint(x: midX + bounds.width * 0.16, y: headTopY + bounds.height * 0.18)
-            )
-            band.lineWidth = stroke
-            band.stroke()
-            let left = NSBezierPath(ovalIn: NSRect(
-                x: midX - bounds.width * 0.30,
-                y: headTopY - bounds.height * 0.12,
-                width: bounds.width * 0.10,
-                height: bounds.height * 0.14
-            ))
-            let right = NSBezierPath(ovalIn: NSRect(
-                x: midX + bounds.width * 0.20,
-                y: headTopY - bounds.height * 0.12,
-                width: bounds.width * 0.10,
-                height: bounds.height * 0.14
-            ))
-            left.lineWidth = stroke * 0.9
-            right.lineWidth = stroke * 0.9
-            left.stroke(); right.stroke()
-        case "hat_hood":
-            // Soft hood curve over crown.
-            let hood = NSBezierPath()
-            hood.move(to: NSPoint(x: midX - bounds.width * 0.26, y: headTopY - bounds.height * 0.04))
-            hood.curve(
-                to: NSPoint(x: midX + bounds.width * 0.26, y: headTopY - bounds.height * 0.04),
-                controlPoint1: NSPoint(x: midX - bounds.width * 0.18, y: headTopY + bounds.height * 0.24),
-                controlPoint2: NSPoint(x: midX + bounds.width * 0.18, y: headTopY + bounds.height * 0.24)
-            )
-            hood.lineWidth = stroke
-            hood.stroke()
-            let tip = NSBezierPath()
-            tip.move(to: NSPoint(x: midX + bounds.width * 0.18, y: headTopY + bounds.height * 0.08))
-            tip.line(to: NSPoint(x: midX + bounds.width * 0.28, y: headTopY + bounds.height * 0.02))
-            tip.lineWidth = stroke * 0.8
-            tip.stroke()
-        default:
-            // Generic small diamond sigil.
-            let d = NSBezierPath()
-            let cy = headTopY + bounds.height * 0.08
-            d.move(to: NSPoint(x: midX, y: cy + bounds.height * 0.08))
-            d.line(to: NSPoint(x: midX + bounds.width * 0.06, y: cy))
-            d.line(to: NSPoint(x: midX, y: cy - bounds.height * 0.08))
-            d.line(to: NSPoint(x: midX - bounds.width * 0.06, y: cy))
-            d.close()
-            d.lineWidth = stroke * 0.9
-            d.stroke()
-        }
     }
 
     // MARK: - Face

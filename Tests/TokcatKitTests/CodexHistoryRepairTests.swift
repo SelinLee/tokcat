@@ -38,7 +38,7 @@ final class CodexHistoryRepairTests: XCTestCase {
         base_url = "https://botcf.com/v1"
         """.write(to: config, atomically: true, encoding: .utf8)
 
-        let store = try PetStore(fileURL: storeURL)
+        let store = try UsageStore(fileURL: storeURL)
         let ts = AgentDateParsing.parseISO8601("2026-07-13T10:00:03.000Z")!
         try store.appendTokenEvent(
             TokenEvent(

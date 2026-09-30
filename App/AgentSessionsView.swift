@@ -72,7 +72,7 @@ struct AgentSessionList: View {
             VStack(alignment: .leading, spacing: 10) {
                 if tasks.isEmpty {
                     Text("暂无进行中的任务").font(.subheadline.weight(.medium))
-                    Text("Codex 自动读取本轮状态；Claude Code 可在设置 → Agent 中启用。其他工具继续记录用量。")
+                    Text("Codex、WorkBuddy、WorkBuddy AI 与 DeepSeek Harness 自动读取本地状态；Claude Code 可在设置 → Agent 中启用。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(tasks) { session in

@@ -19,7 +19,7 @@ public struct ModelPricing: Sendable, Equatable, Codable {
         self.cacheReadPerMillion = cacheReadPerMillion
     }
 
-    /// Blended average of input/output price, used for nutrition-tier classification.
+    /// Mean of the input and output unit rates.
     public var blendedPerMillion: Double {
         (inputPerMillion + outputPerMillion) / 2
     }

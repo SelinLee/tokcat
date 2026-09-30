@@ -6,6 +6,17 @@ import AppKit
 struct TokcatLauncher {
     @MainActor static func main() {
         #if DEBUG
+        if CommandLine.arguments.contains("--verify-companion-placement") {
+            do { try DesktopCompanionPlacementCheck.run() }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
+            return
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-desktop-companion"),
+           CommandLine.arguments.count > index + 1 {
+            do { try DesktopCompanionPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
+            return
+        }
         if CommandLine.arguments.contains("--preview-menu-resize") {
             MenuBarResizePreviewApp.main()
             return
@@ -63,7 +74,7 @@ private struct MenuBarLabelView: View {
         let icon = MenuBarStatusRenderer.image(
             settings: model.settings, metrics: live.systemMetrics,
             tokensPerSecond: live.tokensPerSecond, usdPerSecond: live.usdPerSecond,
-            activity: live.menuBarActivity, hatID: model.activeBonuses.menuBarHatID,
+            activity: live.menuBarActivity,
             codexUsage: live.codexUsage
         )
         let displayed: NSImage = {

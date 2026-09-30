@@ -16,7 +16,7 @@ final class ProviderBackfillTests: XCTestCase {
     }
 
     func testLoadNeedingBackfillAndUpdateAttribution() throws {
-        let store = try PetStore(fileURL: tempURL)
+        let store = try UsageStore(fileURL: tempURL)
         let needs = TokenEvent(
             timestamp: Date(timeIntervalSince1970: 1000),
             source: .claudeCode,
@@ -66,7 +66,7 @@ final class ProviderBackfillTests: XCTestCase {
     }
 
     func testDeleteMatchedProxyRows() throws {
-        let store = try PetStore(fileURL: tempURL)
+        let store = try UsageStore(fileURL: tempURL)
         try store.appendTokenEvent(
             TokenEvent(
                 timestamp: Date(timeIntervalSince1970: 1),

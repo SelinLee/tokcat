@@ -27,7 +27,7 @@ public enum CodexHistoryRepair {
     }
 
     public static func repair(
-        store: PetStore,
+        store: UsageStore,
         pricingTable: PricingTable,
         sessionsDirectory: URL = CodexCLIAdapter.defaultSessionsDirectory,
         configFileURL: URL = CodexCLIAdapter.defaultConfigFileURL,

@@ -10,6 +10,14 @@ struct StatsDashboardView: View {
     @State private var groupBy: UsageGroupBy = .provider
     @State private var metric: StatsMetric = .tokens
 
+    init(model: AppModel, period: UsagePeriod = .day, groupBy: UsageGroupBy = .provider,
+         metric: StatsMetric = .tokens) {
+        self.model = model
+        _period = State(initialValue: period)
+        _groupBy = State(initialValue: groupBy)
+        _metric = State(initialValue: metric)
+    }
+
     private var snapshot: UsageSnapshot {
         model.usageSnapshot(period: period, groupBy: groupBy)
     }
@@ -18,14 +26,14 @@ struct StatsDashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    GameScreenTitle(title: "统计", subtitle: "USAGE", icon: "chart.xyaxis.line")
+                    MonitorScreenTitle(title: "统计", subtitle: "USAGE", icon: "chart.xyaxis.line")
                     Spacer(minLength: 8)
                     if model.isUsageStatsLoading {
                         ProgressView()
                             .controlSize(.small)
                         Text("更新中")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(GameUITheme.mutedText)
+                            .foregroundStyle(MonitorTheme.mutedText)
                     }
                 }
                 controls
@@ -36,7 +44,7 @@ struct StatsDashboardView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(GameUITheme.windowBackground)
+        .background(MonitorTheme.windowBackground)
         .onAppear {
             model.refreshUsageStats(period: period, groupBy: groupBy, forceReloadEvents: false)
         }
@@ -77,10 +85,10 @@ struct StatsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(GameUITheme.panelFill)
+                .fill(MonitorTheme.panelFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(GameUITheme.frameStroke, lineWidth: 1)
+                        .strokeBorder(MonitorTheme.frameStroke, lineWidth: 1)
                 )
         )
     }
@@ -115,7 +123,7 @@ struct StatsDashboardView: View {
     private var rangeLabelView: some View {
         Text(rangeLabel)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(GameUITheme.secondaryText)
+            .foregroundStyle(MonitorTheme.secondaryText)
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -154,7 +162,7 @@ struct StatsDashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
             Text(value)
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
@@ -162,18 +170,18 @@ struct StatsDashboardView: View {
                 .minimumScaleFactor(0.7)
             Text(subtitle)
                 .font(.caption2)
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(GameUITheme.panelFill)
+                .fill(MonitorTheme.panelFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(GameUITheme.frameStroke, lineWidth: 1)
+                .strokeBorder(MonitorTheme.frameStroke, lineWidth: 1)
         )
     }
 
@@ -196,11 +204,11 @@ struct StatsDashboardView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(GameUITheme.panelFill)
+                .fill(MonitorTheme.panelFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(GameUITheme.frameStroke, lineWidth: 1)
+                .strokeBorder(MonitorTheme.frameStroke, lineWidth: 1)
         )
     }
 
@@ -214,7 +222,7 @@ struct StatsDashboardView: View {
                         .frame(width: 8, height: 8)
                     Text(series.displayName)
                         .font(.caption2)
-                        .foregroundStyle(GameUITheme.secondaryText)
+                        .foregroundStyle(MonitorTheme.secondaryText)
                         .lineLimit(1)
                 }
             }
@@ -225,10 +233,10 @@ struct StatsDashboardView: View {
         VStack(spacing: 8) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 28))
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
             Text("所选时间范围内还没有 token 事件")
                 .font(.subheadline)
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
             Text("继续使用 AI coding agent 后，这里会自动汇总本地日志。")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -309,7 +317,7 @@ struct StatsDashboardView: View {
             if snapshot.breakdown.isEmpty {
                 Text("暂无数据")
                     .font(.subheadline)
-                    .foregroundStyle(GameUITheme.secondaryText)
+                    .foregroundStyle(MonitorTheme.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 12)
             } else {
@@ -328,11 +336,11 @@ struct StatsDashboardView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(GameUITheme.panelFill)
+                .fill(MonitorTheme.panelFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(GameUITheme.frameStroke, lineWidth: 1)
+                .strokeBorder(MonitorTheme.frameStroke, lineWidth: 1)
         )
     }
 
@@ -348,7 +356,7 @@ struct StatsDashboardView: View {
                 .frame(width: 48, alignment: .trailing)
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(GameUITheme.secondaryText)
+        .foregroundStyle(MonitorTheme.secondaryText)
         .padding(.vertical, 6)
     }
 
@@ -377,7 +385,7 @@ struct StatsDashboardView: View {
             Text(formatTokens(item.tokens))
                 .monospacedDigit()
                 .frame(width: 78, alignment: .trailing)
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(formatUSD(item.costUSD))
@@ -392,12 +400,12 @@ struct StatsDashboardView: View {
                 }
             }
             .frame(width: 148, alignment: .trailing)
-            .foregroundStyle(GameUITheme.secondaryText)
+            .foregroundStyle(MonitorTheme.secondaryText)
 
             Text(share.formatted(.percent.precision(.fractionLength(0))))
                 .monospacedDigit()
                 .frame(width: 48, alignment: .trailing)
-                .foregroundStyle(GameUITheme.secondaryText)
+                .foregroundStyle(MonitorTheme.secondaryText)
         }
         .font(.caption)
         .padding(.vertical, 8)
@@ -507,7 +515,7 @@ struct StatsDashboardView: View {
     }
 }
 
-private enum StatsMetric: String, CaseIterable, Identifiable {
+enum StatsMetric: String, CaseIterable, Identifiable {
     case tokens
     case cost
 

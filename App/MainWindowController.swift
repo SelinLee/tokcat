@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// Owns the single reusable main window (task monitor, usage, pet and settings).
+/// Owns the single reusable main window (task monitor, usage and settings).
 /// Works with an accessory menu-bar app via a dedicated `NSWindowController`.
 @MainActor
 final class MainWindowController: NSWindowController {
@@ -25,7 +25,7 @@ final class MainWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 1180, height: 780))
         window.minSize = NSSize(width: 900, height: 620)
-        // Match GameUITheme paper surface (avoid default system mid-gray).
+        // Match MonitorTheme paper surface (avoid default system mid-gray).
         window.backgroundColor = NSColor(name: nil, dynamicProvider: { appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return dark

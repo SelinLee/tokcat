@@ -20,7 +20,9 @@ enum AgentTaskPreview {
             for (offset, phase) in [(5.0, "读取项目文件"), (15, "编辑文件"), (25, "运行测试")] {
                 let event = AgentSessionEvent(sessionID: id, source: source,
                     timestamp: now.addingTimeInterval(-seconds + offset), kind: .activity, turnID: id,
-                    phase: phase, modelName: source == .codexCLI ? "Codex" : (source == .workBuddy ? "hy3" : "Claude"), toolName: "exec")
+                    phase: phase, modelName: source == .codexCLI ? "gpt-6" :
+                        (source == .deepseekHarness ? "deepseek-v4" :
+                        ([.workBuddy, .workBuddyAI].contains(source) ? "hy3" : "claude-sonnet-4")), toolName: "exec")
                 session.apply(event); history.observe(session, event: event)
             }
             let event = AgentSessionEvent(sessionID: id, source: source, timestamp: now.addingTimeInterval(-age),
@@ -33,11 +35,8 @@ enum AgentTaskPreview {
         let done = task("docs", .codexCLI, "文档整理", 480, .completed, age: 300)
         let failed = task("import", .claudeCode, "数据导入", 800, .failed, age: 420)
         let buddyRunning = task("workbuddy-live", .workBuddy, "日报整理", 330, .activity)
-        var passive = AgentTaskRecord(session: AgentSession(event: AgentSessionEvent(sessionID: "dsh-review",
-            source: .deepseekHarness, timestamp: now.addingTimeInterval(-1200), kind: .metadata,
-            projectPath: "/Projects/接口服务")), title: "接口服务检查", modelName: "DeepSeek", activityOnly: true)
-        passive.logPath = "/Projects/example-session.json"
-        history.observeActivity(passive)
+        let harness = task("dsh-review", .deepseekHarness, "接口服务检查", 165, .activity, age: 2)
+        let buddyAI = task("buddy-ai-review", .workBuddyAI, "客户端审查", 240, .waitingForInput, age: 35)
         let buddy = AgentTaskRecord(session: AgentSession(event: AgentSessionEvent(sessionID: "workbuddy-preview", source: .workBuddy,
             timestamp: now.addingTimeInterval(-200), kind: .completed, projectPath: "/Projects/日报整理")), title: "整理今天的项目日报", modelName: "hy3")
         history.observeExternal(buddy)
@@ -55,7 +54,7 @@ enum AgentTaskPreview {
         for row in demoRows { data.append(try JSONSerialization.data(withJSONObject: row)); data.append(10) }
         try data.write(to: conversation)
         if let index = tasks.firstIndex(where: { $0.session.id == waiting.id }) { tasks[index].logPath = conversation.path }
-        let sessions = [waiting, running, done, failed, buddyRunning]
+        let sessions = [waiting, running, buddyRunning, harness, buddyAI, done, failed]
         for dark in [false, true] {
             NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let content = HStack(spacing: 0) {

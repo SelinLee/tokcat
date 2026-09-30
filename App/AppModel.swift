@@ -4,30 +4,10 @@ import Combine
 import UserNotifications
 import AppKit
 
-/// Ties together local monitoring, the pet engine, settings, and persistence.
+/// Ties together local agent monitoring, usage history, and the desktop companion.
 /// Codex quota is read from client-written logs only while its desktop app runs.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published private(set) var petState: PetState
-    @Published private(set) var petProgress: PetProgressSnapshot
-    @Published private(set) var petFeedPulse: Int = 0
-    @Published private(set) var petLevelPulse: Int = 0
-    @Published private(set) var petInteractionPulse: Int = 0
-    @Published private(set) var latestPetAchievements: [PetAchievement] = []
-    /// Newest-first pet lifecycle timeline (feed / level / achievement / interact).
-    @Published private(set) var recentPetEvents: [PetTimelineEvent] = []
-    /// One-shot presentation cues for the desktop pet (float text + SFX).
-    @Published private(set) var petPresentationPulse: Int = 0
-    @Published private(set) var latestPresentationEvents: [PetTimelineEvent] = []
-    @Published private(set) var inventory: [InventoryItem] = []
-    @Published private(set) var equipment: EquipmentLoadout = EquipmentLoadout()
-    /// Active pixel skin item id (defaults to classic).
-    @Published private(set) var activeSkinItemID: String = PetAppearanceState.defaultSkinID
-    @Published private(set) var lootProgress: LootProgressState = LootProgressState()
-    @Published private(set) var latestLootDrops: [LootDrop] = []
-    @Published private(set) var lootDropPulse: Int = 0
-    @Published private(set) var activeBonuses: ActiveBonuses = .none
-    @Published private(set) var pathwayProgress: PathwayProgress = PathwayProgress()
     @Published private(set) var recentEvents: [TokenEvent] = []
     @Published private(set) var totalCostUSD: Double = 0
     @Published private(set) var todayInputTokens: Int = 0
@@ -71,18 +51,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var engine: PetEngine
-    private var lootEngine = LootEngine()
-    private var lootRNG = SystemLootRNG()
     /// Shared across main + serial adapter queue; all mutations stay on `adapterQueue`.
     nonisolated(unsafe) private let adapterHub: CompositeAgentAdapter
     /// Retained for provider attribution snapshots (same instance as in adapterHub).
     nonisolated(unsafe) private let ccSwitchAdapter: CCSwitchAdapter
     private let systemMetricsMonitor: SystemMetricsMonitor
-    private let store: PetStore?
+    private let store: UsageStore?
     private let settingsStore: AppSettingsStore
     private var throughputTracker = ThroughputTracker(windowSeconds: 12, idleZeroSeconds: 3)
-    nonisolated(unsafe) private let sessionMonitor = AgentSessionMonitor()
+    nonisolated(unsafe) private let sessionMonitor: AgentSessionMonitor
     private let sessionQueue = DispatchQueue(label: "com.tokcat.sessions", qos: .utility)
     private var sessionTimer: Timer?
     private var isSessionPolling = false
@@ -101,8 +78,7 @@ final class AppModel: ObservableObject {
     private var codexUsageGeneration: UInt64 = 0
     private var codexClientObservers: [NSObjectProtocol] = []
     static let codexUsageRefreshInterval: TimeInterval = 15
-    private var lastTick = Date()
-    private weak var petWindowController: PetWindowController?
+    private weak var companionWindowController: DesktopCompanionWindowController?
     /// Last offsets written to SQLite so polls only flush deltas.
     private var lastSavedOffsets: [String: UInt64] = [:]
     /// Prevents overlapping live adapter polls.
@@ -120,8 +96,6 @@ final class AppModel: ObservableObject {
     /// Consecutive empty historical batches; stop scanning after this threshold.
     private var historicalIdleStreak = 0
     private var isHistoricalScanComplete = false
-    /// Last pet state flushed to SQLite (skip no-op writes every poll).
-    private var lastPersistedPetState: PetState?
     /// Active timer interval (may differ from settings while adaptive idle backoff is on).
     private var activePollInterval: TimeInterval = 0
     private var consecutiveQuietPolls = 0
@@ -131,57 +105,20 @@ final class AppModel: ObservableObject {
 
     init(
         settingsStore: AppSettingsStore = AppSettingsStore(),
-        petWindowController: PetWindowController? = nil
+        companionWindowController: DesktopCompanionWindowController? = nil,
+        usageStoreURL: URL = UsageStore.defaultFileURL(),
+        sessionMonitor: AgentSessionMonitor = AgentSessionMonitor()
     ) {
         let settings = settingsStore.load()
         let pricing = settings.pricingTable
-        let engine = PetEngine(economy: TokenEconomy(pricingTable: pricing))
-        self.engine = engine
         self.systemMetricsMonitor = SystemMetricsMonitor()
         self.settingsStore = settingsStore
+        self.sessionMonitor = sessionMonitor
         self.settings = settings
-        self.petWindowController = petWindowController
+        self.companionWindowController = companionWindowController
 
-        let store = try? PetStore(fileURL: PetStore.defaultFileURL())
+        let store = try? UsageStore(fileURL: usageStoreURL)
         self.store = store
-        // Token Compact C2: soft-migrate growth onto GrowthBalance v2.
-        // Inventory / equipment / usage history are preserved; level/xp/stats are recomputed.
-        let storedBalanceVersion = Int((try? store?.loadPetMeta(key: GrowthBalance.metaKey)) ?? "0") ?? 0
-        var loadedPet = (try? store?.loadPetState()) ?? PetState()
-        loadedPet.unlockedAchievements = Array(Set(loadedPet.unlockedAchievements)).sorted()
-        if storedBalanceVersion < GrowthBalance.version {
-            // Prefer lifetime tokens already on pet state; fall back to summed history.
-            if loadedPet.totalTokensFed <= 0, let all = try? store?.loadAllTokenEvents() {
-                loadedPet.totalTokensFed = all.reduce(0) { $0 + $1.totalTokens }
-            }
-            loadedPet = GrowthBalance.migrateState(loadedPet)
-            // Re-evaluate seals against retuned thresholds after recompute.
-            let unlocked = PetAchievementCatalog.evaluate(state: loadedPet, todayTokensFed: 0)
-            loadedPet.unlockedAchievements = Array(Set(loadedPet.unlockedAchievements + unlocked.map(\.id))).sorted()
-            try? store?.savePetState(loadedPet)
-            lastPersistedPetState = loadedPet
-            try? store?.savePetMeta(key: GrowthBalance.metaKey, value: "\(GrowthBalance.version)")
-            // Keep legacy key in sync so older branches do not hard-reset again.
-            try? store?.savePetMeta(key: "pet_growth_schema_version", value: "\(GrowthBalance.version)")
-        }
-        self.petState = loadedPet
-        self.engine.restoreMood(from: loadedPet)
-        self.petProgress = PetEngine().makeProgressSnapshot(
-            state: loadedPet,
-            todayTokensFed: 0,
-            todayCostUSD: 0,
-            latestModel: nil,
-            latestSource: nil
-        )
-        self.recentPetEvents = (try? store?.loadRecentPetTimelineEvents(limit: 40)) ?? []
-        self.inventory = (try? store?.loadInventory()) ?? []
-        self.equipment = (try? store?.loadEquipment()) ?? EquipmentLoadout()
-        self.lootProgress = (try? store?.loadLootProgress()) ?? LootProgressState()
-        let storedSkin = (try? store?.loadPetMeta(key: "active_skin_item_id")) ?? PetAppearanceState.defaultSkinID
-        self.activeSkinItemID = ItemCatalog.item(id: storedSkin)?.kind == .skin
-            ? storedSkin
-            : PetAppearanceState.defaultSkinID
-
         let initialOffsets = (try? store?.loadAdapterOffsets()) ?? [:]
         self.lastSavedOffsets = initialOffsets
         let ccSwitchAdapter = CCSwitchAdapter(pricingTable: pricing, initialOffsets: initialOffsets)
@@ -205,7 +142,7 @@ final class AppModel: ObservableObject {
         )
 
         if let allEvents = try? store?.loadAllTokenEvents() {
-            self.totalCostUSD = engine.economy.totalCostUSD(allEvents)
+            self.totalCostUSD = allEvents.reduce(0) { $0 + $1.costUSD }
             recomputeTodayTotals(from: allEvents)
             if let latest = allEvents.last {
                 self.latestModel = latest.model
@@ -217,21 +154,14 @@ final class AppModel: ObservableObject {
             let rates = throughputTracker.rates()
             liveMetrics.setRates(tokensPerSecond: rates.tokensPerSecond, usdPerSecond: rates.usdPerSecond)
         }
-        // Default skin is always owned so the bag/codex never look empty on first launch.
-        ensureDefaultSkinOwned()
-        sanitizeAppearanceAgainstInventory(persist: true)
-        refreshActiveBonuses()
-        refreshPetProgress()
     }
 
-    func attachPetWindow(_ controller: PetWindowController) {
-        petWindowController = controller
+    func attachCompanionWindow(_ controller: DesktopCompanionWindowController) {
+        companionWindowController = controller
         applyDesktopPetVisibility()
     }
 
     func start() {
-        lastTick = Date()
-        lastPersistedPetState = petState
         isHistoricalScanComplete = false
         historicalIdleStreak = 0
         consecutiveQuietPolls = 0
@@ -317,6 +247,24 @@ final class AppModel: ObservableObject {
         settings = next
     }
 
+    /// An explicit placement choice is an immediate desktop action, including
+    /// when the companion was hidden. Persistence remains debounced independently.
+    func selectDesktopPetPosition(_ position: PetDockPosition) {
+        updateSettings {
+            $0.desktopPetDockPosition = position.fixedPosition
+            $0.showDesktopPet = true
+        }
+        companionWindowController?.applyPlacementChoice()
+    }
+
+    func selectCompanionAppearance(_ appearance: CompanionAppearance) {
+        updateSettings {
+            $0.desktopCompanionAppearance = appearance
+            $0.showDesktopPet = true
+        }
+        companionWindowController?.applyPlacementChoice()
+    }
+
     func resetSettings() {
         settings = .default
     }
@@ -371,8 +319,8 @@ final class AppModel: ObservableObject {
         if oldValue.showDesktopPet != settings.showDesktopPet {
             applyDesktopPetVisibility()
         }
-        if (oldValue.desktopPetSkin != settings.desktopPetSkin
-            || oldValue.customPetModelFileName != settings.customPetModelFileName),
+        if (oldValue.desktopCompanionAppearance != settings.desktopCompanionAppearance
+            || oldValue.desktopPetDockPosition != settings.desktopPetDockPosition),
            settings.showDesktopPet {
             applyDesktopPetVisibility()
         }
@@ -388,7 +336,6 @@ final class AppModel: ObservableObject {
         if oldValue.pricingEntries != settings.pricingEntries
             || oldValue.fallbackPricing != settings.fallbackPricing {
             let table = settings.pricingTable
-            engine.economy = TokenEconomy(pricingTable: table)
             // Adapter pricing is only used during poll; update on the adapter queue.
             adapterQueue.async { [weak self] in
                 self?.adapterHub.updatePricingTable(table)
@@ -397,7 +344,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applyDesktopPetVisibility() {
-        petWindowController?.setPetVisible(settings.showDesktopPet)
+        companionWindowController?.setPetVisible(settings.showDesktopPet)
     }
 
     private func rescheduleTimer(forceInterval: TimeInterval? = nil) {
@@ -552,32 +499,12 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func persistPetStateIfNeeded(_ state: PetState? = nil) {
-        let snapshot = state ?? petState
-        if lastPersistedPetState == snapshot { return }
-        try? store?.savePetState(snapshot)
-        lastPersistedPetState = snapshot
-    }
-
     private func poll() {
         let now = Date()
-        let elapsed = now.timeIntervalSince(lastTick)
-        lastTick = now
-
-        refreshActiveBonuses()
-        var nextPet = petState
-        engine.tick(elapsedSeconds: elapsed, state: &nextPet, bonuses: activeBonuses)
-        // Quantize slow-changing vitals so tiny float drift does not thrash UI.
-        nextPet.hunger = (nextPet.hunger * 200).rounded() / 200
-        nextPet.mood = (nextPet.mood * 200).rounded() / 200
-        setIfChanged(\AppModel.petState, nextPet)
-
         liveMetrics.setSystemMetrics(systemMetricsMonitor.poll(options: metricsSampleOptions()))
         let liveRates = throughputTracker.rates(now: now)
         liveMetrics.setRates(tokensPerSecond: liveRates.tokensPerSecond, usdPerSecond: liveRates.usdPerSecond)
         refreshMenuBarActivity(now: now)
-        refreshPetProgress()
-        persistPetStateIfNeeded()
 
         // Adapter I/O can touch thousands of local log files (esp. WorkBuddy).
         // Run on a serial background queue so the menu bar stays interactive.
@@ -634,8 +561,8 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Persist usage for stats always; pet growth only from live activity.
-        totalCostUSD += engine.economy.totalCostUSD(resolvedEvents)
+        // Persist usage for both live monitoring and historical scans.
+        totalCostUSD += resolvedEvents.reduce(0) { $0 + $1.costUSD }
         recentEvents.append(contentsOf: resolvedEvents)
         recentEvents = Array(recentEvents.suffix(50))
         for event in resolvedEvents {
@@ -655,57 +582,6 @@ final class AppModel: ObservableObject {
             refreshMenuBarActivity(now: now)
         }
 
-        if fromHistory {
-            // History repairs/backfills must not re-feed the redesigned pet loop.
-            refreshPetProgress()
-            return
-        }
-
-        refreshActiveBonuses()
-        let previousPathways = pathwayProgress.unlocked
-        let applyResult = engine.apply(events: resolvedEvents, to: &petState, bonuses: activeBonuses)
-        let moreAchievements = engine.unlockAchievements(
-            todayTokensFed: todayInputTokens + todayOutputTokens,
-            state: &petState
-        )
-        var unlocked = applyResult.newlyUnlocked
-        for item in moreAchievements where !unlocked.contains(item) {
-            unlocked.append(item)
-        }
-        var presentation = applyResult.events
-        // Extra achievements unlocked only with today's totals.
-        let extraOnly = moreAchievements.filter { item in
-            !applyResult.newlyUnlocked.contains(where: { $0.id == item.id })
-        }
-        for item in extraOnly {
-            presentation.append(PetEventFactory.achievement(item))
-        }
-        if !unlocked.isEmpty {
-            latestPetAchievements = Array((unlocked + latestPetAchievements).prefix(8))
-        }
-        if applyResult.didFeed {
-            petFeedPulse &+= 1
-        }
-        if applyResult.didLevelUp {
-            petLevelPulse &+= 1
-        }
-
-        let lootResult = lootEngine.evaluate(
-            apply: applyResult,
-            progress: lootProgress,
-            level: petState.level,
-            stats: petState.stats,
-            bonuses: activeBonuses,
-            now: now,
-            rng: &lootRNG
-        )
-        refreshActiveBonuses()
-        appendPathwayUnlockEvents(previous: previousPathways, into: &presentation)
-        applyLootResult(lootResult, into: &presentation)
-
-        recordPetEvents(presentation)
-        refreshPetProgress(justLeveledUp: applyResult.didLevelUp)
-        persistPetStateIfNeeded()
         // Soft-invalidate dashboard caches; rebuild only if the stats tab is already showing data.
         invalidateUsageCaches(keepCurrentSnapshot: true)
         if usageSnapshotCache.eventCount > 0 || !usageEvents.isEmpty {
@@ -714,240 +590,6 @@ final class AppModel: ObservableObject {
         if !fromHistory {
             notePollActivity(hadEvents: true, now: now)
         }
-    }
-
-    func notePetInteraction() {
-        petInteractionPulse &+= 1
-        // A gentle mood bump for care interactions; still capped.
-        petState.mood = min(1, petState.mood + 0.03)
-        engine.restoreMood(from: petState)
-        recordPetEvents([PetEventFactory.interacted()])
-        refreshPetProgress()
-        persistPetStateIfNeeded()
-    }
-
-    /// Resets pet progression only (keeps usage stats / token history).
-    func resetPetProgress() {
-        petState = PetState()
-        engine.restoreMood(from: petState)
-        latestPetAchievements = []
-        recentPetEvents = []
-        latestPresentationEvents = []
-        latestLootDrops = []
-        inventory = []
-        equipment = EquipmentLoadout()
-        activeSkinItemID = PetAppearanceState.defaultSkinID
-        lootProgress = LootProgressState()
-        petFeedPulse = 0
-        petLevelPulse = 0
-        petInteractionPulse = 0
-        petPresentationPulse = 0
-        lootDropPulse = 0
-        refreshPetProgress()
-        persistPetStateIfNeeded()
-        try? store?.clearPetTimelineEvents()
-        try? store?.clearInventoryAndLoot()
-        ensureDefaultSkinOwned()
-        try? store?.savePetMeta(key: "active_skin_item_id", value: activeSkinItemID)
-        try? store?.savePetMeta(key: GrowthBalance.metaKey, value: "\(GrowthBalance.version)")
-        try? store?.savePetMeta(key: "pet_growth_schema_version", value: "\(GrowthBalance.version)")
-    }
-
-    var canRecomputeGrowthBalance: Bool {
-        let stored = Int((try? store?.loadPetMeta(key: GrowthBalance.metaKey)) ?? "0") ?? 0
-        // Allow force recompute always for power users; UI disables only when already v2
-        // AND state already matches recomputed snapshot (cheap check: meta == version).
-        return stored < GrowthBalance.version
-    }
-
-    /// Soft recompute growth by GrowthBalance v2 rules. Inventory is kept.
-    @discardableResult
-    func recomputeGrowthToBalanceV2(force: Bool = false) -> Bool {
-        let stored = Int((try? store?.loadPetMeta(key: GrowthBalance.metaKey)) ?? "0") ?? 0
-        if !force && stored >= GrowthBalance.version {
-            return false
-        }
-        if petState.totalTokensFed <= 0, let all = try? store?.loadAllTokenEvents() {
-            petState.totalTokensFed = all.reduce(0) { $0 + $1.totalTokens }
-        }
-        let beforeLevel = petState.level
-        petState = GrowthBalance.migrateState(petState)
-        let unlocked = PetAchievementCatalog.evaluate(
-            state: petState,
-            todayTokensFed: todayInputTokens + todayOutputTokens
-        )
-        petState.unlockedAchievements = Array(Set(petState.unlockedAchievements + unlocked.map(\.id))).sorted()
-        engine.restoreMood(from: petState)
-        refreshPetProgress()
-        persistPetStateIfNeeded()
-        try? store?.savePetMeta(key: GrowthBalance.metaKey, value: "\(GrowthBalance.version)")
-        try? store?.savePetMeta(key: "pet_growth_schema_version", value: "\(GrowthBalance.version)")
-        if beforeLevel != petState.level {
-            recordPetEvents([
-                PetTimelineEvent(
-                    kind: .statusChanged,
-                    title: CompactCopy.levelLabel(petState.level),
-                    detail: CompactCopy.migrationToastDetail(),
-                    payload: [
-                        "fromLevel": "\(beforeLevel)",
-                        "toLevel": "\(petState.level)",
-                        "balanceVersion": "\(GrowthBalance.version)"
-                    ]
-                )
-            ])
-        }
-        return true
-    }
-
-    @discardableResult
-    func equipItem(id itemID: String) -> Bool {
-        guard let def = ItemCatalog.item(id: itemID) else { return false }
-        if def.kind == .skin {
-            return selectSkin(id: itemID)
-        }
-        let attempt = InventoryMutations.attemptEquip(
-            itemID: itemID,
-            loadout: equipment,
-            inventory: inventory,
-            level: petState.level,
-            stats: petState.stats
-        )
-        guard let next = attempt.loadout else { return false }
-        equipment = next
-        try? store?.saveEquipment(equipment)
-        refreshActiveBonuses()
-        var event = PetEventFactory.equipped(def)
-        if !attempt.effectsActive, let hint = attempt.dormantHint {
-            event = PetTimelineEvent(
-                kind: .equipped,
-                timestamp: event.timestamp,
-                title: "装备 " + def.name,
-                detail: hint,
-                payload: event.payload
-            )
-        }
-        recordPetEvents([event])
-        return true
-    }
-
-    func refreshActiveBonuses() {
-        activeBonuses = EquipmentBonuses.aggregate(
-            loadout: equipment,
-            level: petState.level,
-            stats: petState.stats
-        )
-        pathwayProgress = PathwayProgress.evaluate(level: petState.level, stats: petState.stats)
-    }
-
-    private func appendPathwayUnlockEvents(
-        previous: Set<PathwayID>,
-        into presentation: inout [PetTimelineEvent]
-    ) {
-        let current = PathwayProgress.unlockedPathways(level: petState.level, stats: petState.stats)
-        let newly = current.subtracting(previous).sorted { $0.rawValue < $1.rawValue }
-        for path in newly {
-            presentation.append(
-                PetTimelineEvent(
-                    kind: .achievement,
-                    title: CompactCopy.pathwayUnlockToastTitle(pathway: path),
-                    detail: CompactCopy.pathwayUnlockToastDetail(pathway: path),
-                    payload: [
-                        "pathway": path.rawValue,
-                        "gate": "embark"
-                    ]
-                )
-            )
-        }
-    }
-
-    func unequipSlot(_ slot: EquipSlot) {
-        equipment = InventoryMutations.unequip(slot: slot, loadout: equipment)
-        try? store?.saveEquipment(equipment)
-        refreshActiveBonuses()
-    }
-
-    @discardableResult
-    func selectSkin(id itemID: String) -> Bool {
-        guard let def = ItemCatalog.item(id: itemID), def.kind == .skin else { return false }
-        // Classic always available; others require ownership.
-        if itemID != PetAppearanceState.defaultSkinID {
-            guard inventory.contains(where: { $0.itemID == itemID && $0.quantity > 0 }) else { return false }
-        }
-        activeSkinItemID = itemID
-        try? store?.savePetMeta(key: "active_skin_item_id", value: itemID)
-        recordPetEvents([PetEventFactory.equipped(def)])
-        return true
-    }
-
-    private func sanitizeAppearanceAgainstInventory(persist: Bool) {
-        let cleanedLoadout = InventoryMutations.sanitizedLoadout(equipment, inventory: inventory)
-        if cleanedLoadout != equipment {
-            equipment = cleanedLoadout
-            if persist { try? store?.saveEquipment(equipment) }
-        }
-        let cleanedSkin = InventoryMutations.sanitizedSkinID(activeSkinItemID, inventory: inventory)
-        if cleanedSkin != activeSkinItemID {
-            activeSkinItemID = cleanedSkin
-            if persist { try? store?.savePetMeta(key: "active_skin_item_id", value: cleanedSkin) }
-        }
-    }
-
-    private func ensureDefaultSkinOwned() {
-        if !inventory.contains(where: { $0.itemID == PetAppearanceState.defaultSkinID }) {
-            inventory = InventoryMutations.applying(
-                drops: [
-                    LootDrop(
-                        item: ItemCatalog.item(id: PetAppearanceState.defaultSkinID)!,
-                        quantity: 1,
-                        source: .grant,
-                        wasPity: false
-                    )
-                ],
-                to: inventory
-            )
-            try? store?.saveInventory(inventory)
-        }
-    }
-
-    private func applyLootResult(_ result: LootRollResult, into presentation: inout [PetTimelineEvent]) {
-        lootProgress = result.progress
-        try? store?.saveLootProgress(lootProgress)
-
-        if result.didRollFeed, !result.feedHit {
-            try? store?.appendLootRoll(
-                triggerKind: "feed_miss",
-                drop: nil,
-                hit: false,
-                progress: lootProgress
-            )
-        }
-
-        guard result.didDrop else { return }
-
-        inventory = InventoryMutations.applying(drops: result.drops, to: inventory)
-        try? store?.saveInventory(inventory)
-        latestLootDrops = result.drops
-        lootDropPulse &+= 1
-
-        for drop in result.drops {
-            presentation.append(PetEventFactory.lootDropped(drop))
-            try? store?.appendLootRoll(
-                triggerKind: drop.source.rawValue,
-                drop: drop,
-                hit: true,
-                progress: lootProgress
-            )
-        }
-    }
-
-    private func recordPetEvents(_ events: [PetTimelineEvent]) {
-        guard !events.isEmpty else { return }
-        // Newest first in memory.
-        let ordered = events.sorted { $0.timestamp > $1.timestamp }
-        recentPetEvents = Array((ordered + recentPetEvents).prefix(40))
-        latestPresentationEvents = ordered
-        petPresentationPulse &+= 1
-        try? store?.appendPetTimelineEvents(events)
     }
 
     func updateDesktopPetWindowOrigin(_ origin: CGPoint) {
@@ -1015,7 +657,6 @@ final class AppModel: ObservableObject {
                 self.liveMetrics.setAgentSessions(result.sessions.filter { self.settings.enabledAgents.contains($0.source) })
                 self.taskMonitor.update(sessions: result.sessions, tasks: result.tasks, enabled: self.settings.enabledAgents)
                 self.refreshMenuBarActivity()
-                self.refreshPetProgress()
                 self.acknowledgeViewedCompletions()
                 if self.settings.notifyAgentEvents {
                     for session in result.alerts where self.settings.enabledAgents.contains(session.source) {
@@ -1109,20 +750,6 @@ final class AppModel: ObservableObject {
         content.threadIdentifier = session.id
         let request = UNNotificationRequest(identifier: "tokcat-session-" + session.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { _ in }
-    }
-
-    private func refreshPetProgress(justLeveledUp: Bool = false) {
-        let next = engine.makeProgressSnapshot(
-            state: petState,
-            todayTokensFed: todayInputTokens + todayOutputTokens,
-            todayCostUSD: todayCostUSD,
-            latestModel: latestModel,
-            latestSource: latestSource,
-            tokensPerSecond: tokensPerSecond,
-            justLeveledUp: justLeveledUp,
-            agentMode: menuBarActivity.mode
-        )
-        setIfChanged(\AppModel.petProgress, next)
     }
 
     private func scheduleHistoricalScan(after delay: TimeInterval) {
@@ -1369,7 +996,7 @@ final class AppModel: ObservableObject {
                 self.isCodexHistoryRepairRunning = false
                 if summary.updatedEvents > 0 {
                     if let all = try? self.store?.loadAllTokenEvents() {
-                        self.totalCostUSD = self.engine.economy.totalCostUSD(all)
+                        self.totalCostUSD = all.reduce(0) { $0 + $1.costUSD }
                         self.recomputeTodayTotals(from: all)
                         if let latest = all.last {
                             self.latestModel = latest.model
@@ -1471,7 +1098,7 @@ final class AppModel: ObservableObject {
                 self.isProviderBackfilling = false
                 self.providerBackfillFinishedAt = Date()
                 if let all = try? self.store?.loadAllTokenEvents() {
-                    self.totalCostUSD = self.engine.economy.totalCostUSD(all)
+                    self.totalCostUSD = all.reduce(0) { $0 + $1.costUSD }
                     self.recomputeTodayTotals(from: all)
                 }
                 self.refreshUsageStats()
