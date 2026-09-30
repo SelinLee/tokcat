@@ -14,6 +14,26 @@
 
 </div>
 
+## 安静贴在桌边的人形挂件
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
+  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="可手动选择的 toki 男生形象与 biti 三套服装，均为平静表情" width="1040" />
+</picture>
+
+新桌宠始终吸附在屏幕边缘、右下角或 Dock 两侧。拖动只沿选定边缘微调位置。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
+  <img src="docs/assets/screenshots/readme-companion-light.png" alt="贴边桌宠的窄幅透明滚动动态、等待回答气泡和点击展开详情" width="1040" />
+</picture>
+
+- **平时保持安静**：没有常驻气泡。最近工具调用与阶段信息在人物上方逐行向上滚动，透明背景，宽度随人物。
+- **需要时展开详情**：点击人物，或 Agent 等待回答／授权时，气泡在人物上方展开；点击气泡打开任务总览。
+- **手动选择形象**：男生 **toki**，或 **biti** 的珊瑚、蓝鲸、紫星三套服装。统一使用平静、无笑容表情；动态文字的模型颜色独立于人物选择。
+
+在「设置 → 桌边挂件」或人物右键菜单选择形象和吸附位置。[桌宠行为说明](docs/DesktopCompanion.md)
+
 ## 在一个窗口里跟进多个 Agent
 
 谁正在运行，谁需要回答，谁已经完成本轮回复，统一放在任务列表中。选中任务后，窗口的大部分空间用于阅读对话。
@@ -84,26 +104,6 @@
 CC Switch 可以补充中转站归属、上报费用和计费倍率。Codex 的五小时／每周剩余额度来自客户端写入的本地日志，仅在桌面客户端运行时显示。
 
 </details>
-
-## 安静贴在桌边的人形挂件
-
-新桌宠始终吸附在屏幕边缘、右下角或 Dock 两侧。拖动只沿选定边缘微调位置。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
-  <img src="docs/assets/screenshots/readme-companion-light.png" alt="贴边桌宠的窄幅透明滚动动态、等待回答气泡和点击展开详情" width="1040" />
-</picture>
-
-- **平时保持安静**：没有常驻气泡。最近工具调用与阶段信息在人物上方逐行向上滚动，透明背景，宽度随人物。
-- **需要时展开详情**：点击人物，或 Agent 等待回答／授权时，气泡在人物上方展开；点击气泡打开任务总览。
-- **手动选择形象**：男生 **toki**，或 **biti** 的珊瑚、蓝鲸、紫星三套服装。统一使用平静、无笑容表情；动态文字的模型颜色独立于人物选择。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
-  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="可手动选择的 toki 男生形象与 biti 三套服装，均为平静表情" width="1040" />
-</picture>
-
-在「设置 → 桌边挂件」或人物右键菜单选择形象和吸附位置。[桌宠行为说明](docs/DesktopCompanion.md)
 
 ## 支持的 Agent
 

@@ -14,6 +14,26 @@ A native macOS monitor for multiple AI agents: live task states, waiting alerts,
 
 </div>
 
+## A quiet desktop companion
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
+  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="Manually selectable neutral-faced toki boy and three biti outfits" width="1040" />
+</picture>
+
+The new companion stays attached to a screen edge, the bottom-right corner, or either side of the Dock. Dragging only adjusts along the selected edge.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
+  <img src="docs/assets/screenshots/readme-companion-light.png" alt="Edge-attached companions with a narrow transparent ticker, input bubble and click-open details" width="1040" />
+</picture>
+
+- **Quiet by default:** no persistent bubble. Recent tools and phases scroll upward one line at a time above the character, within its width.
+- **Details when needed:** click the character or wait for an input/approval request to open a bubble above it. Click the bubble to open Tasks.
+- **Your choice of character:** male **toki**, or **biti** in coral, whale, or violet outfits. All use calm, neutral expressions. Model families determine activity text colors independently of the character.
+
+Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. [Companion behavior](docs/DesktopCompanion.md)
+
 ## Follow multiple agents in one place
 
 See who is running, who needs an answer, and whose reply is ready. The shared task list brings work across agents together, with the selected conversation taking most of the window.
@@ -84,26 +104,6 @@ Compare day, week, or month trends by **agent, model, or provider**. See input/o
 CC Switch can add provider attribution, reported charges, and pricing multipliers. Codex 5-hour / weekly remaining quota comes from local client logs and appears only while the desktop client runs.
 
 </details>
-
-## A quiet desktop companion
-
-The new companion stays attached to a screen edge, the bottom-right corner, or either side of the Dock. Dragging only adjusts along the selected edge.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
-  <img src="docs/assets/screenshots/readme-companion-light.png" alt="Edge-attached companions with a narrow transparent ticker, input bubble and click-open details" width="1040" />
-</picture>
-
-- **Quiet by default:** no persistent bubble. Recent tools and phases scroll upward one line at a time above the character, within its width.
-- **Details when needed:** click the character or wait for an input/approval request to open a bubble above it. Click the bubble to open Tasks.
-- **Your choice of character:** male **toki**, or **biti** in coral, whale, or violet outfits. All use calm, neutral expressions. Model families determine activity text colors independently of the character.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
-  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="Manually selectable neutral-faced toki boy and three biti outfits" width="1040" />
-</picture>
-
-Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. [Companion behavior](docs/DesktopCompanion.md)
 
 ## Supported agents
 
