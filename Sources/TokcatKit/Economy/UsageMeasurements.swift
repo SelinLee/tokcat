@@ -51,9 +51,10 @@ public struct QuotaObservation: Sendable {
     public var tokens: UsageTokenCounts
     public var windows: [CodexUsageWindowKind: Window]
     public var plan: String?
+    public var model: String
     public init(date: Date, id: String, tokens: UsageTokenCounts,
-                windows: [CodexUsageWindowKind: Window], plan: String? = nil) {
-        self.date = date; self.id = id; self.tokens = tokens; self.windows = windows; self.plan = plan
+                windows: [CodexUsageWindowKind: Window], plan: String? = nil, model: String = "未知模型") {
+        self.date = date; self.id = id; self.tokens = tokens; self.windows = windows; self.plan = plan; self.model = model
     }
 }
 
@@ -62,6 +63,8 @@ public struct QuotaEfficiencyDay: Identifiable, Equatable, Sendable {
     public var day: Date
     public var kind: CodexUsageWindowKind
     public var tokens: UsageTokenCounts = .init()
+    /// Each model contributes to the shared observed quota denominator; no per-model quota is invented.
+    public var tokensByModel: [String: UsageTokenCounts] = [:]
     public var percentagePoints: Double = 0
     public var segments: Int = 0
     public var tokensPerPercent: Double { Double(tokens.total) / percentagePoints }
@@ -80,33 +83,40 @@ public enum QuotaEfficiency {
             var day: Date?
             var plan: String?
             var pending = UsageTokenCounts()
+            var pendingModels: [String: UsageTokenCounts] = [:]
             var row: QuotaEfficiencyDay?
             for sample in samples {
                 let sampleDay = calendar.startOfDay(for: sample.date)
                 if day != sampleDay || plan != sample.plan {
                     if let row, row.percentagePoints > 0 { result.append(row) }
-                    day = sampleDay; plan = sample.plan; baseline = nil; pending = .init()
+                    day = sampleDay; plan = sample.plan; baseline = nil; pending = .init(); pendingModels = [:]
                     row = QuotaEfficiencyDay(day: sampleDay, kind: kind)
                 }
                 guard let current = sample.windows[kind], current.percent.isFinite,
                       (0...100).contains(current.percent), current.reset > sample.date.timeIntervalSince1970 else {
                     // A missing quota reading cannot establish a comparable interval.
-                    baseline = nil; pending = .init(); continue
+                    baseline = nil; pending = .init(); pendingModels = [:]; continue
                 }
                 guard let previous = baseline, previous.reset == current.reset,
                       previous.seconds == current.seconds, current.percent >= previous.percent else {
-                    baseline = current; pending = .init(); continue
+                    baseline = current; pending = .init(); pendingModels = [:]; continue
                 }
                 pending = pending + sample.tokens
+                if sample.tokens.total > 0 {
+                    pendingModels[sample.model] = (pendingModels[sample.model] ?? .init()) + sample.tokens
+                }
                 let change = current.percent - previous.percent
                 guard change > 0 else { continue }
                 if pending.total > 0 {
                     let combined = (row?.tokens ?? .init()) + pending
                     row?.tokens = combined
+                    var models = row?.tokensByModel ?? [:]
+                    for (model, tokens) in pendingModels { models[model] = (models[model] ?? .init()) + tokens }
+                    row?.tokensByModel = models
                     row?.percentagePoints += change
                     row?.segments += 1
                 }
-                baseline = current; pending = .init()
+                baseline = current; pending = .init(); pendingModels = [:]
             }
             if let row, row.percentagePoints > 0 { result.append(row) }
         }
@@ -115,6 +125,9 @@ public enum QuotaEfficiency {
         for row in result {
             var value = merged[row.id] ?? QuotaEfficiencyDay(day: row.day, kind: row.kind)
             value.tokens = value.tokens + row.tokens
+            for (model, tokens) in row.tokensByModel {
+                value.tokensByModel[model] = (value.tokensByModel[model] ?? .init()) + tokens
+            }
             value.percentagePoints += row.percentagePoints; value.segments += row.segments
             merged[row.id] = value
         }

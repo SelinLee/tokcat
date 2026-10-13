@@ -44,6 +44,8 @@ enum StatsDashboardPreview {
                 let payload: [String: Any] = ["type": "token_count", "info": ["total_token_usage": totals],
                     "rate_limits": ["plan_type": "pro", "primary": primary, "secondary": secondary]]
                 let row: [String: Any] = ["type": "event_msg", "timestamp": ISO8601DateFormatter().string(from: date), "payload": payload]
+                let modelName = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"][(hour + offset) % 3]
+                logs.append(try JSONSerialization.data(withJSONObject: ["type": "turn_context", "payload": ["model": modelName]])); logs.append(10)
                 logs.append(try JSONSerialization.data(withJSONObject: row)); logs.append(10)
             }
         }

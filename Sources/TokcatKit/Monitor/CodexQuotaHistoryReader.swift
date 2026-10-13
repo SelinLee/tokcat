@@ -53,16 +53,23 @@ public final class CodexQuotaHistoryReader: @unchecked Sendable {
         var previous: UsageTokenCounts?
         var session = url.deletingPathExtension().lastPathComponent
         var provider: String?
+        var model = "未知模型"
         let formatter = ISO8601DateFormatter()
         let plainFormatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func process(_ data: Data) {
-            guard data.range(of: Data("\"token_count\"".utf8)) != nil || data.range(of: Data("\"session_meta\"".utf8)) != nil else { return }
+            guard data.range(of: Data("\"token_count\"".utf8)) != nil || data.range(of: Data("\"session_meta\"".utf8)) != nil || data.range(of: Data("\"turn_context\"".utf8)) != nil else { return }
             guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let payload = root["payload"] as? [String: Any] else { return }
             if root["type"] as? String == "session_meta" {
                 session = payload["id"] as? String ?? session
                 provider = payload["model_provider"] as? String
+                return
+            }
+            if root["type"] as? String == "turn_context" {
+                if let name = payload["model"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    model = ModelNameFormatting.shortDisplayName(name)
+                } else { model = "未知模型" }
                 return
             }
             guard root["type"] as? String == "event_msg", payload["type"] as? String == "token_count",
@@ -99,7 +106,7 @@ public final class CodexQuotaHistoryReader: @unchecked Sendable {
                 }
             }
             result.append(.init(date: date, id: "\(session)|\(timestamp)", tokens: delta,
-                                windows: windows, plan: limits?["plan_type"] as? String))
+                                windows: windows, plan: limits?["plan_type"] as? String, model: model))
         }
         while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
             for part in chunk.split(separator: 10, omittingEmptySubsequences: false).enumerated() {

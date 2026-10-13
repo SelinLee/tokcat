@@ -56,12 +56,26 @@ struct UsageQuotaTrend: View {
     @State private var kind: CodexUsageWindowKind = .weekly
     @State private var category: UsageTokenCategory = .total
     @State private var hoveredDay: Date?
+    @State private var modelOrder: [String] = []
+    private var models: [String] { Set(store.days.flatMap { $0.tokensByModel.keys }).sorted() }
     private var rows: [QuotaEfficiencyDay] { store.days.filter { $0.kind == kind } }
     private var hovered: QuotaEfficiencyDay? {
         rows.first { Calendar.current.isDate($0.day, inSameDayAs: hoveredDay ?? .distantPast) }
     }
     private func rate(_ row: QuotaEfficiencyDay) -> Double { Double(category.value(row.tokens)) / row.percentagePoints }
     private var tint: Color { kind == .weekly ? MonitorTheme.token : MonitorTheme.accent }
+
+    private func modelColor(_ model: String) -> Color {
+        if model == "未知模型" { return .gray }
+        let index = modelOrder.firstIndex(of: model) ?? models.firstIndex(of: model) ?? 0
+        let palette: [Color] = [MonitorTheme.token, .orange, .teal, .pink, .purple, .green, .yellow, .cyan]
+        if index < palette.count { return palette[index] }
+        return Color(hue: (Double(index) * 0.618 + 0.59).truncatingRemainder(dividingBy: 1), saturation: 0.65, brightness: 0.9)
+    }
+    private func rememberModels() { modelOrder += models.filter { !modelOrder.contains($0) } }
+    private func modelRate(_ model: String, _ row: QuotaEfficiencyDay) -> Double {
+        Double(category.value(row.tokensByModel[model] ?? .init())) / row.percentagePoints
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -93,12 +107,18 @@ struct UsageQuotaTrend: View {
                 placeholder(store.isLoading ? "正在回溯本地 Codex 额度记录…" : "这段时间还没有可配对的额度变化记录")
             } else {
                 Chart(rows) { row in
-                    BarMark(x: .value("日期", row.day, unit: .day), y: .value("tok / 1%", rate(row)))
-                        .foregroundStyle(tint.gradient).cornerRadius(4)
+                    ForEach(models, id: \.self) { model in
+                        if modelRate(model, row) > 0 {
+                            BarMark(x: .value("日期", row.day, unit: .day), y: .value("tok / 1%", modelRate(model, row)))
+                                .foregroundStyle(by: .value("模型", model))
+                        }
+                    }
                     if let hovered, hovered.id == row.id {
                         RuleMark(x: .value("日期", row.day, unit: .day)).foregroundStyle(MonitorTheme.secondaryText.opacity(0.5))
                     }
                 }
+                .chartForegroundStyleScale(domain: models, range: models.map(modelColor))
+                .chartLegend(.hidden)
                 .chartXScale(domain: interval.start...interval.end)
                 .chartXAxis { AxisMarks(values: .stride(by: .day, count: interval.duration > 20 * 86_400 ? 4 : 2)) { value in
                     AxisValueLabel(format: .dateTime.month().day())
@@ -123,6 +143,21 @@ struct UsageQuotaTrend: View {
                 }
                 .frame(height: 180)
             }
+            if !rows.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), alignment: .leading)], alignment: .leading, spacing: 8) {
+                    ForEach(models, id: \.self) { model in
+                        HStack(spacing: 6) {
+                            Circle().fill(modelColor(model)).frame(width: 8, height: 8)
+                            Text(model).lineLimit(1).help(model)
+                            if let hovered {
+                                Text(usageCompact(modelRate(model, hovered))).monospacedDigit().foregroundStyle(MonitorTheme.secondaryText)
+                            }
+                        }.font(.caption)
+                    }
+                }
+                Text("颜色区分模型；每段 = 该模型 Tokens ÷ 当天共同观测的消耗百分点，叠加为每日总值。")
+                    .font(.caption2).foregroundStyle(MonitorTheme.secondaryText)
+            }
             Text("本地观测值 = 匹配区间的 Tokens ÷ 额度消耗百分点。跨日、重置或回退会重新取基线；未发生额度变化的尾段不计入。多模型、其他设备用量及额度取整会影响结果，并非固定兑换率。")
                 .font(.caption2).foregroundStyle(MonitorTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             DisclosureGroup("每日明细与样本量") {
@@ -141,11 +176,22 @@ struct UsageQuotaTrend: View {
                             Text(row.percentagePoints.formatted(.number.precision(.fractionLength(1)))).frame(width: 95, alignment: .trailing)
                             Text(Int(rate(row)).formatted()).frame(width: 100, alignment: .trailing)
                         }.monospacedDigit().padding(.vertical, 7)
+                        ForEach(models.filter { category.value(row.tokensByModel[$0] ?? .init()) > 0 }, id: \.self) { model in
+                            HStack(spacing: 6) {
+                                Circle().fill(modelColor(model)).frame(width: 6, height: 6)
+                                Text(model).frame(maxWidth: .infinity, alignment: .leading)
+                                Text(category.value(row.tokensByModel[model] ?? .init()).formatted()).frame(width: 105, alignment: .trailing)
+                                Text("共用当日额度").frame(width: 95, alignment: .trailing)
+                                Text(Int(modelRate(model, row)).formatted()).frame(width: 100, alignment: .trailing)
+                            }.foregroundStyle(MonitorTheme.secondaryText).monospacedDigit().padding(.bottom, 6)
+                        }
                     }
                 }.font(.caption)
             }.font(.caption)
         }
         .padding(16).usagePanel()
+        .onAppear { rememberModels() }
+        .onChange(of: store.days) { _ in rememberModels() }
     }
     private func placeholder(_ message: String) -> some View {
         VStack(spacing: 10) {

@@ -47,6 +47,20 @@ final class UsageMeasurementsTests: XCTestCase {
         XCTAssertEqual(rows.first?.tokensPerPercent ?? 0, 400, accuracy: 0.001)
         XCTAssertTrue(QuotaEfficiency.daily([one, sample(2, 1.2, 900)], calendar: calendar).isEmpty)
     }
+    func testModelContributionsUseSharedDenominatorAndExcludeUnmatchedTail() throws {
+        var a = sample(2, 10, 200); a.model = "gpt-6-sol"
+        var b = sample(3, 12, 400); b.model = "gpt-6.1-sol"
+        var c = sample(4, 13, 600); c.model = "gpt-6-sol"
+        var tail = sample(5, 13, 8_000); tail.model = "gpt-5.6-sol"
+        let row = try XCTUnwrap(QuotaEfficiency.daily([sample(1, 10, 99_000), a, b, c, tail], calendar: calendar).first)
+        XCTAssertEqual(row.tokensByModel["gpt-6-sol"]?.total, 800)
+        XCTAssertEqual(row.tokensByModel["gpt-6.1-sol"]?.total, 400)
+        XCTAssertNil(row.tokensByModel["gpt-5.6-sol"])
+        XCTAssertEqual(row.tokensByModel.values.reduce(0) { $0 + $1.total }, row.tokens.total)
+        let totalRate = row.tokensByModel.values.reduce(0.0) { $0 + Double($1.total) / row.percentagePoints }
+        XCTAssertEqual(totalRate, row.tokensPerPercent, accuracy: 0.001)
+    }
+
     func testTotalIncludesAllDisjointTokenCategoriesAndSpeedIsWeighted() throws {
         let events = [
             TokenEvent(timestamp: start, source: .codexCLI, model: "m", inputTokens: 100, outputTokens: 100,
@@ -91,21 +105,30 @@ final class UsageMeasurementsTests: XCTestCase {
                     "rate_limits": ["secondary": ["used_percent": percent, "window_minutes": 10_080, "resets_at": reset]]]]
             return try JSONSerialization.data(withJSONObject: row)
         }
-        var data = try line(1, 10, 100); data.append(10)
+        func context(_ model: String) throws -> Data {
+            var bytes = try JSONSerialization.data(withJSONObject: ["type": "turn_context", "payload": ["model": model]])
+            bytes.append(10); return bytes
+        }
+        var data = try context("gpt-6-sol")
+        data.append(try line(1, 10, 100)); data.append(10)
         data.append(try line(2, 10, 300)); data.append(10)
         data.append(try line(3, 11, 300)); data.append(10) // quota-only update must not repeat last_token_usage
         data.append(Data(repeating: 120, count: 1_100_000)); data.append(10)
+        data.append(try context("gpt-6.1-sol"))
         data.append(try line(4, 12, 500)) // incomplete record
         try data.write(to: file)
         let reader = CodexQuotaHistoryReader(directories: [directory])
         let interval = DateInterval(start: start, duration: 86_400)
         let rows = try reader.read(in: interval)
         XCTAssertEqual(rows.first?.tokens.total, 200)
+        XCTAssertEqual(rows.first?.tokensByModel["gpt-6-sol"]?.total, 200)
         XCTAssertEqual(rows.first?.percentagePoints, 1)
         XCTAssertEqual(try reader.read(in: interval), rows) // unchanged cache
         data.append(10); try data.write(to: file)
         let updated = try reader.read(in: interval)
         XCTAssertEqual(updated.first?.tokens.total, 400)
+        XCTAssertEqual(updated.first?.tokensByModel["gpt-6-sol"]?.total, 200)
+        XCTAssertEqual(updated.first?.tokensByModel["gpt-6.1-sol"]?.total, 200)
         XCTAssertEqual(updated.first?.percentagePoints, 2)
     }
 }
