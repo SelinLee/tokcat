@@ -10,7 +10,7 @@ EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
 VERSION="${TOKCAT_VERSION:-0.7.0}"
-BUILD_NUMBER="${TOKCAT_BUILD:-1}"
+BUILD_NUMBER="${TOKCAT_BUILD:-2}"
 
 DIST_DIR="$ROOT/dist"
 APP_DIR="$DIST_DIR/${APP_NAME}.app"
@@ -44,7 +44,8 @@ if [[ -z "${TRIPLE:-}" ]]; then
   esac
 fi
 
-BIN="$ROOT/.build/release/${EXEC_NAME}"
+BIN_DIR="$(swift build ${SWIFT_BUILD_ARGS[@]+"${SWIFT_BUILD_ARGS[@]}"} -c release --show-bin-path)"
+BIN="$BIN_DIR/${EXEC_NAME}"
 if [[ ! -x "$BIN" ]]; then
   # Fallback for triple-scoped build dirs used by some toolchains.
   CANDIDATE="$(find "$ROOT/.build" -type f -path "*/release/${EXEC_NAME}" -perm -111 2>/dev/null | head -1 || true)"

@@ -88,7 +88,7 @@ public final class AgentSessionMonitor {
                 defer { try? handle.close() }
                 var parser = bootstrap ? CodexSessionParser.bootstrap(at: info.url)
                     : (parsers[path] ?? CodexSessionParser.bootstrap(at: info.url))
-                if parser.isGuardianReview {
+                if parser.isInternalRun {
                     // Older versions could persist this internal run under the
                     // rollout filename instead of its session_meta ID.
                     let legacyID = info.url.deletingPathExtension().lastPathComponent
@@ -226,12 +226,12 @@ public final class AgentSessionMonitor {
         return snapshot(enabled: enabled)
     }
 
-    public func markCompletedRead(_ completions: [AgentViewingTracker.Completion], enabled: Set<AgentSource>) -> [AgentSession] {
-        for completion in completions {
-            guard let session = sessions[completion.id], enabled.contains(session.source),
-                  AgentViewingTracker.Completion(session) == completion else { continue }
-            sessions[completion.id]?.unread = false
-            if let updated = sessions[completion.id] { history.observe(updated, event: nil) }
+    public func markViewedRead(_ reminders: [AgentViewingTracker.Reminder], enabled: Set<AgentSource>) -> [AgentSession] {
+        for reminder in reminders {
+            guard let session = sessions[reminder.id], enabled.contains(session.source),
+                  AgentViewingTracker.Reminder(session) == reminder else { continue }
+            sessions[reminder.id]?.unread = false
+            if let updated = sessions[reminder.id] { history.observe(updated, event: nil) }
         }
         save()
         return snapshot(enabled: enabled)

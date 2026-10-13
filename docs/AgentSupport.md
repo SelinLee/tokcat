@@ -21,7 +21,9 @@ Waiting is visible only when the harness projects an active `ask_user_question` 
 
 ## What a task state means
 
-Completion refers to a reported turn end, not completion of the whole project or successful tests. Quiet logs do not prove completion. WorkBuddy and DeepSeek Harness supply session-level states, without invented per-turn start times. A source that explicitly reports ongoing work stays running even during a long tool call. Internal delegated runs are not listed separately.
+Completion refers to a reported turn end, not completion of the whole project or successful tests. Quiet logs do not prove completion. WorkBuddy and DeepSeek Harness supply session-level states, without invented per-turn start times. A source that explicitly reports ongoing work stays running even during a long tool call. Internal delegated runs are not listed separately. Codex records marked `thread_source: subagent` or carrying `source.subagent` metadata are excluded alongside guardian reviews; upgrading also removes their previously cached state dots and task rows. User-created conversations and forks remain separate.
+
+Unread completion and failure dots remain until read. Bringing the corresponding agent app to the foreground flashes its reminders for three continuous seconds, then marks them read and removes their menu-bar dots. Switching away restarts the countdown on the next visit. Reduced motion keeps the dots steady during the same countdown. Generic terminals and browsers are not mapped to an agent; their reminders can be marked read manually in Tokcat.
 
 Missing durations, tool counts or tokens remain unavailable. Activity-only sources do not claim to be running, waiting or completed. The monitor does not show estimated progress percentages without explicit step data.
 

@@ -5,9 +5,9 @@ final class AgentViewingTrackerTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_000)
     private func time(_ seconds: Double) -> Date { start.addingTimeInterval(seconds) }
     private func completed(_ id: String, at seconds: Double, source: AgentSource = .codexCLI,
-                           turn: String = "one") -> AgentSession {
+                           turn: String = "one", kind: AgentSessionEvent.Kind = .completed) -> AgentSession {
         var session = AgentSession(event: .init(sessionID: id, source: source,
-            timestamp: time(seconds), kind: .completed, turnID: turn))
+            timestamp: time(seconds), kind: kind, turnID: turn))
         session.unread = true
         return session
     }
@@ -82,19 +82,81 @@ final class AgentViewingTrackerTests: XCTestCase {
         XCTAssertEqual(restarted.nextDeadline, time(5))
         XCTAssertEqual(Set(restarted.flashingSince.keys), [newer.id])
         XCTAssertTrue(tracker.update(sessions: [newer, other], bundleIdentifier: "com.openai.codex", now: time(3)).acknowledgements.isEmpty)
-        XCTAssertEqual(tracker.update(sessions: [newer, other], bundleIdentifier: "com.openai.codex", now: time(5)).acknowledgements, [AgentViewingTracker.Completion(newer)!])
+        XCTAssertEqual(tracker.update(sessions: [newer, other], bundleIdentifier: "com.openai.codex", now: time(5)).acknowledgements, [AgentViewingTracker.Reminder(newer)!])
         var read = newer
         read.unread = false
         XCTAssertTrue(tracker.update(sessions: [read, other], bundleIdentifier: "com.openai.codex", now: time(6)).flashingSince.isEmpty)
     }
 
-    func testResumedOrFailedTaskCancelsItsCompletionCountdown() {
+    func testResumedTaskCancelsCountdownAndLaterFailureGetsFullThreeSeconds() {
         var tracker = AgentViewingTracker()
         var task = completed("task", at: 0)
         _ = tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(0))
         task.apply(.init(sessionID: "task", source: .codexCLI, timestamp: time(1), kind: .started, turnID: "two"))
         XCTAssertTrue(tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(3)).flashingSince.isEmpty)
         task.apply(.init(sessionID: "task", source: .codexCLI, timestamp: time(4), kind: .failed, turnID: "two"))
-        XCTAssertTrue(tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(10)).acknowledgements.isEmpty)
+        let observed = tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(10))
+        XCTAssertEqual(observed.flashingSince[task.id], time(10))
+        XCTAssertEqual(observed.nextDeadline, time(13))
+        XCTAssertTrue(observed.acknowledgements.isEmpty)
+        XCTAssertEqual(tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(13)).acknowledgements,
+                       [AgentViewingTracker.Reminder(task)!])
+    }
+
+    func testWorkBuddyAIFailureFlashesThenClearsOnlyInItsOwnForegroundApp() {
+        var tracker = AgentViewingTracker()
+        let failed = completed("failed", at: 0, source: .workBuddyAI, kind: .failed)
+        let other = completed("other", at: 0, kind: .failed)
+        let sessions = [failed, other]
+        XCTAssertTrue(tracker.update(sessions: sessions, bundleIdentifier: "com.google.Chrome", now: time(10)).flashingSince.isEmpty)
+        let focused = tracker.update(sessions: sessions, bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(20))
+        XCTAssertEqual(focused.flashingSince, [failed.id: time(20)])
+        XCTAssertEqual(focused.nextDeadline, time(23))
+        XCTAssertTrue(focused.acknowledgements.isEmpty)
+        XCTAssertTrue(tracker.update(sessions: sessions, bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(22.99)).acknowledgements.isEmpty)
+        let ready = tracker.update(sessions: sessions, bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(23))
+        XCTAssertEqual(ready.acknowledgements, [AgentViewingTracker.Reminder(failed)!])
+        XCTAssertNil(ready.nextDeadline)
+        var read = failed
+        read.unread = false
+        let cleared = tracker.update(sessions: [read, other], bundleIdentifier: "com.workbuddy.workbuddy-ai", now: time(24))
+        XCTAssertTrue(cleared.flashingSince.isEmpty)
+        XCTAssertTrue(cleared.acknowledgements.isEmpty)
+    }
+
+    func testInterruptedFailureViewingRestartsItsCountdown() {
+        var tracker = AgentViewingTracker()
+        let failed = completed("failed", at: 0, kind: .failed)
+        _ = tracker.update(sessions: [failed], bundleIdentifier: "com.openai.codex", now: time(10))
+        XCTAssertTrue(tracker.update(sessions: [failed], bundleIdentifier: "com.apple.Terminal", now: time(12)).flashingSince.isEmpty)
+        let reentered = tracker.update(sessions: [failed], bundleIdentifier: "com.openai.codex", now: time(20))
+        XCTAssertEqual(reentered.flashingSince[failed.id], time(20))
+        XCTAssertEqual(reentered.nextDeadline, time(23))
+        XCTAssertTrue(tracker.update(sessions: [failed], bundleIdentifier: "com.openai.codex", now: time(22.99)).acknowledgements.isEmpty)
+        XCTAssertEqual(tracker.update(sessions: [failed], bundleIdentifier: "com.openai.codex", now: time(23)).acknowledgements,
+                       [AgentViewingTracker.Reminder(failed)!])
+    }
+
+    func testResultStateChangeRestartsCountdownEvenWithSameTurnAndEndTime() {
+        var tracker = AgentViewingTracker()
+        var task = completed("task", at: 0)
+        _ = tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(0))
+        task.state = .failed
+        let changed = tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(2))
+        XCTAssertEqual(changed.flashingSince[task.id], time(2))
+        XCTAssertEqual(changed.nextDeadline, time(5))
+        XCTAssertTrue(tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(3)).acknowledgements.isEmpty)
+        XCTAssertEqual(tracker.update(sessions: [task], bundleIdentifier: "com.openai.codex", now: time(5)).acknowledgements,
+                       [AgentViewingTracker.Reminder(task)!])
+    }
+
+    func testWaitingRunningUnknownAndInterruptedStatesAreNotAcknowledged() {
+        var tracker = AgentViewingTracker()
+        let sessions = [AgentSessionEvent.Kind.started, .waitingForInput, .waitingForApproval, .interrupted, .metadata]
+            .map { completed($0.rawValue, at: 0, kind: $0) }
+        let update = tracker.update(sessions: sessions, bundleIdentifier: "com.openai.codex", now: time(20))
+        XCTAssertTrue(update.flashingSince.isEmpty)
+        XCTAssertTrue(update.acknowledgements.isEmpty)
+        XCTAssertNil(update.nextDeadline)
     }
 }

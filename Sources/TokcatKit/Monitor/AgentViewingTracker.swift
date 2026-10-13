@@ -1,34 +1,36 @@
 import Foundation
 
-/// Each completed reminder gets three seconds of visibility in its foreground agent.
+/// Each unread completion or failure gets three seconds of visibility in its foreground agent.
 /// Generic terminals/editors are intentionally not mapped: focus there cannot identify an agent.
 public struct AgentViewingTracker {
     public static let acknowledgementDelay: TimeInterval = 3
     private var source: AgentSource?
     private struct Pending {
-        var completion: Completion
+        var reminder: Reminder
         var seenAt: Date
     }
     private var pending: [String: Pending] = [:]
     public init() {}
 
-    /// Identity includes the completed turn so a queued acknowledgement cannot
+    /// Identity includes the turn, result state and end time so a queued acknowledgement cannot
     /// clear a newer result from the same conversation.
-    public struct Completion: Equatable, Sendable {
+    public struct Reminder: Equatable, Sendable {
         public let id: String
         public let turnID: String?
-        public let completedAt: Date
+        public let state: AgentSessionState
+        public let endedAt: Date
 
         public init?(_ session: AgentSession) {
-            guard session.state == .completed, session.unread else { return nil }
+            guard session.state == .completed || session.state == .failed, session.unread else { return nil }
             id = session.id
             turnID = session.turnID
-            completedAt = session.endedAt ?? session.lastActivityAt
+            state = session.state
+            endedAt = session.endedAt ?? session.lastActivityAt
         }
     }
 
     public struct Update: Sendable {
-        public var acknowledgements: [Completion]
+        public var acknowledgements: [Reminder]
         public var flashingSince: [String: Date]
         public var nextDeadline: Date?
     }
@@ -62,19 +64,19 @@ public struct AgentViewingTracker {
         activated(bundleIdentifier: bundleIdentifier, now: now)
         var visible: [String: Pending] = [:]
         for session in sessions where session.source == source {
-            guard let completion = Completion(session) else { continue }
-            if let previous = pending[completion.id], previous.completion == completion {
-                visible[completion.id] = previous
+            guard let reminder = Reminder(session) else { continue }
+            if let previous = pending[reminder.id], previous.reminder == reminder {
+                visible[reminder.id] = previous
             } else {
-                visible[completion.id] = Pending(completion: completion, seenAt: now)
+                visible[reminder.id] = Pending(reminder: reminder, seenAt: now)
             }
         }
         pending = visible
         var result = Update(acknowledgements: [], flashingSince: [:], nextDeadline: nil)
         for item in pending.values {
-            result.flashingSince[item.completion.id] = item.seenAt
+            result.flashingSince[item.reminder.id] = item.seenAt
             let deadline = item.seenAt.addingTimeInterval(Self.acknowledgementDelay)
-            if now >= deadline { result.acknowledgements.append(item.completion) }
+            if now >= deadline { result.acknowledgements.append(item.reminder) }
             else { result.nextDeadline = min(result.nextDeadline ?? deadline, deadline) }
         }
         return result

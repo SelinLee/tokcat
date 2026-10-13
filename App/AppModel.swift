@@ -19,6 +19,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var usageSnapshotCache: UsageSnapshot = .empty(period: .day, groupBy: .provider)
     @Published private(set) var isUsageStatsLoading = false
     /// In-memory raw events for the last loaded range (not @Published — large arrays).
+    @Published private(set) var usageDate: Date = Date()
+    private var usageFollowsToday = true
     private var usageEvents: [TokenEvent] = []
     private var usageEventsRange: DateInterval?
     private var usageSnapshotMemo: [String: UsageSnapshot] = [:]
@@ -65,7 +67,7 @@ final class AppModel: ObservableObject {
     private var isSessionPolling = false
     private var agentViewing = AgentViewingTracker()
     private var agentActivationObserver: NSObjectProtocol?
-    private var viewedCompletionTimer: Timer?
+    private var viewedReminderTimer: Timer?
     @Published var sessionMonitoringMessage: String?
     private var timer: Timer?
     private var menuBarAnimTimer: Timer?
@@ -208,8 +210,8 @@ final class AppModel: ObservableObject {
         liveMetrics.setCodexUsage(nil)
         if let agentActivationObserver { NSWorkspace.shared.notificationCenter.removeObserver(agentActivationObserver) }
         agentActivationObserver = nil
-        viewedCompletionTimer?.invalidate()
-        viewedCompletionTimer = nil
+        viewedReminderTimer?.invalidate()
+        viewedReminderTimer = nil
         sessionTimer?.invalidate()
         sessionTimer = nil
         timer?.invalidate()
@@ -657,7 +659,7 @@ final class AppModel: ObservableObject {
                 self.liveMetrics.setAgentSessions(result.sessions.filter { self.settings.enabledAgents.contains($0.source) })
                 self.taskMonitor.update(sessions: result.sessions, tasks: result.tasks, enabled: self.settings.enabledAgents)
                 self.refreshMenuBarActivity()
-                self.acknowledgeViewedCompletions()
+                self.acknowledgeViewedReminders()
                 if self.settings.notifyAgentEvents {
                     for session in result.alerts where self.settings.enabledAgents.contains(session.source) {
                         self.notify(session)
@@ -683,35 +685,35 @@ final class AppModel: ObservableObject {
 
     private func agentActivated(bundleIdentifier: String?, now: Date) {
         agentViewing.activated(bundleIdentifier: bundleIdentifier, now: now)
-        acknowledgeViewedCompletions()
+        acknowledgeViewedReminders()
     }
 
-    private func acknowledgeViewedCompletions() {
+    private func acknowledgeViewedReminders() {
         let update = agentViewing.update(sessions: liveMetrics.agentSessions,
             bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, now: Date())
-        liveMetrics.setCompletionFlashingSince(update.flashingSince)
-        viewedCompletionTimer?.invalidate()
-        viewedCompletionTimer = nil
+        liveMetrics.setReminderFlashingSince(update.flashingSince)
+        viewedReminderTimer?.invalidate()
+        viewedReminderTimer = nil
         if let deadline = update.nextDeadline {
-            // Each newly observed completion gets a full three seconds, even if
+            // Each newly observed completion or failure gets a full three seconds, even if
             // its agent has stayed in the foreground throughout the task.
             let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
-                Task { @MainActor in self?.acknowledgeViewedCompletions() }
+                Task { @MainActor in self?.acknowledgeViewedReminders() }
             }
             RunLoop.main.add(timer, forMode: .common)
-            viewedCompletionTimer = timer
+            viewedReminderTimer = timer
         }
         guard !update.acknowledgements.isEmpty else { return }
         let enabled = settings.enabledAgents
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            let sessions = self.sessionMonitor.markCompletedRead(update.acknowledgements, enabled: enabled)
+            let sessions = self.sessionMonitor.markViewedRead(update.acknowledgements, enabled: enabled)
             let tasks = self.sessionMonitor.taskSnapshot(enabled: enabled)
             DispatchQueue.main.async {
                 self.liveMetrics.setAgentSessions(sessions.filter { self.settings.enabledAgents.contains($0.source) })
                 self.taskMonitor.update(sessions: sessions, tasks: tasks, enabled: self.settings.enabledAgents)
                 self.refreshMenuBarActivity()
-                self.acknowledgeViewedCompletions()
+                self.acknowledgeViewedReminders()
             }
         }
     }
@@ -818,145 +820,75 @@ final class AppModel: ObservableObject {
     // MARK: - Usage dashboard
 
     /// Latest cached snapshot. Call `refreshUsageStats` from appear/change handlers — not from view bodies.
-    func usageSnapshot(period: UsagePeriod, groupBy: UsageGroupBy) -> UsageSnapshot {
-        if usagePeriod == period, usageGroupBy == groupBy {
+    func usageSnapshot(period: UsagePeriod, groupBy: UsageGroupBy, date: Date = Date()) -> UsageSnapshot {
+        let interval = period.dateInterval(containing: date)
+        if usagePeriod == period, usageGroupBy == groupBy, usageSnapshotCache.interval == interval {
             return usageSnapshotCache
         }
-        let key = usageCacheKey(period: period, groupBy: groupBy)
-        if let memo = usageSnapshotMemo[key] {
-            return memo
-        }
-        // Prefer empty placeholder over recomputing mid-render on the main thread.
-        return .empty(period: period, groupBy: groupBy)
+        return usageSnapshotMemo[usageCacheKey(period: period, groupBy: groupBy, date: date)]
+            ?? .empty(period: period, groupBy: groupBy, now: date)
     }
 
-    /// Reloads / re-aggregates usage for the stats dashboard off the main thread.
-    /// Period / group switches prefer memo + in-memory re-aggregation; SQLite is only hit
-    /// when the cached event window does not cover the requested range.
+    /// Date is part of every cache key. Generation changes also invalidate in-flight
+    /// workers on memo hits (rapid previous/next navigation must not paint stale data).
     func refreshUsageStats(
         period: UsagePeriod? = nil,
         groupBy: UsageGroupBy? = nil,
+        date: Date? = nil,
         forceReloadEvents: Bool = false
     ) {
         let resolvedPeriod = period ?? usagePeriod
         let resolvedGroupBy = groupBy ?? usageGroupBy
-        if usagePeriod != resolvedPeriod { usagePeriod = resolvedPeriod }
-        if usageGroupBy != resolvedGroupBy { usageGroupBy = resolvedGroupBy }
-
-        let memoKey = usageCacheKey(period: resolvedPeriod, groupBy: resolvedGroupBy)
-        if let memo = usageSnapshotMemo[memoKey] {
-            // Instant paint for previously visited 日/周/月 × 分组 combos.
-            if usageSnapshotCache != memo {
-                usageSnapshotCache = memo
-            }
-            if !forceReloadEvents {
-                return
-            }
-        }
-
-        let interval = resolvedPeriod.dateInterval(containing: Date())
-        // Prefetch the whole calendar month so day/week flips stay in-memory.
-        let monthInterval = UsagePeriod.month.dateInterval(containing: Date())
-        let desiredStart = min(interval.start, monthInterval.start)
-        let desiredEnd = max(interval.end, monthInterval.end)
-        let loadFrom = desiredStart.addingTimeInterval(-1)
-        let loadTo = desiredEnd.addingTimeInterval(1)
-
-        let needsEventReload: Bool
-        if forceReloadEvents || usageEventsRange == nil {
-            needsEventReload = true
-        } else if let range = usageEventsRange {
-            needsEventReload = range.start > desiredStart || range.end < desiredEnd
-        } else {
-            needsEventReload = true
-        }
-
-        let cachedEvents = usageEvents
-        let cachedRange = usageEventsRange
-        let pricing = settings.pricingTable
-        let recentFallback = recentEvents
-        let store = self.store
-
+        if let date { usageFollowsToday = Calendar.current.isDateInToday(date) }
+        let resolvedDate = date ?? (usageFollowsToday ? Date() : usageDate)
+        usagePeriod = resolvedPeriod; usageGroupBy = resolvedGroupBy; usageDate = resolvedDate
         usageRefreshGeneration &+= 1
         let generation = usageRefreshGeneration
-        // Only show spinner when we cannot paint from memo.
-        if usageSnapshotMemo[memoKey] == nil {
-            isUsageStatsLoading = true
+        let memoKey = usageCacheKey(period: resolvedPeriod, groupBy: resolvedGroupBy, date: resolvedDate)
+        if let memo = usageSnapshotMemo[memoKey], !forceReloadEvents {
+            usageSnapshotCache = memo; isUsageStatsLoading = false
+            return
         }
-
+        let interval = resolvedPeriod.dateInterval(containing: resolvedDate)
+        let month = UsagePeriod.month.dateInterval(containing: resolvedDate)
+        let desired = DateInterval(start: min(interval.start, month.start), end: max(interval.end, month.end))
+        let needsReload = forceReloadEvents || usageEventsRange.map {
+            $0.start > desired.start || $0.end < desired.end
+        } ?? true
+        let cached = usageEvents
+        let cachedRange = usageEventsRange
+        let pricing = settings.pricingTable
+        let fallback = recentEvents
+        let store = self.store
+        isUsageStatsLoading = true
         usageWorkQueue.async { [weak self] in
-            guard let self else { return }
             let events: [TokenEvent]
-            let eventRange: DateInterval
-            if needsEventReload {
-                if let store, let loaded = try? store.loadTokenEvents(from: loadFrom, to: loadTo) {
-                    events = loaded
-                } else {
-                    events = recentFallback.filter {
-                        $0.timestamp >= desiredStart && $0.timestamp < desiredEnd
-                    }
+            if needsReload {
+                events = (try? store?.loadTokenEvents(from: desired.start, to: desired.end)) ?? fallback.filter {
+                    $0.timestamp >= desired.start && $0.timestamp < desired.end
                 }
-                eventRange = DateInterval(start: loadFrom, end: loadTo)
-            } else {
-                events = cachedEvents
-                eventRange = cachedRange ?? DateInterval(start: loadFrom, end: loadTo)
+            } else { events = cached }
+            var warm: [String: UsageSnapshot] = [:]
+            // Only prewarm covered ranges; a week at a month boundary may extend outside the month.
+            for grouping in UsageGroupBy.allCases {
+                let value = UsageStats.snapshot(events: events, period: resolvedPeriod,
+                    groupBy: grouping, pricingTable: pricing, now: resolvedDate)
+                warm["\(resolvedPeriod.rawValue)|\(grouping.rawValue)|\(interval.start.timeIntervalSince1970)"] = value
             }
-
-            let snapshot = UsageStats.snapshot(
-                events: events,
-                period: resolvedPeriod,
-                groupBy: resolvedGroupBy,
-                pricingTable: pricing
-            )
-
-            // Warm sibling memos while events are hot in this worker.
-            func cacheKey(_ period: UsagePeriod, _ groupBy: UsageGroupBy) -> String {
-                "\(period.rawValue)|\(groupBy.rawValue)"
-            }
-            var warm: [String: UsageSnapshot] = [
-                cacheKey(resolvedPeriod, resolvedGroupBy): snapshot
-            ]
-            // Prefetch other groupings for this period (中转站/模型/Agent).
-            for gb in UsageGroupBy.allCases where gb != resolvedGroupBy {
-                warm[cacheKey(resolvedPeriod, gb)] = UsageStats.snapshot(
-                    events: events,
-                    period: resolvedPeriod,
-                    groupBy: gb,
-                    pricingTable: pricing
-                )
-            }
-            // Prefetch other periods with the active grouping (日/周/月).
-            // Safe because the event window covers the whole calendar month.
-            for p in UsagePeriod.allCases where p != resolvedPeriod {
-                warm[cacheKey(p, resolvedGroupBy)] = UsageStats.snapshot(
-                    events: events,
-                    period: p,
-                    groupBy: resolvedGroupBy,
-                    pricingTable: pricing
-                )
-            }
-
             DispatchQueue.main.async {
-                guard generation == self.usageRefreshGeneration else { return }
-                if needsEventReload {
-                    self.usageEvents = events
-                    self.usageEventsRange = eventRange
-                }
-                for (key, value) in warm {
-                    self.usageSnapshotMemo[key] = value
-                }
-                if self.usageSnapshotMemo.count > 18 {
-                    let trimmed = self.usageSnapshotMemo.sorted { $0.key < $1.key }.suffix(12)
-                    self.usageSnapshotMemo = Dictionary(uniqueKeysWithValues: trimmed.map { ($0.key, $0.value) })
-                }
-                self.usageSnapshotCache = snapshot
+                guard let self, generation == self.usageRefreshGeneration else { return }
+                self.usageEvents = events
+                self.usageEventsRange = needsReload ? desired : cachedRange
+                if self.usageSnapshotMemo.count > 60 { self.usageSnapshotMemo.removeAll() }
+                self.usageSnapshotMemo.merge(warm) { _, new in new }
+                self.usageSnapshotCache = warm[memoKey] ?? .empty(period: resolvedPeriod, groupBy: resolvedGroupBy, now: resolvedDate)
                 self.isUsageStatsLoading = false
             }
         }
     }
 
-    private func usageCacheKey(period: UsagePeriod, groupBy: UsageGroupBy) -> String {
-        "\(period.rawValue)|\(groupBy.rawValue)"
+    private func usageCacheKey(period: UsagePeriod, groupBy: UsageGroupBy, date: Date) -> String {
+        "\(period.rawValue)|\(groupBy.rawValue)|\(period.dateInterval(containing: date).start.timeIntervalSince1970)"
     }
 
     private func invalidateUsageCaches(keepCurrentSnapshot: Bool) {

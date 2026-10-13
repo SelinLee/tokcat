@@ -97,6 +97,7 @@ public struct UsageSeriesPoint: Identifiable, Equatable, Sendable {
     public var bucketStart: Date
     public var tokens: Int
     public var costUSD: Double
+    public var speed: UsageSpeed = .init()
 
     public init(bucketStart: Date, tokens: Int, costUSD: Double) {
         self.bucketStart = bucketStart
@@ -118,6 +119,7 @@ public struct UsageBreakdownItem: Identifiable, Equatable, Sendable {
     public var rateLabel: String?
     /// Distinct models contributing to this row (for multi-model provider groups).
     public var modelCount: Int
+    public var speed: UsageSpeed = .init()
 
     public init(
         key: String,
@@ -154,6 +156,8 @@ public struct UsageSnapshot: Equatable, Sendable {
     /// Event rows in range (for subtitle / empty states without re-scanning raw events).
     public var eventCount: Int
     public var estimatedEventCount: Int
+    public var tokenCounts: UsageTokenCounts = .init()
+    public var speed: UsageSpeed = .init()
 
     public init(
         period: UsagePeriod,
@@ -242,7 +246,7 @@ public enum UsageStats {
 
         for event in inRange {
             let (key, display) = groupKey(for: event, groupBy: groupBy, pricingTable: pricingTable)
-            let tokens = event.inputTokens + event.outputTokens
+            let tokens = event.totalTokens
             var total = groupTotals[key] ?? (display, 0, 0, 0, 0, Set<String>(), [:], 0, 0)
             total.tokens += tokens
             total.cost += event.costUSD
@@ -321,7 +325,7 @@ public enum UsageStats {
             )
         }
 
-        let breakdown = sortedKeys.map { key -> UsageBreakdownItem in
+        var breakdown = sortedKeys.map { key -> UsageBreakdownItem in
             let meta = groupTotals[key]!
             return UsageBreakdownItem(
                 key: key,
@@ -345,14 +349,14 @@ public enum UsageStats {
         var outputTokens = 0
         var estimatedEventCount = 0
         for event in inRange {
-            totalTokens += event.inputTokens + event.outputTokens
+            totalTokens += event.totalTokens
             totalCost += event.costUSD
             inputTokens += event.inputTokens
             outputTokens += event.outputTokens
             if event.costIsEstimated { estimatedEventCount += 1 }
         }
 
-        return UsageSnapshot(
+        var snapshot = UsageSnapshot(
             period: period,
             groupBy: groupBy,
             interval: interval,
@@ -365,6 +369,27 @@ public enum UsageStats {
             eventCount: inRange.count,
             estimatedEventCount: estimatedEventCount
         )
+        var speeds: [String: UsageSpeed] = [:]
+        var bucketSpeeds: [String: [Date: UsageSpeed]] = [:]
+        let leading = Set(leadingKeys)
+        for event in inRange {
+            snapshot.tokenCounts = snapshot.tokenCounts + UsageTokenCounts(event)
+            snapshot.speed.record(event)
+            let key = groupKey(for: event, groupBy: groupBy, pricingTable: pricingTable).key
+            speeds[key, default: .init()].record(event)
+            let seriesKey = leading.contains(key) ? key : "__other__"
+            if let index = bucketIndex(for: event.timestamp, in: buckets, calendar: calendar) {
+                bucketSpeeds[seriesKey, default: [:]][buckets[index], default: .init()].record(event)
+            }
+        }
+        for index in breakdown.indices { breakdown[index].speed = speeds[breakdown[index].key] ?? .init() }
+        for index in series.indices {
+            for point in series[index].points.indices {
+                series[index].points[point].speed = bucketSpeeds[series[index].key]?[series[index].points[point].bucketStart] ?? .init()
+            }
+        }
+        snapshot.series = series; snapshot.breakdown = breakdown
+        return snapshot
     }
 
     // MARK: - Internals

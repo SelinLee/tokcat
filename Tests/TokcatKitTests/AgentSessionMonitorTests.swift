@@ -158,7 +158,7 @@ final class AgentSessionMonitorTests: XCTestCase {
         XCTAssertEqual(restored.tasks, initial.tasks)
     }
 
-    func testViewedAgentAcknowledgesOnlyItsCompletedTasksAndPersists() throws {
+    func testViewedAgentAcknowledgesCompletedAndFailedTasksAndPersists() throws {
         let (logs, support, _) = try fixture()
         let now = Date()
         func session(_ id: String, _ source: AgentSource, _ state: AgentSessionEvent.Kind, _ age: Double) -> AgentSession {
@@ -173,12 +173,19 @@ final class AgentSessionMonitorTests: XCTestCase {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         try JSONEncoder().encode(saved).write(to: support.appendingPathComponent("agent-sessions.json"))
         let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
-        let updated = monitor.markCompletedRead([try XCTUnwrap(AgentViewingTracker.Completion(saved[0]))], enabled: [.workBuddy, .codexCLI])
-        XCTAssertFalse(try XCTUnwrap(updated.first { $0.sessionID == "done" }).unread)
-        XCTAssertTrue(updated.filter { $0.sessionID != "done" }.allSatisfy(\.unread))
+        let reminders = try [saved[0], saved[1]].map { try XCTUnwrap(AgentViewingTracker.Reminder($0)) }
+        let updated = monitor.markViewedRead(reminders, enabled: [.workBuddy, .codexCLI])
+        for id in ["done", "failed"] {
+            let read = try XCTUnwrap(updated.first { $0.sessionID == id })
+            XCTAssertFalse(read.unread)
+            XCTAssertFalse(read.showsMenuBarDot(at: now))
+        }
+        XCTAssertTrue(updated.filter { $0.sessionID != "done" && $0.sessionID != "failed" }.allSatisfy(\.unread))
         let restart = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
-        XCTAssertFalse(try XCTUnwrap(restart.snapshot(enabled: [.workBuddy]).first { $0.sessionID == "done" }).unread)
-        XCTAssertFalse(try XCTUnwrap(restart.taskSnapshot(enabled: [.workBuddy]).first { $0.session.sessionID == "done" }).session.unread)
+        for id in ["done", "failed"] {
+            XCTAssertFalse(try XCTUnwrap(restart.snapshot(enabled: [.workBuddy]).first { $0.sessionID == id }).unread)
+            XCTAssertFalse(try XCTUnwrap(restart.taskSnapshot(enabled: [.workBuddy]).first { $0.session.sessionID == id }).session.unread)
+        }
     }
 
     func testQueuedAcknowledgementCannotClearANewerCompletionInTheSameConversation() throws {
@@ -187,7 +194,7 @@ final class AgentSessionMonitorTests: XCTestCase {
         var old = AgentSession(event: .init(sessionID: "same", source: .codexCLI,
             timestamp: now.addingTimeInterval(-10), kind: .completed, turnID: "one"))
         old.unread = true
-        let stale = try XCTUnwrap(AgentViewingTracker.Completion(old))
+        let stale = try XCTUnwrap(AgentViewingTracker.Reminder(old))
         var newer = old
         newer.turnID = "two"
         newer.endedAt = now
@@ -195,8 +202,27 @@ final class AgentSessionMonitorTests: XCTestCase {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         try JSONEncoder().encode([newer]).write(to: support.appendingPathComponent("agent-sessions.json"))
         let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
-        XCTAssertTrue(try XCTUnwrap(monitor.markCompletedRead([stale], enabled: [.codexCLI]).first).unread)
-        let current = try XCTUnwrap(AgentViewingTracker.Completion(newer))
-        XCTAssertFalse(try XCTUnwrap(monitor.markCompletedRead([current], enabled: [.codexCLI]).first).unread)
+        XCTAssertTrue(try XCTUnwrap(monitor.markViewedRead([stale], enabled: [.codexCLI]).first).unread)
+        let current = try XCTUnwrap(AgentViewingTracker.Reminder(newer))
+        XCTAssertFalse(try XCTUnwrap(monitor.markViewedRead([current], enabled: [.codexCLI]).first).unread)
+    }
+
+    func testQueuedCompletionAcknowledgementCannotClearAFailureWithSameTurnAndEndTime() throws {
+        let (logs, support, _) = try fixture()
+        let now = Date()
+        var completed = AgentSession(event: .init(sessionID: "same", source: .codexCLI,
+            timestamp: now, kind: .completed, turnID: "one"))
+        completed.unread = true
+        let stale = try XCTUnwrap(AgentViewingTracker.Reminder(completed))
+        var failed = completed
+        failed.state = .failed
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try JSONEncoder().encode([failed]).write(to: support.appendingPathComponent("agent-sessions.json"))
+        let monitor = AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
+        XCTAssertTrue(try XCTUnwrap(monitor.markViewedRead([stale], enabled: [.codexCLI]).first).unread)
+        let current = try XCTUnwrap(AgentViewingTracker.Reminder(failed))
+        XCTAssertTrue(monitor.markViewedRead([current], enabled: []).isEmpty)
+        XCTAssertTrue(try XCTUnwrap(monitor.snapshot(enabled: [.codexCLI]).first).unread)
+        XCTAssertFalse(try XCTUnwrap(monitor.markViewedRead([current], enabled: [.codexCLI]).first).unread)
     }
 }

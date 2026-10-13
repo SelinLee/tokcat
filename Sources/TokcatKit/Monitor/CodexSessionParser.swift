@@ -7,6 +7,9 @@ public struct CodexSessionParser {
     public var turnID: String?
     /// Guardian review runs are internal checks attached to another task.
     public private(set) var isGuardianReview = false
+    /// Delegated agents are part of their parent conversation, not separate user tasks.
+    public private(set) var isSubagent = false
+    public var isInternalRun: Bool { isGuardianReview || isSubagent }
     private var modelName: String?
     private var pendingQuestions: Set<String> = []
 
@@ -25,7 +28,7 @@ public struct CodexSessionParser {
                 if let end = prefix.firstIndex(of: 10) {
                     var parser = CodexSessionParser(sessionID: filename)
                     _ = parser.parse(prefix.prefix(upTo: end))
-                    if parser.sessionID != filename || parser.isGuardianReview { return parser }
+                    if parser.sessionID != filename || parser.isInternalRun { return parser }
                     break
                 }
             }
@@ -45,8 +48,12 @@ public struct CodexSessionParser {
             sessionID = payload["id"] as? String ?? payload["session_id"] as? String ?? sessionID
             projectPath = payload["cwd"] as? String
             isGuardianReview = payload["thread_source"] as? String == "guardian_review"
+            let source = payload["source"] as? [String: Any]
+            isSubagent = payload["thread_source"] as? String == "subagent"
+                || (source?["subagent"] != nil && !(source?["subagent"] is NSNull))
             return nil
         }
+        guard !isInternalRun else { return nil }
         if type == "turn_context" {
             projectPath = payload["cwd"] as? String ?? projectPath
             turnID = payload["turn_id"] as? String ?? turnID

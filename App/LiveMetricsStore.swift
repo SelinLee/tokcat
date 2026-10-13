@@ -14,10 +14,10 @@ final class LiveMetricsStore: ObservableObject {
     @Published private(set) var codexUsage: CodexUsageSnapshot?
 
     @Published private(set) var agentSessions: [AgentSession] = []
-    @Published private(set) var completionFlashingSince: [String: Date] = [:]
+    @Published private(set) var reminderFlashingSince: [String: Date] = [:]
 
-    func setCompletionFlashingSince(_ value: [String: Date]) {
-        if completionFlashingSince != value { completionFlashingSince = value }
+    func setReminderFlashingSince(_ value: [String: Date]) {
+        if reminderFlashingSince != value { reminderFlashingSince = value }
     }
 
     func setAgentSessions(_ sessions: [AgentSession]) {

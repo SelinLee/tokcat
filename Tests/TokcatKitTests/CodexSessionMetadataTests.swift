@@ -118,4 +118,56 @@ final class CodexSessionMetadataTests: XCTestCase {
                                            recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil)
         XCTAssertEqual(restored.snapshot(enabled: [.codexCLI]).map(\.sessionID), ["user"])
     }
+    func testSubagentMetadataVariantsWithoutHidingUserForks() throws {
+        let variants: [([String: Any], Bool)] = [
+            (["thread_source": "subagent"], true),
+            (["source": ["subagent": ["thread_spawn": ["parent_thread_id": "parent", "depth": 1]]]], true),
+            (["source": ["subagent": "compact"]], true),
+            (["thread_source": "user", "source": "vscode", "parent_thread_id": "parent"], false),
+            (["source": "cli"], false)
+        ]
+        for (metadata, hidden) in variants {
+            var parser = CodexSessionParser(sessionID: "test")
+            _ = parser.parse(try JSONSerialization.data(withJSONObject: ["type": "session_meta", "payload": metadata]))
+            XCTAssertEqual(parser.isInternalRun, hidden)
+            let event = parser.parse(try JSONSerialization.data(withJSONObject: ["type": "event_msg",
+                "timestamp": ISO8601DateFormatter().string(from: Date()), "payload": ["type": "task_started"]]))
+            XCTAssertEqual(event == nil, hidden)
+        }
+    }
+
+    func testThreeConversationsWithTwoSubagentsStayThreeAfterRestart() throws {
+        let root = try directory(), logs = root.appendingPathComponent("sessions"), support = root.appendingPathComponent("support")
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        let ids = ["user1", "user2", "user3", "child1", "child2"]
+        let saved = ids.map { AgentSession(event: .init(sessionID: $0, source: .codexCLI, timestamp: now, kind: .started)) }
+        try JSONEncoder().encode(saved).write(to: support.appendingPathComponent("agent-sessions.json"))
+        try JSONEncoder().encode(saved.map { AgentTaskRecord(session: $0) }).write(to: support.appendingPathComponent("agent-task-history.json"))
+        for id in ids {
+            var meta: [String: Any] = ["id": id, "cwd": "/same-project", "source": "vscode", "thread_source": "user"]
+            if id == "child1" { meta["thread_source"] = "subagent" }
+            if id == "child2" { meta["source"] = ["subagent": ["thread_spawn": ["parent_thread_id": "user1"]]] }
+            let rows: [[String: Any]] = [
+                ["type": "session_meta", "payload": meta],
+                ["type": "event_msg", "timestamp": ISO8601DateFormatter().string(from: now), "payload": ["type": "task_started"]]
+            ]
+            var data = Data()
+            for row in rows { data.append(try JSONSerialization.data(withJSONObject: row)); data.append(10) }
+            try data.write(to: logs.appendingPathComponent("rollout-\(id).jsonl"))
+        }
+        func monitor() -> AgentSessionMonitor {
+            AgentSessionMonitor(codexDirectory: logs, supportDirectory: support, recentRoots: [],
+                workBuddyDatabase: nil, workBuddyAIDatabase: nil, deepSeekHarnessDirectories: [])
+        }
+        let instance = monitor()
+        let result = instance.poll(enabled: [.codexCLI], now: now)
+        XCTAssertEqual(Set(result.sessions.map(\.sessionID)), Set(ids.prefix(3)))
+        XCTAssertEqual(result.tasks.count, 3)
+        XCTAssertTrue(result.alerts.isEmpty)
+        XCTAssertEqual(instance.poll(enabled: [.codexCLI], now: now).sessions.count, 3)
+        XCTAssertEqual(monitor().snapshot(enabled: [.codexCLI]).count, 3)
+    }
+
 }

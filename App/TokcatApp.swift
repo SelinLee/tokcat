@@ -6,6 +6,12 @@ import AppKit
 struct TokcatLauncher {
     @MainActor static func main() {
         #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-usage-dashboard"),
+           CommandLine.arguments.count > index + 1 {
+            do { try StatsDashboardPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
+            return
+        }
         if CommandLine.arguments.contains("--verify-companion-placement") {
             do { try DesktopCompanionPlacementCheck.run() }
             catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
@@ -85,7 +91,7 @@ private struct MenuBarLabelView: View {
                 result = SessionMenuBarRenderer.image(icon: icon,
                     sessions: live.agentSessions, phase: live.menuBarActivity.phase, reduceMotion: reduceMotion,
                     textBounds: MenuBarStatusRenderer.textVerticalBounds(in: icon, settings: model.settings),
-                    completionFlashingSince: live.completionFlashingSince)
+                    reminderFlashingSince: live.reminderFlashingSince)
             }
             return result
         }()
