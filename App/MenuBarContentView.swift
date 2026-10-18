@@ -547,6 +547,9 @@ struct MenuBarPanelLayout<Header: View, Content: View, Footer: View>: View {
     @ViewBuilder var content: Content
     @ViewBuilder var footer: Footer
     @State private var contentHeight: CGFloat = 240
+    // macOS overlay scrollers paint inside the viewport. Keep their track out
+    // of the cards; the wider panel preserves the cards' original content width.
+    private let scrollerGutter: CGFloat = 20
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -555,6 +558,8 @@ struct MenuBarPanelLayout<Header: View, Content: View, Footer: View>: View {
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.trailing, scrollerGutter)
+                    .padding(.vertical, 2)
                     .background(GeometryReader { geometry in
                         Color.clear.preference(key: MenuBarContentHeightKey.self, value: geometry.size.height)
                     })
@@ -567,7 +572,7 @@ struct MenuBarPanelLayout<Header: View, Content: View, Footer: View>: View {
             footer
         }
         .padding(12)
-        .frame(width: 360)
+        .frame(width: 380)
         .background(MenuBarWindowSizing())
     }
 }

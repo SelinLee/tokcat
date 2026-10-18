@@ -98,6 +98,8 @@ enum AgentSessionPreview {
                         }
                         DisclosureGroup("更多监控信息") { Text("系统与用量监控") }.font(.caption)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MenuBarScrollContentProbe())
                 } footer: {
                     HStack {
                         Button("主界面") { }
@@ -114,6 +116,12 @@ enum AgentSessionPreview {
                 try snapshotPanel(panel, to: panelURL)
                 if count == 4 {
                     try Data(contentsOf: panelURL).write(to: directory.appendingPathComponent("ai-monitor-\(name).png"))
+                }
+                if count == 20 {
+                    for (label, style) in [("overlay", NSScroller.Style.overlay), ("legacy", .legacy)] {
+                        try snapshotPanel(panel, to: directory.appendingPathComponent("scrollbar-\(label)-\(name).png"),
+                                          scrollerStyle: style)
+                    }
                 }
             }
 
@@ -216,7 +224,13 @@ enum AgentSessionPreview {
             try png.write(to: directory.appendingPathComponent("reminder-dot-\(name).png"))
         }
     }
-    private static func snapshotPanel<V: View>(_ content: V, to url: URL) throws {
+    private static func descendant<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+        if let match = view as? T { return match }
+        return view.subviews.lazy.compactMap { descendant(type, in: $0) }.first
+    }
+
+    private static func snapshotPanel<V: View>(_ content: V, to url: URL,
+                                               scrollerStyle: NSScroller.Style? = nil) throws {
         let hosting = NSHostingView(rootView: content)
         // Regression check: a menu asks for the intrinsic size without a height proposal.
         let initial = hosting.fittingSize
@@ -233,6 +247,24 @@ enum AgentSessionPreview {
             window.setContentSize(hosting.fittingSize)
         }
         hosting.layoutSubtreeIfNeeded()
+        if let style = scrollerStyle {
+            guard let scroll = descendant(NSScrollView.self, in: hosting),
+                  let contentProbe = descendant(MenuBarScrollContentProbe.View.self, in: hosting) else {
+                throw CocoaError(.validationMissingMandatoryProperty)
+            }
+            scroll.scrollerStyle = style
+            scroll.autohidesScrollers = false
+            scroll.hasVerticalScroller = true
+            scroll.tile()
+            hosting.layoutSubtreeIfNeeded()
+            scroll.flashScrollers()
+            guard let scroller = scroll.verticalScroller else { throw CocoaError(.validationMissingMandatoryProperty) }
+            let contentBounds = contentProbe.convert(contentProbe.bounds, to: scroll)
+            let trackBounds = scroller.convert(scroller.bounds, to: scroll)
+            let clearance = trackBounds.minX - contentBounds.maxX
+            print("Scroller \(style.rawValue): contentRight=\(contentBounds.maxX), trackLeft=\(trackBounds.minX), clearance=\(clearance)")
+            guard clearance >= 4 else { throw CocoaError(.validationMissingMandatoryProperty) }
+        }
         guard hosting.fittingSize.height > 120, hosting.fittingSize.height < 720,
               let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             throw CocoaError(.validationMissingMandatoryProperty)
@@ -242,5 +274,11 @@ enum AgentSessionPreview {
         try png.write(to: url)
     }
 
+}
+
+private struct MenuBarScrollContentProbe: NSViewRepresentable {
+    final class View: NSView {}
+    func makeNSView(context: Context) -> View { View() }
+    func updateNSView(_ view: View, context: Context) {}
 }
 #endif
