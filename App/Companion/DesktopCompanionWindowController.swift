@@ -50,14 +50,13 @@ final class DesktopCompanionWindowController: NSWindowController {
 
     func setPetVisible(_ visible: Bool) {
         if visible == isVisible {
-            if visible { updateAnchor(force: true); applyCurrentState() }
+            if visible { applyCurrentState(forceAnchor: true) }
             return
         }
         isVisible = visible
         companionView.setAnimating(visible)
         if visible {
-            updateAnchor(force: true)
-            applyCurrentState()
+            applyCurrentState(forceAnchor: true)
             window?.orderFrontRegardless()
             pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.applyCurrentState() }
@@ -69,13 +68,14 @@ final class DesktopCompanionWindowController: NSWindowController {
         }
     }
 
-    private func applyCurrentState() {
+    private func applyCurrentState(forceAnchor: Bool = false) {
         guard isVisible else { return }
-        updateAnchor(force: false)
         companionView.characterAppearance = appModel.settings.desktopCompanionAppearance
+        companionView.headDisplay = appModel.settings.desktopCompanionHeadDisplay
         companionView.apply(DesktopCompanionSnapshot(
             sessions: appModel.taskMonitor.sessions, tasks: appModel.taskMonitor.tasks,
             fallbackModel: appModel.latestModel, fallbackSource: appModel.latestSource))
+        updateAnchor(force: forceAnchor)
     }
 
     func applyPlacementChoice() {
@@ -95,13 +95,13 @@ final class DesktopCompanionWindowController: NSWindowController {
         companionView.dockFallback = position.isDockSide && dock == nil
         companionView.dockPosition = companionView.dockFallback ? .bottomRight : position
         companionView.dockContactX = nil
-        let size = companionView.dockPosition.companionWindowSize
+        let area = placementFrame(on: screen, dock: dock)
+        let size = companionView.preferredWindowSize(maxHeight: area.height)
         if window.frame.size != size {
             let origin = window.frame.origin
             window.setContentSize(size)
             window.setFrameOrigin(origin)
         }
-        let area = placementFrame(on: screen, dock: dock)
         let origin = PetDockGeometry.origin(position: position, size: size, visible: area, dock: dock,
             currentOrigin: explicitChoice ? nil : window.frame.origin, margin: 0)
         if window.frame.origin != origin { window.setFrameOrigin(origin) }
@@ -203,6 +203,8 @@ private final class CompanionInteractionView: NSView {
         guard let companion else { return nil }
         let local = companion.convert(point, from: self)
         return companion.characterRect.contains(local)
-            || (companion.showsBubble && companion.bubbleRect.contains(local)) ? self : nil
+            || (companion.showsBubble && companion.bubbleRect.contains(local))
+            || companion.capturesTaskScroll(at: local) ? self : nil
     }
+    override func scrollWheel(with event: NSEvent) { companion?.scrollWheel(with: event) }
 }

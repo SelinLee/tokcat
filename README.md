@@ -32,7 +32,7 @@ The new companion stays attached to a screen edge, the bottom-right corner, or e
 - **Details when needed:** click the character or wait for an input/approval request to open a bubble above it. Click the bubble to open Tasks.
 - **Your choice of character:** male **toki**, or **biti** in coral, whale, or violet outfits. All use calm, neutral expressions. Model families determine activity text colors independently of the character.
 
-Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. [Companion behavior](docs/DesktopCompanion.md)
+Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. The **Head information** setting also offers a persistent list: two lines per task, with its title above its own output tok/s, stacked vertically. [Companion behavior](docs/DesktopCompanion.md)
 
 ## Follow multiple agents in one place
 

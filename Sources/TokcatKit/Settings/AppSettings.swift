@@ -140,6 +140,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public var desktopPetDockPosition: PetDockPosition
     public var desktopCompanionAppearance: CompanionAppearance
+    public var desktopCompanionHeadDisplay: CompanionHeadDisplay
 
 
     /// Remembered desktop pet window origin (screen coordinates). Nil = default corner.
@@ -211,6 +212,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showDesktopPet: Bool = true,
         desktopPetDockPosition: PetDockPosition = .bottomRight,
         desktopCompanionAppearance: CompanionAppearance = .biti,
+        desktopCompanionHeadDisplay: CompanionHeadDisplay = .activityTicker,
         desktopPetWindowX: Double? = nil,
         desktopPetWindowY: Double? = nil,
         pollIntervalSeconds: Double = 2,
@@ -244,6 +246,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showDesktopPet = showDesktopPet
         self.desktopPetDockPosition = desktopPetDockPosition.fixedPosition
         self.desktopCompanionAppearance = desktopCompanionAppearance
+        self.desktopCompanionHeadDisplay = desktopCompanionHeadDisplay
         self.desktopPetWindowX = desktopPetWindowX
         self.desktopPetWindowY = desktopPetWindowY
         self.pollIntervalSeconds = pollIntervalSeconds
@@ -358,7 +361,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCodexUsage
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
-        case showTokenSummary, showRecentTokenEvents, showCodexUsageSummary, showDesktopPet, desktopPetDockPosition, desktopCompanionAppearance, desktopPetWindowX, desktopPetWindowY
+        case showTokenSummary, showRecentTokenEvents, showCodexUsageSummary, showDesktopPet, desktopPetDockPosition, desktopCompanionAppearance, desktopCompanionHeadDisplay, desktopPetWindowX, desktopPetWindowY
         case pollIntervalSeconds, menuBarRefreshIntervalSeconds
         case enabledAgentSources, pricingEntries, fallbackPricing
         case menuBarAccessory // legacy
@@ -379,6 +382,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
         desktopPetDockPosition = (try container.decodeIfPresent(PetDockPosition.self, forKey: .desktopPetDockPosition) ?? .bottomRight).fixedPosition
         desktopCompanionAppearance = try container.decodeIfPresent(CompanionAppearance.self, forKey: .desktopCompanionAppearance) ?? .biti
+        desktopCompanionHeadDisplay = (try? container.decode(CompanionHeadDisplay.self, forKey: .desktopCompanionHeadDisplay)) ?? .activityTicker
         desktopPetWindowX = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowX)
         desktopPetWindowY = try container.decodeIfPresent(Double.self, forKey: .desktopPetWindowY)
         pollIntervalSeconds = try container.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 2
@@ -468,6 +472,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
         try container.encode(desktopPetDockPosition, forKey: .desktopPetDockPosition)
         try container.encode(desktopCompanionAppearance, forKey: .desktopCompanionAppearance)
+        try container.encode(desktopCompanionHeadDisplay, forKey: .desktopCompanionHeadDisplay)
         try container.encodeIfPresent(desktopPetWindowX, forKey: .desktopPetWindowX)
         try container.encodeIfPresent(desktopPetWindowY, forKey: .desktopPetWindowY)
         try container.encode(pollIntervalSeconds, forKey: .pollIntervalSeconds)

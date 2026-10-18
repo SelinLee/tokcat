@@ -105,6 +105,61 @@ enum DesktopCompanionPlacementCheck {
         guard view.characterAppearance == .biti, view.hasArtwork else { throw failure("manual biti selection") }
         model.selectDesktopPetPosition(.screenTop)
         guard model.settings.desktopPetDockPosition == .bottomRight else { throw failure("legacy top not migrated") }
+        model.selectCompanionHeadDisplay(.taskAndSpeed)
+        guard view.headDisplay == .taskAndSpeed else { throw failure("head style did not update immediately") }
+        view.apply(snapshot(.waitingForInput))
+        guard !view.showsBubble else { throw failure("persistent rows were hidden by an automatic bubble") }
+        let sessions = (0..<50).map { index in
+            AgentSession(event: AgentSessionEvent(sessionID: "row-\(index)", source: .codexCLI,
+                timestamp: Date(), kind: .started, turnID: "current"))
+        }
+        model.taskMonitor.update(sessions: sessions, tasks: sessions.map {
+            AgentTaskRecord(session: $0, title: "任务 " + $0.sessionID, modelName: "gpt-6.1-sol")
+        }, enabled: [.codexCLI])
+        for position in PetDockPosition.allCases {
+            model.selectDesktopPetPosition(position)
+            guard view.snapshot.taskSummaries.count == 50, view.taskListOverflows,
+                  view.taskListRect.maxY <= view.bounds.maxY,
+                  view.taskListRect.minY > view.characterRect.maxY,
+                  view.visibleTaskIndices == Array(0..<5),
+                  view.taskListRect.height <= view.taskRowHeights.prefix(5).reduce(0, +),
+                  abs(view.taskListRect.midX - view.tickerRect.midX) < 0.01 else { throw failure("persistent task list layout/centering: \(position)") }
+            if let screen = window.screen ?? NSScreen.main {
+                let dock = position.isDockSide ? DesktopDockLocator.dockFrame(on: screen) : nil
+                let area = dock == nil ? screen.visibleFrame : screen.frame
+                guard area.contains(window.frame) else { throw failure("persistent list exceeded screen: \(position)") }
+            }
+        }
+        let point = NSPoint(x: view.taskListRect.midX, y: view.taskListRect.midY)
+        guard view.capturesTaskScroll(at: point),
+              let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -80, wheel2: 0, wheel3: 0),
+              let event = NSEvent(cgEvent: cg) else { throw failure("task list scroll event unavailable") }
+        view.scrollWheel(with: event)
+        guard view.taskScrollPosition > 0, view.visibleTaskIndices.count <= 5 else { throw failure("overflow task list did not scroll or exceeded five tasks") }
+        guard let endCG = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -100_000, wheel2: 0, wheel3: 0),
+              let endEvent = NSEvent(cgEvent: endCG) else { throw failure("end scroll event unavailable") }
+        view.scrollWheel(with: endEvent)
+        guard view.visibleTaskIndices.count <= 5, view.visibleTaskIndices.last == 49 else { throw failure("last task is not reachable") }
+        let longTitle = "优化桌边挂件的任务名称自动换行并保持文字居中对齐👩🏽‍💻"
+        let shortTitle = "短任务"
+        model.taskMonitor.update(sessions: Array(sessions.prefix(2)), tasks: [
+            AgentTaskRecord(session: sessions[0], title: longTitle),
+            AgentTaskRecord(session: sessions[1], title: shortTitle)
+        ], enabled: [.codexCLI])
+        for position in PetDockPosition.allCases {
+            model.selectDesktopPetPosition(position)
+            guard view.taskTitleLines[0].count > 1,
+                  view.taskTitleLines[0].joined() == longTitle,
+                  view.taskTitleLines[1] == [shortTitle],
+                  view.taskRowHeights[0] > view.taskRowHeights[1],
+                  abs(view.taskListRect.midX - view.tickerRect.midX) < 0.01 else { throw failure("wrapped task title/centering: \(position)") }
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        guard store.load().desktopCompanionHeadDisplay == .taskAndSpeed else { throw failure("head style not persisted") }
+        model.selectCompanionHeadDisplay(.activityTicker)
+        view.apply(snapshot(.waitingForApproval))
+        guard view.showsBubble else { throw failure("original ticker/waiting behavior did not restore") }
+        print("PASS head display modes, saved choice, five-task limit, wrapped titles, shared ticker center, scrolling to the last task, and bounded window sizes")
         print("PASS placement, edge-constrained movement, click/wait bubbles above artwork, manual toki/biti, legacy migration")
     }
     private static func failure(_ text: String) -> NSError {

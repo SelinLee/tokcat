@@ -316,16 +316,35 @@ struct SettingsView: View {
                         Text(appearance.title).tag(appearance)
                     }
                 }
-                CompanionSettingsPreview(snapshot: DesktopCompanionSnapshot(
-                    sessions: model.taskMonitor.sessions, tasks: model.taskMonitor.tasks,
-                    fallbackModel: model.latestModel, fallbackSource: model.latestSource),
-                    position: settings.desktopPetDockPosition, appearance: settings.desktopCompanionAppearance)
-                    .frame(width: settings.desktopPetDockPosition.companionWindowSize.width,
-                           height: settings.desktopPetDockPosition.companionWindowSize.height)
             } header: {
                 Text("toki / biti")
             } footer: {
-                Text("人物手动选择。工具动态在人物上方逐行向上滚动，透明背景、颜色跟随模型。点击人物或等待回答／授权时展开详细气泡。")
+                Text("人物手动选择，头顶文字颜色跟随任务状态与模型。")
+            }
+            Section {
+                Picker("显示样式", selection: Binding(
+                    get: { settings.desktopCompanionHeadDisplay },
+                    set: { display in
+                        settings.desktopCompanionHeadDisplay = display
+                        model.selectCompanionHeadDisplay(display)
+                    })) {
+                    ForEach(CompanionHeadDisplay.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }.pickerStyle(.radioGroup)
+                Text(settings.desktopCompanionHeadDisplay.detail)
+                    .font(.caption).foregroundStyle(.secondary)
+                CompanionSettingsPreview(snapshot: DesktopCompanionSnapshot(
+                    sessions: model.taskMonitor.sessions, tasks: model.taskMonitor.tasks,
+                    fallbackModel: model.latestModel, fallbackSource: model.latestSource),
+                    position: settings.desktopPetDockPosition, appearance: settings.desktopCompanionAppearance,
+                    headDisplay: settings.desktopCompanionHeadDisplay)
+                    .frame(width: settings.desktopPetDockPosition.companionWindowSize.width,
+                           height: settings.desktopPetDockPosition.companionWindowSize.height)
+            } header: {
+                Text("头顶信息")
+            } footer: {
+                Text("常驻模式最多同时显示5个任务，长名称自动换行；更多任务可在文字区域滚动查看。速度按最近60秒输出估算，样本不足显示 —，选择会自动保存。")
             }
         }
         .formStyle(.grouped)

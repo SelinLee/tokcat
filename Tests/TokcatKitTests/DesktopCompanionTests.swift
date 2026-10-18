@@ -76,6 +76,57 @@ final class DesktopCompanionTests: XCTestCase {
         XCTAssertEqual(old.desktopPetDockPosition, .bottomRight)
     }
 
+    func testHeadDisplayChoicePersistsAndOldSettingsKeepTicker() throws {
+        var settings = AppSettings.default
+        XCTAssertEqual(settings.desktopCompanionHeadDisplay, .activityTicker)
+        settings.desktopCompanionHeadDisplay = .taskAndSpeed
+        let copy = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(copy.desktopCompanionHeadDisplay, .taskAndSpeed)
+        let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(old.desktopCompanionHeadDisplay, .activityTicker)
+        let future = try JSONDecoder().decode(AppSettings.self,
+            from: Data("{\"desktopCompanionHeadDisplay\":\"future-style\",\"showCPU\":false}".utf8))
+        XCTAssertEqual(future.desktopCompanionHeadDisplay, .activityTicker)
+        XCTAssertFalse(future.showCPU)
+    }
+
+    func testPersistentRowsKeepEachTaskTitleAndOutputRateTogether() {
+        func running(_ id: String, output: Int) -> AgentSession {
+            var value = session(id, .started, age: 20)
+            value.apply(AgentSessionEvent(sessionID: id, source: .codexCLI,
+                timestamp: now, kind: .metadata, turnID: "turn", turnOutputTokens: output))
+            return value
+        }
+        let a = running("a", output: 200)
+        let b = running("b", output: 800)
+        let missing = session("c", .started)
+        var previous = a; previous.turnID = "previous"
+        let records = [AgentTaskRecord(session: previous, title: "上一轮标题", modelName: "deepseek"),
+            AgentTaskRecord(session: a, title: "整理资料", modelName: "gpt-6"),
+            AgentTaskRecord(session: b, title: "生成报告", modelName: "claude-sonnet")]
+        let snapshot = DesktopCompanionSnapshot(sessions: [b, missing, a], tasks: records, now: now)
+        XCTAssertEqual(snapshot.taskSummaries.map(\.title), ["整理资料", "生成报告", "未识别项目"])
+        XCTAssertEqual(snapshot.taskSummaries.map(\.tokensPerSecond), [10, 40, nil])
+        XCTAssertEqual(snapshot.taskSummaries.map(\.character), [.codex, .claude, .codex])
+        let reversed = DesktopCompanionSnapshot(sessions: [a, missing, b], tasks: records, now: now)
+        XCTAssertEqual(snapshot.taskSummaries, reversed.taskSummaries)
+    }
+
+    func testPersistentRowsRetainStalledTasksAndRemoveAcknowledgedEndings() {
+        let stale = session("quiet", .started, age: 500)
+        var done = session("done", .completed)
+        done.unread = true
+        var read = session("read", .completed)
+        read.unread = false
+        let passive = AgentTaskRecord(session: session("passive", .started), activityOnly: true)
+        let value = DesktopCompanionSnapshot(sessions: [stale, done, read], tasks: [passive], now: now)
+        XCTAssertEqual(value.taskSummaries.count, 2)
+        XCTAssertTrue(value.taskSummaries.contains { $0.id == stale.id && $0.state == .stalled })
+        XCTAssertTrue(value.taskSummaries.contains { $0.id == done.id })
+        done.unread = false
+        XCTAssertTrue(DesktopCompanionSnapshot(sessions: [done, read], tasks: [], now: now).taskSummaries.isEmpty)
+    }
+
     func testLegacyFreeAndTopMigrateToFixedCorner() throws {
         XCTAssertFalse(PetDockPosition.allCases.contains(.screenTop))
         XCTAssertFalse(PetDockPosition.allCases.contains(.free))

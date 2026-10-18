@@ -42,6 +42,31 @@ public enum CompanionAppearance: String, Codable, CaseIterable, Sendable, Identi
     }
 }
 
+public enum CompanionHeadDisplay: String, Codable, CaseIterable, Sendable, Identifiable {
+    case activityTicker, taskAndSpeed
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .activityTicker: return "动态活动（现有样式）"
+        case .taskAndSpeed: return "任务名称 + tok/s（常驻）"
+        }
+    }
+    public var detail: String {
+        switch self {
+        case .activityTicker: return "工具活动逐行滚动，等待回答或授权时展开气泡。"
+        case .taskAndSpeed: return "任务名称在上、输出 tok/s 在下，最多显示5个任务，更多可滚动；长名称自动换行。点击人物可展开详情。"
+        }
+    }
+}
+
+public struct CompanionTaskSummary: Equatable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    public var state: AgentSessionState
+    public var character: CompanionCharacter
+    public var tokensPerSecond: Double?
+}
+
 public enum PetDockPosition: String, Codable, CaseIterable, Sendable, Identifiable {
     case bottomRight, screenLeft, screenRight, screenTop, screenBottom, dockLeft, dockRight, free
     // Retain old raw values only to migrate saved settings.
@@ -81,8 +106,8 @@ public extension PetDockPosition {
     }
 }
 
-/// A single coherent task supplies both the model and the state. Usage history
-/// never overrides a live task, and passive records never imply live execution.
+/// The detail bubble uses one coherent task; each persistent row carries its
+/// own title, model family and output rate. Passive history never creates a task.
 public struct DesktopCompanionSnapshot: Equatable, Sendable {
     public var character: CompanionCharacter
     public var model: String
@@ -94,9 +119,20 @@ public struct DesktopCompanionSnapshot: Equatable, Sendable {
     public var sourceName: String
     public var statistics: String
     public var activities: [CompanionActivity]
+    public var taskSummaries: [CompanionTaskSummary]
 
     public init(sessions: [AgentSession], tasks: [AgentTaskRecord], fallbackModel: String? = nil,
                 fallbackSource: AgentSource? = nil, now: Date = Date()) {
+        taskSummaries = sessions.filter { (!$0.state.isTerminal || $0.unread) && $0.showsMenuBarDot(at: now) }
+            .sorted { $0.id < $1.id }
+            .map { session in
+                let record = tasks.first { !$0.activityOnly && $0.id == AgentTaskRecord.key(for: session) }
+                return CompanionTaskSummary(id: session.id, title: record?.displayTitle ?? session.projectName,
+                    state: session.displayState(at: now), character: .resolve(model: record?.modelName, source: session.source),
+                    tokensPerSecond: session.outputTokensPerSecond(at: now).map {
+                        ($0 * 10).rounded() / 10
+                    })
+            }
         func priority(_ s: AgentSession) -> Int {
             switch s.displayState(at: now) {
             case .waitingForApproval: return 60

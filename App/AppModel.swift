@@ -267,6 +267,11 @@ final class AppModel: ObservableObject {
         companionWindowController?.applyPlacementChoice()
     }
 
+    func selectCompanionHeadDisplay(_ display: CompanionHeadDisplay) {
+        updateSettings { $0.desktopCompanionHeadDisplay = display }
+        applyDesktopPetVisibility()
+    }
+
     func resetSettings() {
         settings = .default
     }
@@ -322,7 +327,8 @@ final class AppModel: ObservableObject {
             applyDesktopPetVisibility()
         }
         if (oldValue.desktopCompanionAppearance != settings.desktopCompanionAppearance
-            || oldValue.desktopPetDockPosition != settings.desktopPetDockPosition),
+            || oldValue.desktopPetDockPosition != settings.desktopPetDockPosition
+            || oldValue.desktopCompanionHeadDisplay != settings.desktopCompanionHeadDisplay),
            settings.showDesktopPet {
             applyDesktopPetVisibility()
         }

@@ -62,9 +62,60 @@ enum DesktopCompanionPreview {
         guard let data = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
         try data.write(to: directory.appendingPathComponent("model-companion-preview.png"))
         window.close()
+        try renderPersistentTasks(to: directory, now: now)
         for screen in NSScreen.screens {
             print("Screen \(screen.frame), visible \(screen.visibleFrame), Dock \(String(describing: DesktopDockLocator.dockFrame(on: screen)))")
         }
+    }
+
+    private static func renderPersistentTasks(to directory: URL, now: Date) throws {
+        let canvas = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 650))
+        canvas.wantsLayer = true
+        canvas.layer?.backgroundColor = NSColor(calibratedRed: 0.91, green: 0.94, blue: 0.96, alpha: 1).cgColor
+        let titles = ["优化桌边挂件的任务名称自动换行并保持文字居中对齐", "生成新闻漫画分镜", "优化用量统计面板"]
+        for (column, count) in [1, 3, 12, 0].enumerated() {
+            let sessions = (0..<count).map { index -> AgentSession in
+                let id = String(format: "task-%02d", index)
+                var session = AgentSession(event: AgentSessionEvent(sessionID: id, source: .codexCLI,
+                    timestamp: now.addingTimeInterval(-20), kind: .started, turnID: "turn"))
+                session.apply(AgentSessionEvent(sessionID: id, source: .codexCLI, timestamp: now,
+                    kind: .metadata, turnID: "turn", turnOutputTokens: 200 * (index + 1)))
+                if index == 1 {
+                    session.apply(AgentSessionEvent(sessionID: id, source: .codexCLI,
+                        timestamp: now, kind: .waitingForInput, turnID: "turn"))
+                }
+                return session
+            }
+            let records = sessions.enumerated().map { index, session in
+                AgentTaskRecord(session: session, title: titles[index % titles.count] + (index > 2 ? " \(index + 1)" : ""), modelName: "gpt-6.1-sol")
+            }
+            let area = NSView(frame: NSRect(x: 16 + column * 316, y: 16, width: 300, height: 560))
+            let view = DesktopCompanionView(frame: NSRect(origin: .zero, size: PetDockPosition.screenRight.companionWindowSize))
+            view.dockPosition = [.screenRight, .screenLeft, .dockLeft, .screenBottom][column]
+            view.characterAppearance = [.biti, .toki, .bitiBlue, .bitiPurple][column]
+            view.headDisplay = .taskAndSpeed
+            view.apply(DesktopCompanionSnapshot(sessions: sessions, tasks: records, now: now))
+            let size = view.preferredWindowSize(maxHeight: area.bounds.height)
+            view.frame = NSRect(x: 300 - size.width, y: 0, width: size.width, height: size.height)
+            guard view.taskListRect.maxY <= view.bounds.maxY,
+                  !view.showsBubble else { throw CocoaError(.validationMissingMandatoryProperty) }
+            area.addSubview(view)
+            canvas.addSubview(area)
+            let label = NSTextField(labelWithString: "\(count) 个任务 · 最多5个 / 名称换行" + (view.taskListOverflows ? " · 可滚动" : ""))
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.textColor = .darkGray
+            label.frame = NSRect(x: 16 + column * 316, y: 600, width: 300, height: 22)
+            canvas.addSubview(label)
+        }
+        let window = NSWindow(contentRect: canvas.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = canvas
+        defer { window.close() }
+        canvas.layoutSubtreeIfNeeded()
+        guard let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { throw CocoaError(.fileWriteUnknown) }
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+        try data.write(to: directory.appendingPathComponent("persistent-tasks-preview.png"))
     }
 }
 #endif

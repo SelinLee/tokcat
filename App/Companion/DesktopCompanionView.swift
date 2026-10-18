@@ -14,7 +14,23 @@ final class DesktopCompanionView: NSView {
     private var manuallyExpanded = false
     private var ticker = CompanionTicker()
     private var tickerLineCache: (id: String, width: CGFloat, lines: [String])?
-    var showsBubble: Bool { manuallyExpanded || snapshot.state?.isWaiting == true }
+    private var taskScrollOffset: CGFloat = 0
+    private let maximumVisibleTasks = 5
+    private struct TaskTitleLayout {
+        var lines: [String]
+        var height: CGFloat { CGFloat(lines.count) * 15 + 23 }
+    }
+    private var taskTitleCache: (titles: [String], width: CGFloat, layouts: [TaskTitleLayout])?
+    var showsBubble: Bool { manuallyExpanded || (headDisplay == .activityTicker && snapshot.state?.isWaiting == true) }
+    var headDisplay: CompanionHeadDisplay = .activityTicker {
+        didSet {
+            guard headDisplay != oldValue else { return }
+            manuallyExpanded = false
+            taskScrollOffset = 0
+            updateAccessibilitySummary()
+            needsDisplay = true
+        }
+    }
     var characterAppearance: CompanionAppearance = .biti {
         didSet { if characterAppearance != oldValue { needsDisplay = true } }
     }
@@ -29,6 +45,10 @@ final class DesktopCompanionView: NSView {
     }
     #if DEBUG
     var previewTickerProgress: Double?
+    var taskScrollPosition: CGFloat { taskScrollOffset }
+    var taskTitleLines: [[String]] { taskTitleLayouts.map(\.lines) }
+    var taskRowHeights: [CGFloat] { taskTitleLayouts.map(\.height) }
+    var visibleTaskIndices: [Int] { taskRowsInViewport.map(\.index) }
     #endif
     private static var cachedSprites: [String: NSImage] = [:]
     private var sprites: [String: NSImage] = [:]
@@ -53,6 +73,75 @@ final class DesktopCompanionView: NSView {
         return NSRect(x: min(max(characterRect.midX - width / 2, 4), bounds.width - width - 4),
                       y: characterRect.maxY + 7, width: width, height: 22)
     }
+    private var taskTitleLayouts: [TaskTitleLayout] {
+        let titles = snapshot.taskSummaries.isEmpty ? ["暂无进行中的任务"] : snapshot.taskSummaries.map(\.title)
+        let width = max(1, tickerRect.width - 8)
+        if let cache = taskTitleCache, cache.titles == titles, cache.width == width { return cache.layouts }
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let layouts = titles.map { title -> TaskTitleLayout in
+            let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = value.isEmpty ? "未命名任务" : value
+            let text = label as NSString
+            let typesetter = CTTypesetterCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: font]))
+            var lines: [String] = []
+            var start = 0
+            while start < text.length {
+                var length = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
+                if length == 0 { length = CTTypesetterSuggestClusterBreak(typesetter, start, Double(width)) }
+                length = min(text.length - start, max(1, length))
+                let line = text.substring(with: NSRange(location: start, length: length))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !line.isEmpty { lines.append(line) }
+                start += length
+            }
+            return TaskTitleLayout(lines: lines.isEmpty ? [label] : lines)
+        }
+        taskTitleCache = (titles, width, layouts)
+        return layouts
+    }
+    private var taskListHeight: CGFloat { taskTitleLayouts.reduce(0) { $0 + $1.height } }
+    private var taskPageHeight: CGFloat { taskTitleLayouts.prefix(maximumVisibleTasks).reduce(0) { $0 + $1.height } }
+    var taskListRect: NSRect {
+        let availableHeight = max(1, bounds.height - characterRect.maxY - 15)
+        var height: CGFloat = 0
+        for row in taskTitleLayouts.prefix(maximumVisibleTasks) {
+            guard height + row.height <= availableHeight else { break }
+            height += row.height
+        }
+        // Keep complete tasks visible where possible. A single very long title
+        // can still use the whole viewport and scroll to its speed line.
+        if height == 0 { height = min(taskPageHeight, availableHeight) }
+        return NSRect(x: tickerRect.minX, y: characterRect.maxY + 7,
+                      width: tickerRect.width, height: height)
+    }
+    private var maximumTaskScrollOffset: CGFloat {
+        // A short final page must remain reachable even if earlier titles made
+        // the viewport taller than the final five tasks combined.
+        let lastPageStart = taskTitleLayouts.dropLast(min(maximumVisibleTasks, taskTitleLayouts.count))
+            .reduce(CGFloat.zero) { $0 + $1.height }
+        return max(0, max(lastPageStart, taskListHeight - taskListRect.height))
+    }
+    private var taskRowsInViewport: [(index: Int, top: CGFloat)] {
+        let rect = taskListRect
+        var top = rect.maxY + taskScrollOffset
+        var rows: [(index: Int, top: CGFloat)] = []
+        for (index, layout) in taskTitleLayouts.enumerated() {
+            defer { top -= layout.height }
+            guard top > rect.minY, top - layout.height < rect.maxY else { continue }
+            rows.append((index, top))
+            if rows.count == maximumVisibleTasks { break }
+        }
+        return rows
+    }
+    var taskListOverflows: Bool { taskListHeight > taskListRect.height + 0.5 }
+    func capturesTaskScroll(at point: NSPoint) -> Bool {
+        headDisplay == .taskAndSpeed && !showsBubble && taskListOverflows && taskListRect.insetBy(dx: -4, dy: 0).contains(point)
+    }
+    func preferredWindowSize(maxHeight: CGFloat) -> NSSize {
+        let base = dockPosition.companionWindowSize
+        guard headDisplay == .taskAndSpeed else { return base }
+        return NSSize(width: base.width, height: min(maxHeight, max(base.height, characterRect.maxY + 15 + taskPageHeight)))
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -69,9 +158,17 @@ final class DesktopCompanionView: NSView {
         guard value != snapshot else { return }
         snapshot = value
         ticker.ingest(value.activities)
-        setAccessibilityLabel("\(characterAppearance.title)，\(value.model)，\(value.title)，\(value.detail)")
-        toolTip = "\(value.model) · \(value.detail)\n沿边缘拖动 · 点击人物收放详情 · 点击气泡查看任务 · 右键选择形象"
+        taskScrollOffset = min(taskScrollOffset, maximumTaskScrollOffset)
+        updateAccessibilitySummary()
         needsDisplay = true
+    }
+
+    private func updateAccessibilitySummary() {
+        let tasks = snapshot.taskSummaries.map { $0.title + "，" + Self.speedLabel($0.tokensPerSecond) }.joined(separator: "；")
+        setAccessibilityLabel("\(characterAppearance.title)，" + (headDisplay == .taskAndSpeed ? (tasks.isEmpty ? "暂无进行中的任务" : tasks) : "\(snapshot.model)，\(snapshot.title)，\(snapshot.detail)"))
+        toolTip = (headDisplay == .taskAndSpeed ? tasks : "\(snapshot.title)\n\(snapshot.model) · \(snapshot.detail)")
+            + "\n沿边缘拖动 · 点击人物收放详情 · 点击气泡查看任务 · 右键选择形象"
+            + (taskListOverflows && headDisplay == .taskAndSpeed ? "\n在头顶文字区域滚动查看更多任务" : "")
     }
 
     func setAnimating(_ active: Bool) {
@@ -93,6 +190,7 @@ final class DesktopCompanionView: NSView {
                     let point = self.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
                     window.ignoresMouseEvents = !self.characterRect.contains(point)
                         && !(self.showsBubble && self.bubbleRect.insetBy(dx: -4, dy: -8).contains(point))
+                        && !self.capturesTaskScroll(at: point)
                 }
                 if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || self.pressedAt != nil || self.ticker.current != nil
                     || previousActivity != self.ticker.current?.id {
@@ -112,7 +210,9 @@ final class DesktopCompanionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        if showsBubble { drawBubble() } else { drawTicker() }
+        if showsBubble { drawBubble() }
+        else if headDisplay == .taskAndSpeed { drawTaskList() }
+        else { drawTicker() }
         var rect = characterRect
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         rect.size.height += reduce ? 0 : sin(tick * 1.7) * 1.2
@@ -143,6 +243,62 @@ final class DesktopCompanionView: NSView {
             }
             sprite.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard headDisplay == .taskAndSpeed && !showsBubble && taskListOverflows else { return }
+        let delta = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 1 : 12)
+        taskScrollOffset = min(max(0, taskScrollOffset - delta), maximumTaskScrollOffset)
+        needsDisplay = true
+    }
+
+    private static func speedLabel(_ value: Double?) -> String {
+        value.map { String(format: "%.1f tok/s", $0) } ?? "— tok/s"
+    }
+
+    private func drawTaskList() {
+        let rect = taskListRect
+        let layouts = taskTitleLayouts
+        taskScrollOffset = min(taskScrollOffset, maximumTaskScrollOffset)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: rect).addClip()
+        func line(_ string: String, y: CGFloat, font: NSFont, color: NSColor) {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            paragraph.lineBreakMode = .byClipping
+            (string as NSString).draw(in: NSRect(x: rect.minX + 4, y: y, width: rect.width - 8, height: 16),
+                withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph,
+                                 .strokeColor: NSColor.white.withAlphaComponent(0.8), .strokeWidth: -2])
+        }
+        for (index, top) in taskRowsInViewport {
+            let layout = layouts[index]
+            let task = snapshot.taskSummaries.isEmpty ? nil : snapshot.taskSummaries[index]
+            let color: NSColor
+            switch task?.state {
+            case .stalled, .failed: color = .systemRed
+            case .completed: color = .systemGreen
+            case nil: color = NSColor(calibratedWhite: 0.4, alpha: 1)
+            default: color = task.map { Self.color(for: $0.character) } ?? NSColor(calibratedWhite: 0.4, alpha: 1)
+            }
+            for (lineIndex, titleLine) in layout.lines.enumerated() {
+                line(titleLine, y: top - 17 - CGFloat(lineIndex) * 15,
+                     font: .systemFont(ofSize: 11, weight: .semibold), color: color)
+            }
+            line(Self.speedLabel(task?.tokensPerSecond), y: top - CGFloat(layout.lines.count) * 15 - 18,
+                 font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: color)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        if taskListOverflows {
+            // The scrollbar sits outside the shared text column, so it cannot
+            // move either the task title or the speed away from the ticker axis.
+            let track = NSRect(x: rect.maxX + 2, y: rect.minY + 2, width: 2, height: rect.height - 4)
+            NSColor(calibratedWhite: 0.4, alpha: 0.2).setFill()
+            NSBezierPath(roundedRect: track, xRadius: 1, yRadius: 1).fill()
+            let height = max(18, track.height * rect.height / (maximumTaskScrollOffset + rect.height))
+            let offset = (track.height - height) * taskScrollOffset / maximumTaskScrollOffset
+            NSColor(calibratedWhite: 0.4, alpha: 0.65).setFill()
+            NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.maxY - height - offset, width: 2, height: height), xRadius: 1, yRadius: 1).fill()
         }
     }
 
@@ -285,12 +441,14 @@ struct CompanionSettingsPreview: NSViewRepresentable {
     let snapshot: DesktopCompanionSnapshot
     var position: PetDockPosition = .bottomRight
     var appearance: CompanionAppearance = .biti
+    var headDisplay: CompanionHeadDisplay = .activityTicker
     func makeNSView(context: Context) -> DesktopCompanionView {
         DesktopCompanionView(frame: NSRect(origin: .zero, size: DesktopCompanionView.preferredSize))
     }
     func updateNSView(_ view: DesktopCompanionView, context: Context) {
         view.dockPosition = position.fixedPosition
         view.characterAppearance = appearance
+        view.headDisplay = headDisplay
         view.apply(snapshot)
     }
 }
