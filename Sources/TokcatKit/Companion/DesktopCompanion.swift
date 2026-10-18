@@ -102,6 +102,7 @@ public struct DesktopCompanionSnapshot: Equatable, Sendable {
             case .waitingForApproval: return 60
             case .waitingForInput: return 50
             case .running: return 40
+            case .stalled: return 35
             case .failed: return s.unread && now.timeIntervalSince(s.lastActivityAt) < 60 ? 30 : 0
             case .completed: return s.unread && now.timeIntervalSince(s.lastActivityAt) < 30 ? 20 : 0
             case .interrupted: return s.unread && now.timeIntervalSince(s.lastActivityAt) < 30 ? 10 : 0
@@ -135,6 +136,7 @@ public struct DesktopCompanionSnapshot: Equatable, Sendable {
         case .failed: detail = "遇到问题，来看看吧"
         case .interrupted: detail = "任务已中断"
         case .unknown: detail = "暂时没有新状态"
+        case .stalled: detail = "超过2分钟无新活动，打开会话检查"
         case nil: detail = "待命中 · 点击查看任务"
         }
         var stats: [String] = []

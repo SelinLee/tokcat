@@ -56,7 +56,7 @@ enum SessionMenuBarRenderer {
                     case .completed: color = .systemGreen
                     case .waitingForInput, .waitingForApproval:
                         color = waitingIsRed ? .systemRed : SessionPresentation.attentionColor
-                    case .failed: color = .systemRed
+                    case .failed, .stalled: color = .systemRed
                     case .unknown, .interrupted: color = .secondaryLabelColor
                     }
                     var alpha = state == .running && !reduceMotion ? 0.88 + 0.12 * (sin(phase * 2) + 1) / 2 : 1
@@ -72,7 +72,7 @@ enum SessionMenuBarRenderer {
                     let x = iconWidth + gap + CGFloat(index / 3) * columnPitch + 2
                     let y = topY - CGFloat(index % 3) * rowPitch
                     let dot = NSBezierPath(ovalIn: NSRect(x: x, y: y, width: dotDiameter, height: dotDiameter))
-                    if state == .unknown || state == .interrupted { dot.lineWidth = 1; dot.stroke() }
+                    if state == .unknown || state == .interrupted || state == .stalled { dot.lineWidth = 1; dot.stroke() }
                     else {
                         dot.fill()
                         if state == .running || state.isWaiting {

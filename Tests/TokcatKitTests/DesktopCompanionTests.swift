@@ -23,11 +23,11 @@ final class DesktopCompanionTests: XCTestCase {
         XCTAssertEqual(value.title, "审核改动")
         XCTAssertEqual(value.activeCount, 2)
     }
-    func testStaleRunningIsUnknownAndOldCompletionDoesNotCelebrate() {
+    func testStaleRunningWarnsAndOldCompletionDoesNotCelebrate() {
         let stale = session("quiet", .started, age: 140)
         let completed = session("old", .completed, age: 200)
         let value = DesktopCompanionSnapshot(sessions: [stale, completed], tasks: [], now: now)
-        XCTAssertEqual(value.state, .unknown)
+        XCTAssertEqual(value.state, .stalled)
         XCTAssertEqual(value.activeCount, 0)
         let idle = DesktopCompanionSnapshot(sessions: [completed], tasks: [], now: now)
         XCTAssertNil(idle.state)

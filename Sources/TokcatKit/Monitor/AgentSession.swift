@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AgentSessionState: String, Codable, Sendable {
-    case running, waitingForInput, waitingForApproval, completed, failed, interrupted, unknown
+    case running, waitingForInput, waitingForApproval, completed, failed, interrupted, unknown, stalled
 
     public var title: String {
         switch self {
@@ -12,6 +12,7 @@ public enum AgentSessionState: String, Codable, Sendable {
         case .failed: return "本轮失败"
         case .interrupted: return "已中断"
         case .unknown: return "暂无更新"
+        case .stalled: return "长时间无活动"
         }
     }
 
@@ -36,11 +37,13 @@ public struct AgentSessionEvent: Codable, Equatable, Sendable {
     public var toolName: String?
     public var turnTokens: Int?
     public var transcriptPath: String?
+    public var turnOutputTokens: Int?
+    public var sessionOutputTokens: Int?
 
     public init(sessionID: String, source: AgentSource, timestamp: Date, kind: Kind,
                 turnID: String? = nil, projectPath: String? = nil, phase: String? = nil,
                 startedAt: Date? = nil, modelName: String? = nil, toolName: String? = nil, turnTokens: Int? = nil,
-                transcriptPath: String? = nil) {
+                transcriptPath: String? = nil, turnOutputTokens: Int? = nil, sessionOutputTokens: Int? = nil) {
         self.sessionID = sessionID
         self.source = source
         self.timestamp = timestamp
@@ -53,6 +56,8 @@ public struct AgentSessionEvent: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.turnTokens = turnTokens
         self.transcriptPath = transcriptPath
+        self.turnOutputTokens = turnOutputTokens
+        self.sessionOutputTokens = sessionOutputTokens
     }
 }
 
@@ -72,15 +77,19 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public var waitingSince: Date?
     public var accumulatedWait: TimeInterval = 0
     public var unread: Bool = false
+    public var outputRate: SessionOutputRate?
 
     public var projectName: String {
         guard let projectPath, !projectPath.isEmpty else { return "未识别项目" }
         return URL(fileURLWithPath: projectPath).lastPathComponent
     }
 
+    public static let inactivityWarningThreshold: TimeInterval = 120
+
     public func displayState(at now: Date) -> AgentSessionState {
-        // Silence is not completion or proof of failure. Long tools can legitimately be quiet.
-        state == .running && now.timeIntervalSince(stateObservedAt ?? lastActivityAt) >= 120 ? .unknown : state
+        // A warning about missing progress, not a claim that the task failed.
+        // Reconfirming "running" is not activity, so a status poll cannot renew it.
+        state == .running && activitySilence(at: now) >= Self.inactivityWarningThreshold ? .stalled : state
     }
 
     /// Unknown database states must not renew this deadline merely because they
@@ -88,9 +97,7 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public func menuBarUncertaintyAge(at now: Date) -> TimeInterval? {
         switch displayState(at: now) {
         case .unknown:
-            let since = state == .running
-                ? (stateObservedAt ?? lastActivityAt).addingTimeInterval(120) : lastActivityAt
-            return max(0, now.timeIntervalSince(since))
+            return max(0, now.timeIntervalSince(lastActivityAt))
         case .interrupted: return max(0, now.timeIntervalSince(lastActivityAt))
         default: return nil
         }
@@ -99,6 +106,16 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public func showsMenuBarDot(at now: Date) -> Bool {
         guard !state.isTerminal || unread else { return false }
         return menuBarUncertaintyAge(at: now).map { $0 < 13 } ?? true
+    }
+
+    /// nil distinguishes missing usage from a measured zero-output interval.
+    public func outputTokensPerSecond(at now: Date) -> Double? {
+        guard let rate = outputRate?.tokensPerSecond(at: endedAt ?? now) else { return nil }
+        return state.isWaiting ? 0 : rate
+    }
+
+    public func activitySilence(at now: Date) -> TimeInterval {
+        max(0, now.timeIntervalSince(lastActivityAt))
     }
 
     public func elapsed(at now: Date) -> TimeInterval? {
@@ -115,7 +132,17 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
         if event.kind != .started, let incoming = event.turnID, let turnID, incoming != turnID { return }
         if let path = event.projectPath { projectPath = path }
         if event.kind == .metadata {
-            if state == .running { lastActivityAt = event.timestamp }
+            if let total = event.turnOutputTokens ?? event.sessionOutputTokens {
+                var rate = outputRate ?? SessionOutputRate()
+                let isTurn = event.turnOutputTokens != nil
+                let progressed = rate.observe(total: total, scope: isTurn ? "turn" : "session",
+                    at: event.timestamp, turnStart: isTurn && outputRate == nil ? startedAt : nil)
+                outputRate = rate
+                // Repeated usage/context metadata is not a heartbeat. A real
+                // output increase may refresh activity but cannot resolve a wait
+                // or reopen a completed/interrupted turn.
+                if progressed && state == .running { lastActivityAt = event.timestamp }
+            }
             return
         }
         if event.kind == .closed && state.isTerminal { return }
@@ -126,6 +153,7 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
                 waitingSince = nil
                 accumulatedWait = 0
                 unread = false
+                outputRate = nil
             }
             turnID = event.turnID
         } else if source == .claudeCode && state == .completed && event.kind == .activity {
@@ -183,10 +211,12 @@ public struct AgentSessionSummary: Equatable, Sendable {
         let waiting = sessions.filter { $0.state.isWaiting }.count
         let failed = sessions.filter { $0.state == .failed && $0.unread }.count
         let completed = sessions.filter { $0.state == .completed && $0.unread }.count
+        let stalled = sessions.filter { $0.displayState(at: now) == .stalled }.count
         let running = sessions.filter { $0.displayState(at: now) == .running }.count
         let unknown = sessions.filter { $0.displayState(at: now) == .unknown }.count
         if waiting > 0 { label = "待处理 \(waiting)"; mode = .waiting }
         else if failed > 0 { label = "失败 \(failed)"; mode = .failed }
+        else if stalled > 0 { label = "无活动 \(stalled)"; mode = .unknown }
         else if completed > 0 { label = "完成 \(completed)"; mode = .completed }
         else if running > 0 { label = "运行 \(running)"; mode = .working }
         else if unknown > 0 { label = "待确认 \(unknown)"; mode = .unknown }

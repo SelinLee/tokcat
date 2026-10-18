@@ -177,9 +177,9 @@ final class AgentConversationReaderTests: XCTestCase {
         XCTAssertEqual(sqlite3_exec(db, "UPDATE sessions SET status='working'", nil, nil, nil), SQLITE_OK)
         let working = try XCTUnwrap(reader.poll(now: now.addingTimeInterval(600)).first?.session)
         XCTAssertEqual(working.state, .running)
-        XCTAssertEqual(working.displayState(at: now.addingTimeInterval(601)), .running)
+        XCTAssertEqual(working.displayState(at: now.addingTimeInterval(601)), .stalled)
         XCTAssertEqual(working.lastActivityAt.timeIntervalSince(now), 6, accuracy: 0.01)
-        XCTAssertEqual(working.displayState(at: now.addingTimeInterval(721)), .unknown)
+        XCTAssertEqual(working.displayState(at: now.addingTimeInterval(721)), .stalled)
         XCTAssertEqual(sqlite3_exec(db, "UPDATE sessions SET status='archived'", nil, nil, nil), SQLITE_OK)
         XCTAssertTrue(reader.poll(now: now.addingTimeInterval(606)).isEmpty)
     }

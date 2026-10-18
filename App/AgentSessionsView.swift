@@ -31,7 +31,7 @@ enum SessionPresentation {
         case .running: return Color(nsColor: attentionColor)
         case .completed: return .green
         case .waitingForInput, .waitingForApproval: return Color(nsColor: attentionColor)
-        case .failed: return .red
+        case .failed, .stalled: return .red
         case .unknown, .interrupted: return .secondary
         }
     }
@@ -103,7 +103,7 @@ private struct AgentSessionRow: View {
             let state = session.displayState(at: now)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Image(systemName: state == .unknown || state == .interrupted ? "circle" : "circle.fill")
+                    Image(systemName: state == .unknown || state == .interrupted || state == .stalled ? "circle" : "circle.fill")
                         .font(.system(size: 7)).foregroundStyle(SessionPresentation.color(state))
                     Text(task?.displayTitle ?? session.projectName)
                         .font(.subheadline.weight(.semibold)).lineLimit(2)
@@ -114,14 +114,22 @@ private struct AgentSessionRow: View {
                             .help("标为已读并移除顶部栏状态点")
                     }
                 }
-                HStack(spacing: 6) {
-                    Text(session.source.displayName)
-                    if task?.displayTitle != session.projectName {
-                        Text("· " + session.projectName).lineLimit(1).truncationMode(.middle)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text(session.source.displayName).fixedSize()
+                        if task?.displayTitle != session.projectName {
+                            Text("· " + session.projectName).lineLimit(1).truncationMode(.middle)
+                        }
                     }
+                    Spacer(minLength: 0)
+                    Text(currentModel.map(ModelNameFormatting.shortDisplayName) ?? "模型未记录")
+                        .lineLimit(1).truncationMode(.middle)
+                        .layoutPriority(1)
+                        .help(currentModel ?? "该会话尚未上报模型名称")
                 }.font(.caption2).foregroundStyle(.secondary)
                 HStack {
                     Text(state.title).font(.caption.weight(.medium))
+                        .foregroundStyle(state == .stalled ? Color.red : Color.primary)
                     Spacer()
                     if state.isWaiting, let since = session.waitingSince {
                         Text("已等待 " + SessionPresentation.duration(now.timeIntervalSince(since)))
@@ -129,8 +137,27 @@ private struct AgentSessionRow: View {
                         Text((session.state.isTerminal ? "用时 " : "已运行 ") + SessionPresentation.duration(elapsed))
                     } else { Text("本轮起点未知") }
                 }.font(.caption).monospacedDigit()
-                if state == .running, let phase = session.phase {
-                    Text(phase).font(.caption2).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if session.state == .running && session.activitySilence(at: now) >= 30 {
+                        Text("已 " + SessionPresentation.duration(session.activitySilence(at: now)) + " 无新活动")
+                            .foregroundStyle(.secondary)
+                            .help("最近阶段：" + (session.phase ?? "未记录") + "。日志没有更新，可能仍在思考、执行工具或等待网络。")
+                    } else if state == .running, let phase = session.phase {
+                        Text(phase).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(session.outputTokensPerSecond(at: now).map { String(format: "%.1f tok/s", $0) } ?? "— tok/s")
+                            .font(.caption.weight(.medium)).monospacedDigit()
+                        Text("输出 · 近60秒").font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    .fixedSize()
+                    .help("按本会话最近60秒日志上报的输出 token 估算，包含推理输出，不含输入和缓存；短于60秒按已观测时长计算。用量分批更新，并非逐字实时速度。— 表示样本不足；结束后保留结束时读数。")
+                }.font(.caption2)
+                if session.state == .running, let lastOutput = session.outputRate?.lastOutputAt,
+                   now.timeIntervalSince(lastOutput) >= 60 {
+                    Text("已 " + SessionPresentation.duration(now.timeIntervalSince(lastOutput)) + " 未上报新输出")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("详情") {
                     VStack(alignment: .leading, spacing: 5) {
@@ -138,6 +165,9 @@ private struct AgentSessionRow: View {
                         if let start = session.startedAt { Text("开始：\(start.formatted(date: .omitted, time: .standard))") }
                         if let end = session.endedAt { Text("结束：\(end.formatted(date: .omitted, time: .standard))") }
                         Text("其中等待你：" + SessionPresentation.duration(session.waitDuration(at: now)))
+                        if state == .stalled {
+                            Text("超过2分钟未收到新活动，红色空心点会保留到任务恢复或明确结束。可能在执行长工具、等待网络或模型响应，请打开原会话检查。")
+                        }
                         if state == .unknown { Text("暂无新事件，可能仍在执行长任务；尚不能判断完成或失败。") }
                         if state == .completed { Text("表示本轮回复已结束，测试结果和任务质量请回原会话查看。") }
                         Text("会话：\(session.sessionID.suffix(12))").textSelection(.enabled)
@@ -160,6 +190,13 @@ private struct AgentSessionRow: View {
             }
             .padding(9)
             .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+        }
+    }
+
+    private var currentModel: String? {
+        task?.modelName.flatMap {
+            let name = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
         }
     }
 }

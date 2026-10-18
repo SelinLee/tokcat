@@ -19,6 +19,7 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable, Identifiable {
     public var activityOnly: Bool
     public var logPath: String?
     public var lastEventFingerprint: String?
+    public var lastEventAt: Date?
 
     public var lastActivityAt: Date { session.lastActivityAt }
     public var displayTitle: String { title.flatMap { $0.isEmpty ? nil : $0 } ?? session.projectName }
@@ -52,8 +53,10 @@ public struct AgentTaskHistory {
         if let incoming = event?.turnID, let current = session.turnID, incoming != current { return }
         let key = AgentTaskRecord.key(for: session)
         var record = records[key] ?? AgentTaskRecord(session: session, logPath: logPath)
-        // A bootstrap replay must not replace newer metadata or unread acknowledgements.
-        if let event, let last = record.timeline.last, event.timestamp < last.timestamp { return }
+        // Metadata has its own replay watermark: it must not pretend to be
+        // activity just to prevent an earlier tool call from being counted twice.
+        if let event, let last = record.lastEventAt ?? record.timeline.last?.timestamp,
+           event.timestamp < last { return }
         guard session.lastActivityAt >= record.lastActivityAt else { return }
         record.session = session
         if let logPath { record.logPath = logPath }
@@ -61,6 +64,7 @@ public struct AgentTaskHistory {
             let fingerprint = "\(event.timestamp.timeIntervalSince1970):\(event.kind.rawValue):\(event.toolName ?? ""):\(event.phase ?? ""):\(event.modelName ?? ""):\(event.turnTokens ?? -1)"
             if record.lastEventFingerprint == fingerprint { return }
             record.lastEventFingerprint = fingerprint
+            record.lastEventAt = event.timestamp
             if let model = event.modelName { record.modelName = model }
             if let tokens = event.turnTokens { record.turnTokens = max(0, tokens) }
             if event.toolName != nil { record.toolCalls = (record.toolCalls ?? 0) + 1 }

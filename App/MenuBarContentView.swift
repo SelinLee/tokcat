@@ -345,7 +345,8 @@ struct MenuBarContentView: View {
         case .completed: return .green
         case .waiting: return .yellow
         case .failed: return .red
-        case .unknown: return .secondary
+        case .unknown:
+            return live.agentSessions.contains { $0.displayState(at: Date()) == .stalled } ? .red : .secondary
         }
     }
 

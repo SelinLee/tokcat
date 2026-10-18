@@ -15,6 +15,12 @@ enum AgentSessionPreview {
                      _ kind: AgentSessionEvent.Kind, _ seconds: Double) -> AgentSession {
             var value = AgentSession(event: AgentSessionEvent(sessionID: id, source: source,
                 timestamp: now.addingTimeInterval(-seconds), kind: .started, projectPath: "/Projects/" + project))
+            if source == .codexCLI && kind == .activity && seconds >= 20 {
+                value.apply(AgentSessionEvent(sessionID: id, source: source,
+                    timestamp: now.addingTimeInterval(-12), kind: .metadata, turnOutputTokens: 200))
+                value.apply(AgentSessionEvent(sessionID: id, source: source,
+                    timestamp: now.addingTimeInterval(-2), kind: .metadata, turnOutputTokens: 500))
+            }
             value.apply(AgentSessionEvent(sessionID: id, source: source,
                 timestamp: now.addingTimeInterval(kind == .waitingForApproval ? -80 : -1), kind: kind,
                 phase: kind == .activity ? "运行测试" : nil))
@@ -26,12 +32,13 @@ enum AgentSessionPreview {
         }
         let tasks = [
             session("a", "网站重构", .claudeCode, .waitingForApproval, 330),
-            session("b", "日报整理", .workBuddy, .activity, 222),
+            session("b", "日报整理", .codexCLI, .activity, 55),
             session("c", "文档整理", .claudeCode, .completed, 138),
             session("d", "数据导入", .codexCLI, .failed, 90)
         ]
         var unknown = session("e", "长任务", .codexCLI, .activity, 600)
         unknown.lastActivityAt = now.addingTimeInterval(-125)
+        unknown.outputRate = nil
         let all = tasks + [unknown, session("f", "客户端", .codexCLI, .activity, 20),
                            session("g", "接口", .codexCLI, .activity, 30)]
         for dark in [false, true] {
@@ -81,7 +88,8 @@ enum AgentSessionPreview {
                 } content: {
                     VStack(alignment: .leading, spacing: 12) {
                         AgentSessionList(sessions: previewTasks, markRead: { _ in }, tasks: previewTasks.map {
-                            AgentTaskRecord(session: $0, title: "优化" + $0.projectName + "的布局与内容")
+                            AgentTaskRecord(session: $0, title: "优化" + $0.projectName + "的布局与内容",
+                                modelName: $0.source == .codexCLI ? "gpt-6.1-sol" : "anthropic/claude-sonnet-5")
                         })
                         HStack {
                             Text("Codex 额度").font(.caption)
@@ -108,6 +116,20 @@ enum AgentSessionPreview {
                     try Data(contentsOf: panelURL).write(to: directory.appendingPathComponent("ai-monitor-\(name).png"))
                 }
             }
+
+            var quiet = session("quiet", "等待模型响应", .codexCLI, .activity, 180)
+            quiet.lastActivityAt = now.addingTimeInterval(-65)
+            quiet.phase = "思考中"
+            quiet.outputRate = nil
+            let outputSessions = [tasks[1], quiet, unknown]
+            let outputTasks = zip(outputSessions, ["gpt-6.1-sol", "openai/gpt-6-astra-long-model-name", ""]).map {
+                AgentTaskRecord(session: $0.0, modelName: $0.1)
+            }
+            let outputPanel = AgentSessionList(sessions: outputSessions, markRead: { _ in }, tasks: outputTasks)
+                .padding(12).frame(width: 340)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, dark ? .dark : .light)
+            try snapshotPanel(outputPanel, to: directory.appendingPathComponent("output-rate-\(name).png"))
 
             let samples = [1, 2, 3, 4, 6, 7].map { count -> (Int, NSImage) in
                 var sample = icon

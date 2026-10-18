@@ -135,8 +135,8 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
     }
 
     /// A long tool call writes nothing to the projection for minutes. The harness
-    /// still reports an open step, so the task must keep its dot: Tokcat reports
-    /// what the source says, exactly as it does for WorkBuddy's database status.
+    /// still reports an open step, so preserve the raw running state and dot,
+    /// while warning that there has been no observed progress.
     func testQuietRunningSessionKeepsItsDotThroughALongToolCall() throws {
         let now = Date()
         let stamp = now.addingTimeInterval(-600)
@@ -144,7 +144,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
         let reader = makeReader()
         let record = try XCTUnwrap(reader.poll(now: now).first)
         XCTAssertEqual(record.session.state, .running)
-        XCTAssertEqual(record.session.displayState(at: now), .running)
+        XCTAssertEqual(record.session.displayState(at: now), .stalled)
         XCTAssertTrue(record.session.showsMenuBarDot(at: now))
         // Re-reading the unchanged projection reconfirms the state, so silence
         // never ages the dot out while the harness still reports an open step.

@@ -108,9 +108,7 @@ public struct SystemMetricsSampleOptions: Sendable, Equatable {
 /// Polls whole-machine CPU, GPU, memory, network throughput, and thermal pressure.
 public final class SystemMetricsMonitor {
     private var previousCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
-    private var previousNetwork: (inbound: UInt64, outbound: UInt64, sampledAt: Date)?
-    /// EMA-smoothed network rates (bytes/second) so the menu bar doesn't jitter.
-    private var smoothedNetwork: (inbound: Double, outbound: Double)?
+    private var networkSampler = NetworkRateSampler()
     private var previousGPUBusy: (value: Double, sampledAt: Date)?
     /// Last fully assembled snapshot so skipped probes keep stable values.
     private var lastMetrics = SystemMetrics()
@@ -156,7 +154,7 @@ public final class SystemMetricsMonitor {
             next.memoryTotalBytes = sampleMemoryTotalBytes()
         }
         if options.network {
-            let network = sampleNetworkRates(now: now)
+            let network = sampleNetworkRates()
             next.networkInBytesPerSecond = network.inbound
             next.networkOutBytesPerSecond = network.outbound
         } else {
@@ -315,43 +313,20 @@ public final class SystemMetricsMonitor {
 
     // MARK: - Network
 
-    private func sampleNetworkRates(now: Date) -> (inbound: Double, outbound: Double) {
-        let counters = interfaceByteCounters()
-        defer { previousNetwork = (counters.inbound, counters.outbound, now) }
-
-        guard let previous = previousNetwork else { return (0, 0) }
-        let elapsed = now.timeIntervalSince(previous.sampledAt)
-        guard elapsed > 0 else { return smoothedNetwork ?? (0, 0) }
-
-        let inboundDelta = Double(counters.inbound &- previous.inbound)
-        let outboundDelta = Double(counters.outbound &- previous.outbound)
-        let instantInbound = max(0, inboundDelta / elapsed)
-        let instantOutbound = max(0, outboundDelta / elapsed)
-
-        // Time-constant-corrected exponential moving average. `alpha` scales
-        // with elapsed so the smoothing feels identical whether samples arrive
-        // every ~1s (menu-bar refresh) or after a long adaptive idle backoff.
-        // This mirrors mature monitors (iStat Menus / MenuMeters / DockX):
-        // the readout glides instead of snapping on every counter delta.
-        let tau = max(0.1, networkSmoothingTimeConstant)
-        let alpha = 1.0 - exp(-elapsed / tau)
-
-        if let smoothed = smoothedNetwork {
-            smoothedNetwork = (
-                inbound: smoothed.inbound + alpha * (instantInbound - smoothed.inbound),
-                outbound: smoothed.outbound + alpha * (instantOutbound - smoothed.outbound)
-            )
-        } else {
-            smoothedNetwork = (instantInbound, instantOutbound)
-        }
-        return smoothedNetwork ?? (instantInbound, instantOutbound)
+    private func sampleNetworkRates() -> (inbound: Double, outbound: Double) {
+        let counters = NetworkInterfaceReader.read()
+        return networkSampler.sample(
+            counters: counters,
+            at: ProcessInfo.processInfo.systemUptime,
+            smoothingTimeConstant: networkSmoothingTimeConstant
+        )
     }
 
     /// Samples only network throughput on its own cadence and returns the
     /// smoothed rate. Keeps `lastMetrics` fresh so a later full poll preserves
     /// the same value instead of zeroing it.
     public func sampleNetwork(now: Date = Date()) -> (inbound: Double, outbound: Double) {
-        let rates = sampleNetworkRates(now: now)
+        let rates = sampleNetworkRates()
         lastMetrics.networkInBytesPerSecond = rates.inbound
         lastMetrics.networkOutBytesPerSecond = rates.outbound
         lastMetrics.sampledAt = now
@@ -361,38 +336,8 @@ public final class SystemMetricsMonitor {
     /// Drops prior counter baselines and smoothing state (e.g. when network
     /// monitoring is toggled off and back on) so stale samples don't leak in.
     public func resetNetworkSampling() {
-        previousNetwork = nil
-        smoothedNetwork = nil
-    }
-
-    private func interfaceByteCounters() -> (inbound: UInt64, outbound: UInt64) {
-        var ifaddrPointer: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPointer) == 0, let first = ifaddrPointer else {
-            return (0, 0)
-        }
-        defer { freeifaddrs(first) }
-
-        var inbound: UInt64 = 0
-        var outbound: UInt64 = 0
-        var current: UnsafeMutablePointer<ifaddrs>? = first
-
-        while let interface = current {
-            defer { current = interface.pointee.ifa_next }
-
-            let name = String(cString: interface.pointee.ifa_name)
-            if name == "lo0" { continue }
-
-            guard let addr = interface.pointee.ifa_addr,
-                  addr.pointee.sa_family == UInt8(AF_LINK)
-            else { continue }
-
-            if let raw = interface.pointee.ifa_data {
-                let data = raw.assumingMemoryBound(to: if_data.self)
-                inbound += UInt64(data.pointee.ifi_ibytes)
-                outbound += UInt64(data.pointee.ifi_obytes)
-            }
-        }
-
-        return (inbound, outbound)
+        networkSampler = NetworkRateSampler()
+        lastMetrics.networkInBytesPerSecond = 0
+        lastMetrics.networkOutBytesPerSecond = 0
     }
 }

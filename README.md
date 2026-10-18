@@ -61,14 +61,15 @@ One status dot per task, next to the metrics you choose. Keep several agents in 
 | Pulsing yellow | Running |
 | Alternating yellow / red | Needs your input or approval |
 | Green | The turn finished; background replies remain until viewed |
-| Red | Failed |
-| Hollow gray | No recent updates or interrupted; see details for context |
+| Solid red | Failed |
+| Hollow red | Running task with no new activity for 2 minutes; stays visible until activity resumes or the turn ends |
+| Hollow gray | Unknown state or interrupted; see details for context |
 
 The strip shows up to six dots, then `+N`. Foreground completions flash for three seconds and clear automatically. Reduce Motion uses steady colors. CPU, GPU, memory, network, token throughput, spend rate and local Codex quota are optional.
 
 ## Click for context
 
-The dropdown shows conversation titles, source agents, current states, elapsed time, and waiting time. Expand a task, open its conversation or project, mark a completion as read, or jump to the main window.
+The dropdown shows conversation titles, source agents, current states, elapsed time, and waiting time. Below elapsed time, each task shows estimated output tok/s over the last 60 seconds (including reasoning output, excluding input and cache; `—` means insufficient data). After 30 seconds without activity, it shows the silent interval; after 2 minutes, a red inactivity warning appears. Long tools and network waits can trigger this warning without the task having failed. Expand a task, open its conversation or project, mark a completion as read, or jump to the main window.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-dropdown-dark.png" />

@@ -8,16 +8,19 @@ final class AgentSessionTests: XCTestCase {
                           timestamp: start.addingTimeInterval(seconds), kind: kind, turnID: turn)
     }
 
-    func testUncertainDotExpiresAfterTenSecondsAndThreeSecondFlashThenActivityRestoresIt() {
+    func testInactiveTaskTurnsRedAtThresholdAndStaysVisibleUntilProgressResumes() {
         var session = AgentSession(event: event(.started, 0))
-        XCTAssertEqual(session.menuBarUncertaintyAge(at: start.addingTimeInterval(120)), 0)
-        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(129.99)))
-        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(132.99)))
-        XCTAssertFalse(session.showsMenuBarDot(at: start.addingTimeInterval(133)))
+        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(119.99)), .running)
+        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(120)), .stalled)
+        XCTAssertNil(session.menuBarUncertaintyAge(at: start.addingTimeInterval(120)))
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(133)))
+        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(3_600)))
         XCTAssertEqual(session.state, .running)
-        session.apply(event(.activity, 150))
-        XCTAssertTrue(session.showsMenuBarDot(at: start.addingTimeInterval(150)))
-        XCTAssertNil(session.menuBarUncertaintyAge(at: start.addingTimeInterval(150)))
+        session.stateObservedAt = start.addingTimeInterval(3_600)
+        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(3_600)), .stalled)
+        session.apply(event(.activity, 3_601))
+        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(3_601)), .running)
+        XCTAssertNil(session.menuBarUncertaintyAge(at: start.addingTimeInterval(3_601)))
     }
 
     func testPollingAnUnknownStateDoesNotKeepItsDotAlive() {
@@ -36,7 +39,7 @@ final class AgentSessionTests: XCTestCase {
 
     func testSilenceDoesNotCompleteAndLongToolCanResume() {
         var session = AgentSession(event: event(.started, 0))
-        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(180)), .unknown)
+        XCTAssertEqual(session.displayState(at: start.addingTimeInterval(180)), .stalled)
         XCTAssertFalse(session.unread)
         session.apply(event(.activity, 181))
         XCTAssertEqual(session.displayState(at: start.addingTimeInterval(182)), .running)

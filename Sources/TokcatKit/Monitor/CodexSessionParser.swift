@@ -11,6 +11,7 @@ public struct CodexSessionParser {
     public private(set) var isSubagent = false
     public var isInternalRun: Bool { isGuardianReview || isSubagent }
     private var modelName: String?
+    private var hasNativeOutputUsage = false
     private var pendingQuestions: Set<String> = []
 
     public init(sessionID: String) { self.sessionID = sessionID }
@@ -68,18 +69,36 @@ public struct CodexSessionParser {
         var phase: String?
         var toolName: String?
         var turnTokens: Int?
+        var turnOutputTokens: Int?
+        var sessionOutputTokens: Int?
         var eventTurnID = payload["turn_id"] as? String ?? turnID
         if type == "token_usage_record" {
             kind = .metadata
-            turnTokens = (payload["turn_token_usage"] as? [String: Any])?["total_tokens"] as? Int
+            let usage = payload["turn_token_usage"] as? [String: Any]
+            turnTokens = usage?["total_tokens"] as? Int
+            turnOutputTokens = usage?["output_tokens"] as? Int
+            if let output = turnOutputTokens, output >= 0,
+               turnID == nil || eventTurnID == turnID {
+                hasNativeOutputUsage = true
+            }
         } else if type == "event_msg" {
             switch payloadType {
             case "task_started":
                 turnID = payload["turn_id"] as? String
                 eventTurnID = turnID
                 pendingQuestions.removeAll()
+                hasNativeOutputUsage = false
                 kind = .started
                 phase = "处理请求"
+            case "token_count":
+                // Desktop logs also emit legacy token_count for the same response.
+                // Prefer native per-turn totals so the two formats never double count.
+                guard !hasNativeOutputUsage,
+                      let info = payload["info"] as? [String: Any],
+                      let usage = info["total_token_usage"] as? [String: Any],
+                      let output = usage["output_tokens"] as? Int else { return nil }
+                sessionOutputTokens = output
+                kind = .metadata
             case "task_complete": kind = .completed
             case "turn_aborted": kind = .interrupted
             case "task_failed": kind = .failed
@@ -113,7 +132,8 @@ public struct CodexSessionParser {
         return AgentSessionEvent(sessionID: sessionID, source: .codexCLI, timestamp: timestamp,
                                  kind: kind, turnID: eventTurnID, projectPath: projectPath, phase: phase,
                                  startedAt: Self.date(payload["started_at"]), modelName: modelName,
-                                 toolName: toolName, turnTokens: turnTokens)
+                                 toolName: toolName, turnTokens: turnTokens,
+                                 turnOutputTokens: turnOutputTokens, sessionOutputTokens: sessionOutputTokens)
     }
 
     private static func date(_ value: Any?) -> Date? {
