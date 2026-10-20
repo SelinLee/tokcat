@@ -41,7 +41,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
         case .claudeCode:
             return "读取 ~/.claude/projects/*/*.jsonl 本地会话日志。"
         case .codexCLI:
-            return "读取 ~/.codex/sessions/**/rollout-*.jsonl 的 token_count 事件。"
+            return "读取 Codex 本地日志与桌面客户端的 Work 会话状态缓存；用量来自本地 token_count 事件。"
         case .openClaw:
             return "读取 ~/.openclaw/agents/**/sessions/*.trajectory.jsonl 的 model.completed。"
         case .workBuddy:

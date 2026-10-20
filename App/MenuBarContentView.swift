@@ -39,7 +39,7 @@ struct MenuBarContentView: View {
     private var header: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Tokcat")
+                Text("tokcat")
                     .font(.headline.weight(.semibold))
                 Text("多 Agent 状态监控")
                 .font(.caption2)
@@ -329,8 +329,8 @@ struct MenuBarContentView: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .keyboardShortcut("q", modifiers: .command)
-            .help("退出 Tokcat")
-            .accessibilityLabel("退出 Tokcat")
+            .help("退出 tokcat")
+            .accessibilityLabel("退出 tokcat")
         }
         .controlSize(.small)
         .labelStyle(.titleOnly)

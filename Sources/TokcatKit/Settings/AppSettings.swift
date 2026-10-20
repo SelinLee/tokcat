@@ -5,7 +5,7 @@ import Foundation
 /// without touching the usage SQLite store.
 
 /// Built-in menu bar glyphs users can choose from (DockX-style library).
-/// SF Symbols + the hand-drawn Tokcat face. No third-party assets.
+/// SF Symbols + the hand-drawn tokcat face. No third-party assets.
 public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifiable {
     case tokcat
     case rainTokcat
@@ -33,8 +33,8 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 
     public var displayName: String {
         switch self {
-        case .tokcat: return "Tokcat 表情"
-        case .rainTokcat: return "Tokcat 猫头"
+        case .tokcat: return "tokcat 表情"
+        case .rainTokcat: return "tokcat 猫头"
         case .lineCPU: return "CPU 线稿"
         case .lineMemory: return "内存线稿"
         case .lineNetwork: return "网速线稿"
@@ -526,7 +526,7 @@ public final class AppSettingsStore {
         var next = settings
         var changed = false
 
-        // One-time: promote the generated rain Tokcat menu-bar icon to the
+        // One-time: promote the generated rain tokcat menu-bar icon to the
         // default for users who were still on the old drawn cat.
         if !defaults.bool(forKey: Self.migratedRainMenuIconKey) {
             if next.menuBarIconStyle == .tokcat {

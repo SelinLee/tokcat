@@ -128,7 +128,7 @@ private struct AgentSessionRow: View {
                         .help(currentModel ?? "该会话尚未上报模型名称")
                 }.font(.caption2).foregroundStyle(.secondary)
                 HStack {
-                    Text(state.title).font(.caption.weight(.medium))
+                    Text(session.isCodexWork && state == .unknown ? "状态待确认" : state.title).font(.caption.weight(.medium))
                         .foregroundStyle(state == .stalled ? Color.red : Color.primary)
                     Spacer()
                     if state.isWaiting, let since = session.waitingSince {
@@ -137,6 +137,10 @@ private struct AgentSessionRow: View {
                         Text((session.state.isTerminal ? "用时 " : "已运行 ") + SessionPresentation.duration(elapsed))
                     } else { Text("本轮起点未知") }
                 }.font(.caption).monospacedDigit()
+                if session.isCodexWork && state == .unknown {
+                    Text("已发现 Work 会话，客户端暂未提供实时状态。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if session.state == .running && session.activitySilence(at: now) >= 30 {
                         Text("已 " + SessionPresentation.duration(session.activitySilence(at: now)) + " 无新活动")
@@ -168,16 +172,19 @@ private struct AgentSessionRow: View {
                         if state == .stalled {
                             Text("超过2分钟未收到新活动，红色空心点会保留到任务恢复或明确结束。可能在执行长工具、等待网络或模型响应，请打开原会话检查。")
                         }
-                        if state == .unknown { Text("暂无新事件，可能仍在执行长任务；尚不能判断完成或失败。") }
+                        if state == .unknown {
+                            Text(session.isCodexWork
+                                 ? "Work 本地目录仅提供会话信息，当前没有可靠的运行状态；可打开原会话查看。"
+                                 : "暂无新事件，可能仍在执行长任务；尚不能判断完成或失败。")
+                        }
                         if state == .completed { Text("表示本轮回复已结束，测试结果和任务质量请回原会话查看。") }
                         Text("会话：\(session.sessionID.suffix(12))").textSelection(.enabled)
-                        if let task, AgentConversationReader.supports(session.source) {
+                        if let task, AgentConversationReader.supports(session) {
                             Button("查看对话内容") { ConversationWindowController.show(task: task) }
                                 .buttonStyle(.plain).foregroundStyle(.tint)
                         }
-                        if session.source == .codexCLI, UUID(uuidString: session.sessionID) != nil,
-                           let url = URL(string: "codex://threads/" + session.sessionID) {
-                            Button("打开 Codex 会话") { NSWorkspace.shared.open(url) }
+                        if let url = session.codexConversationURL {
+                            Button(session.isCodexWork ? "打开 Work 会话" : "打开 Codex 会话") { NSWorkspace.shared.open(url) }
                                 .buttonStyle(.plain).foregroundStyle(.tint)
                         }
                         if let path = session.projectPath {
@@ -208,7 +215,7 @@ struct AgentMonitoringSettings: View {
 
     var body: some View {
         Section {
-            Text("Codex：自动识别本轮开始、结束、中断及可识别的提问事件。授权等待仅在数据源提供明确信号时显示。")
+            Text("Codex：读取本地任务事件及桌面 Work 会话状态。Work 状态随客户端同步更新；未提供的状态显示暂无更新。授权等待仅在数据源提供明确信号时显示。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("Claude Code 状态接入")
@@ -221,7 +228,7 @@ struct AgentMonitoringSettings: View {
             }
         } header: { Text("AI 任务状态") }
         footer: {
-            Text("Claude 接入会备份并合并本机设置，仅保存状态、项目路径和时间，不保存对话正文。移动 Tokcat.app 后请重新启用接入。")
+            Text("Claude 接入会备份并合并本机设置，仅保存状态、项目路径和时间，不保存对话正文。移动 tokcat.app 后请重新启用接入。")
         }
         .onChange(of: model.sessionMonitoringMessage) { _ in installed = ClaudeSessionHooks.isInstalled() }
     }

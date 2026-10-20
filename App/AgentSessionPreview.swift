@@ -45,6 +45,30 @@ enum AgentSessionPreview {
             let name = dark ? "dark" : "light"
             let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
             NSApp.appearance = appearance
+            var work = AgentSession(event: .init(
+                sessionID: "work:chatgpt:preview:user:11111111-1111-4111-8111-111111111111",
+                source: .codexCLI, timestamp: now.addingTimeInterval(-1_800), kind: .metadata))
+            work.phase = "Work · 客户端未提供当前状态"
+            var lost = work; lost.stateObservedAt = now
+            var resumed = work; resumed.state = .running; resumed.lastActivityAt = now
+            resumed.phase = "Work · 运行中"
+            for (scenario, value) in [("unknown", work), ("status-lost", lost), ("resumed", resumed)] {
+                let summary = AgentSessionSummary(sessions: [value], now: now)
+                let workPanel = VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("tokcat").font(.headline)
+                        Spacer()
+                        Text(summary.label.isEmpty ? "空闲" : summary.label).font(.caption)
+                    }
+                    AgentSessionList(sessions: [value], markRead: { _ in }, tasks: [
+                        AgentTaskRecord(session: value, title: "规划AI动画脚本")
+                    ])
+                }
+                .padding(14).frame(width: 380).frame(minHeight: 240, alignment: .top)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, dark ? .dark : .light)
+                try snapshotPanel(workPanel, to: directory.appendingPathComponent("work-\(scenario)-\(name).png"))
+            }
             var settings = AppSettings()
             settings.menuBarShowCPU = true
             settings.menuBarShowTokenRate = true
@@ -78,7 +102,7 @@ enum AgentSessionPreview {
                         Divider()
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Tokcat").font(.headline)
+                                Text("tokcat").font(.headline)
                                 Text("AI 工作监控").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()

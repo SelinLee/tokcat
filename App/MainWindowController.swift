@@ -21,7 +21,7 @@ final class MainWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Tokcat"
+        window.title = "tokcat"
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 1180, height: 780))
         window.minSize = NSSize(width: 900, height: 620)

@@ -37,6 +37,21 @@ final class AgentSessionTests: XCTestCase {
         XCTAssertFalse(session.showsMenuBarDot(at: start.addingTimeInterval(50)))
     }
 
+    func testExpiredUnknownCloudStatusDoesNotKeepMenuSummaryActive() {
+        var cloud = AgentSession(event: .init(sessionID: "work:chatgpt:account:user:11111111-1111-4111-8111-111111111111",
+            source: .codexCLI, timestamp: start, kind: .metadata), historical: true)
+        cloud.stateObservedAt = start
+        XCTAssertEqual(AgentSessionSummary(sessions: [cloud], now: start.addingTimeInterval(12)).label, "待确认 1")
+        let expired = start.addingTimeInterval(13)
+        XCTAssertEqual(AgentSessionSummary(sessions: [cloud], now: expired).mode, .sleeping)
+        XCTAssertEqual(AgentSessionSummary(sessions: [cloud], now: expired).label, "")
+        let running = AgentSession(event: event(.started, 12))
+        XCTAssertEqual(AgentSessionSummary(sessions: [cloud, running], now: expired).label, "运行 1")
+        var completed = AgentSession(event: event(.completed, 0))
+        completed.unread = true
+        XCTAssertEqual(AgentSessionSummary(sessions: [cloud, completed], now: expired).label, "完成 1")
+    }
+
     func testSilenceDoesNotCompleteAndLongToolCanResume() {
         var session = AgentSession(event: event(.started, 0))
         XCTAssertEqual(session.displayState(at: start.addingTimeInterval(180)), .stalled)

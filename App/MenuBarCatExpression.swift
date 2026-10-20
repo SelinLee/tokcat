@@ -1,7 +1,7 @@
 import AppKit
 import TokcatKit
 
-/// Draws Tokcat menu-bar face variants + floating status glyphs (zzz / steam / OK).
+/// Draws tokcat menu-bar face variants + floating status glyphs (zzz / steam / OK).
 /// The face is rendered as a template glyph: a black cat head with white
 /// inner-ear cutouts and big Luna eyes, matching the V3 character.
 enum MenuBarCatExpression {

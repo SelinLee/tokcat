@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import TokcatKit
 
-/// Tokcat V3 menu-bar glyph: a compact black cat head with proportional
+/// tokcat V3 menu-bar glyph: a compact black cat head with proportional
 /// pointed ears, white inner-ear cutouts, and big Luna eyes. Rendered as
 /// a template so macOS tints it for the menu bar.
 enum MenuBarCatIcon {
@@ -217,7 +217,7 @@ enum MenuBarStatusRenderer {
 
             if settings.menuBarShowCatIcon {
                 let iconSide = min(iconPointSize * scale, rect.height - 2 * scale)
-                // Tokcat expression reserves horizontal room for floating glyphs.
+                // tokcat expression reserves horizontal room for floating glyphs.
                 let iconWidth: CGFloat
                 if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
                     iconWidth = iconSide + MenuBarCatExpression.badgePointWidth * scale

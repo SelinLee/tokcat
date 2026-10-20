@@ -9,7 +9,7 @@ struct MenuBarResizePreviewApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPanelLayout {
-                Text("Tokcat · 菜单高度检查").font(.headline)
+                Text("tokcat · 菜单高度检查").font(.headline)
             } content: {
                 Text("动态任务列表").frame(maxWidth: .infinity)
                     .frame(height: driver.height)
@@ -19,7 +19,7 @@ struct MenuBarResizePreviewApp: App {
             }
             .background(MenuBarResizeProbe())
         } label: {
-            Text("Tokcat QA").onAppear { driver.start() }
+            Text("tokcat QA").onAppear { driver.start() }
         }
         .menuBarExtraStyle(.window)
     }

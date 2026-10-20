@@ -44,7 +44,7 @@ struct TokcatLauncher {
             // Run without constructing AppDelegate/AppModel or opening any windows.
             // Monitoring must never block or change Claude's permission decisions.
             do { try ClaudeSessionHooks.record(input: FileHandle.standardInput.readDataToEndOfFile()) }
-            catch { FileHandle.standardError.write(Data("Tokcat could not record the status event.\n".utf8)) }
+            catch { FileHandle.standardError.write(Data("tokcat could not record the status event.\n".utf8)) }
             return
         }
         TokcatApp.main()
@@ -104,7 +104,7 @@ private struct MenuBarLabelView: View {
 
     /// Hover text: activity mode, plus Codex remaining + reset countdown when shown.
     private var menuBarTooltip: String {
-        var lines = ["Tokcat · AI 工作监控", live.menuBarActivity.mode.title]
+        var lines = ["tokcat · AI 工作监控", live.menuBarActivity.mode.title]
         lines += SessionPresentation.visibleTasks(live.agentSessions).filter { $0.showsMenuBarDot(at: Date()) }.map {
             "\($0.source.displayName) · \($0.projectName) · \($0.displayState(at: Date()).title)"
         }

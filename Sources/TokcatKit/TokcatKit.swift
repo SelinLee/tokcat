@@ -1,1 +1,1 @@
-// TokcatKit: core library for Tokcat.
+// TokcatKit: core library for tokcat.

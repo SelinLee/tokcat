@@ -34,6 +34,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
         boundary: String? = nil,
         turns: [[String: Any]] = [],
         draft: String = "",
+        outputTokens: Int? = nil,
         modifiedAt: Date? = nil
     ) throws -> URL {
         func row(_ value: Any) -> [String: Any] { ["ver": 1, "seq": 1, "val": value] }
@@ -52,6 +53,10 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             "modelSelection": row(["lastUsed": lastUsedValue]),
             "subagent": row(subagentValue)
         ]
+        if let outputTokens {
+            rows["tokenUsage"] = row(["totals": ["outputTokens": outputTokens,
+                "uncachedInputTokens": 9_000_000, "cacheReadTokens": 8_000_000]])
+        }
         let object: [String: Any] = [
             "version": 4,
             "record": ["identity": ["cwd": cwd], "rows": rows]
@@ -345,5 +350,71 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
         )
         XCTAssertTrue(monitor.poll(enabled: [.claudeCode], now: now).sessions.isEmpty)
         XCTAssertEqual(monitor.poll(enabled: [.deepseekHarness], now: now).sessions.count, 1)
+    }
+
+    func testOutputSpeedUsesSessionDeltasAndSurvivesRestart() throws {
+        let now = Date()
+        func monitor() -> AgentSessionMonitor {
+            AgentSessionMonitor(codexDirectory: root.appendingPathComponent("codex"),
+                supportDirectory: root.appendingPathComponent("support"), now: now,
+                recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil,
+                deepSeekHarnessDirectories: [sessionsDir])
+        }
+        try writeSession(id: "speed", openStep: true, outputTokens: 90_000, modifiedAt: now)
+        try writeSession(id: "other", openStep: true, outputTokens: 50_000, modifiedAt: now)
+        let live = monitor()
+        func session(_ result: AgentSessionMonitor.PollResult) throws -> AgentSession {
+            try XCTUnwrap(result.sessions.first { $0.sessionID == "speed" })
+        }
+        // Attaching halfway through a session never counts its historical tokens.
+        XCTAssertNil(try session(live.poll(enabled: [.deepseekHarness], now: now)).outputRate?.tokensPerSecond(at: now))
+        try writeSession(id: "speed", openStep: true, outputTokens: 90_200, modifiedAt: now.addingTimeInterval(10))
+        let running = live.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(10))
+        XCTAssertEqual(try session(running).outputTokensPerSecond(at: now.addingTimeInterval(10)), 20)
+        XCTAssertNil(running.sessions.first { $0.sessionID == "other" }?.outputTokensPerSecond(at: now.addingTimeInterval(10)))
+        XCTAssertEqual(running.tasks.first { $0.session.sessionID == "speed" }?.session.outputTokensPerSecond(at: now.addingTimeInterval(10)), 20)
+        let restarted = monitor()
+        XCTAssertEqual(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(10)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(10)), 20)
+        XCTAssertEqual(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(80)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(80)), 0)
+
+        try writeSession(id: "speed", boundary: "end", outputTokens: 90_400, modifiedAt: now.addingTimeInterval(90))
+        let done = try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(90)))
+        XCTAssertEqual(done.outputTokensPerSecond(at: now.addingTimeInterval(200)), 200.0 / 60)
+        // A later turn begins with a new baseline, not the previous reply's speed.
+        try writeSession(id: "speed", openStep: true, outputTokens: 90_400, modifiedAt: now.addingTimeInterval(95))
+        XCTAssertNil(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(95)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(95)))
+        try writeSession(id: "speed", openStep: true, outputTokens: 90_500, modifiedAt: now.addingTimeInterval(105))
+        XCTAssertEqual(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(105)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(105)), 10)
+        // Compaction/counter rollback rebases rather than emitting a spike.
+        try writeSession(id: "speed", openStep: true, outputTokens: 10, modifiedAt: now.addingTimeInterval(110))
+        XCTAssertNil(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(110)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(110)))
+        try writeSession(id: "speed", openStep: true, outputTokens: 110, modifiedAt: now.addingTimeInterval(120))
+        XCTAssertEqual(try session(restarted.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(120)))
+            .outputTokensPerSecond(at: now.addingTimeInterval(120)), 10)
+    }
+
+    func testWaitingSpeedIsZeroAndMissingUsageDoesNotBecomeZeroCounter() throws {
+        let now = Date()
+        let monitor = AgentSessionMonitor(codexDirectory: root.appendingPathComponent("codex"),
+            supportDirectory: root.appendingPathComponent("support"), now: now,
+            recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil,
+            deepSeekHarnessDirectories: [sessionsDir])
+        try writeSession(id: "speed", openStep: true, outputTokens: 1000, modifiedAt: now)
+        _ = monitor.poll(enabled: [.deepseekHarness], now: now)
+        try writeSession(id: "speed", openStep: true, outputTokens: 1100, modifiedAt: now.addingTimeInterval(10))
+        _ = monitor.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(10))
+        try writeSession(id: "speed", activeQuestions: [["state": "open"]], outputTokens: 1100,
+                         modifiedAt: now.addingTimeInterval(15))
+        XCTAssertEqual(monitor.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(15))
+            .sessions.first?.outputTokensPerSecond(at: now.addingTimeInterval(15)), 0)
+        try writeSession(id: "speed", openStep: true, modifiedAt: now.addingTimeInterval(20))
+        let missing = monitor.poll(enabled: [.deepseekHarness], now: now.addingTimeInterval(20))
+        XCTAssertEqual(missing.sessions.first?.outputTokensPerSecond(at: now.addingTimeInterval(20)), 5)
+        XCTAssertNil(missing.tasks.first?.sessionOutputTokens)
     }
 }

@@ -19,6 +19,7 @@ public struct AgentViewingTracker {
         public let turnID: String?
         public let state: AgentSessionState
         public let endedAt: Date
+        public let workStateObservedAt: Date?
 
         public init?(_ session: AgentSession) {
             guard session.state == .completed || session.state == .failed, session.unread else { return nil }
@@ -26,6 +27,7 @@ public struct AgentViewingTracker {
             turnID = session.turnID
             state = session.state
             endedAt = session.endedAt ?? session.lastActivityAt
+            workStateObservedAt = session.isCodexWork ? session.stateObservedAt : nil
         }
     }
 

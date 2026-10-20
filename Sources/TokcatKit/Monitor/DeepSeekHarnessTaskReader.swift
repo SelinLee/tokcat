@@ -39,7 +39,7 @@ public final class DeepSeekHarnessTaskReader: ExternalTaskReader {
     private struct Cached {
         var size: UInt64
         var modifiedAt: Date
-        /// `nil` for projections Tokcat deliberately ignores, or that could not be
+        /// `nil` for projections tokcat deliberately ignores, or that could not be
         /// parsed. Either way there is nothing to re-read until the file changes.
         var record: AgentTaskRecord?
         var isInternalRun: Bool
@@ -187,6 +187,10 @@ public final class DeepSeekHarnessTaskReader: ExternalTaskReader {
             title: title.map { String($0.prefix(120)) },
             modelName: JSONDict.string(selection?["model"])
         )
+        if let totals = dictionary(dictionary(value("tokenUsage"))?["totals"]),
+           let output = totals["outputTokens"] as? Int, output >= 0 {
+            result.sessionOutputTokens = output
+        }
         result.timeline = [AgentTaskActivity(timestamp: modifiedAt, label: session.phase ?? state.title)]
         result.logPath = url.path
         return Reading(record: result)

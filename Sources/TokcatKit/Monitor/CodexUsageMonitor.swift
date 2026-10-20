@@ -80,7 +80,7 @@ public struct CodexUsageSnapshot: Equatable, Sendable {
     public var weekly: CodexUsageWindow?
     public var planType: String?
     public var email: String?
-    /// Timestamp of the local Codex event, never the time Tokcat read the file.
+    /// Timestamp of the local Codex event, never the time tokcat read the file.
     public var fetchedAt: Date?
     public var errorMessage: String?
 

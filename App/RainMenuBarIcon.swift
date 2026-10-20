@@ -1,7 +1,7 @@
 import AppKit
 import TokcatKit
 
-/// Image-based Tokcat head menu-bar icon.
+/// Image-based tokcat head menu-bar icon.
 /// Draws the generated cat-head PNG on the left and reuses the shared
 /// floating status glyphs (zzz / steam / OK) on the right, so this style
 /// keeps the live agent-state indicator like the vector `.tokcat` face.

@@ -22,6 +22,8 @@ public final class AgentSessionMonitor {
     private let recentReader: RecentAgentTaskReader
     /// Sources that publish their own state instead of being inferred from logs.
     private let externalReaders: [(source: AgentSource, reader: ExternalTaskReader)]
+    private var codexWorkLastAvailableAt: Date?
+    private static let cloudStatusReadGrace: TimeInterval = 120
 
     public init(codexDirectory: URL = CodexCLIAdapter.defaultSessionsDirectory,
                 supportDirectory: URL = AgentSessionMonitor.supportDirectory, now: Date = Date(),
@@ -30,13 +32,18 @@ public final class AgentSessionMonitor {
                 workBuddyAIDatabase: URL? = WorkBuddyTaskReader.aiDatabaseURL,
                 workBuddyProjects: URL = WorkBuddyTaskReader.defaultProjectsDirectory,
                 workBuddyAIProjects: URL = WorkBuddyTaskReader.aiProjectsDirectory,
-                deepSeekHarnessDirectories: [URL]? = DeepSeekHarnessTaskReader.defaultDirectories) {
+                deepSeekHarnessDirectories: [URL]? = DeepSeekHarnessTaskReader.defaultDirectories,
+                codexWorkDatabase: URL? = nil) {
         self.codexDirectory = codexDirectory
         self.codexTitles = CodexSessionTitleReader(url: codexDirectory.deletingLastPathComponent().appendingPathComponent("session_index.jsonl"))
         self.supportDirectory = supportDirectory
         self.launchedAt = now
         self.recentReader = RecentAgentTaskReader(roots: recentRoots)
         var externalReaders: [(source: AgentSource, reader: ExternalTaskReader)] = []
+        // Derive from the same Codex root so custom directories and test fixtures
+        // never accidentally import the user's real Work catalog.
+        externalReaders.append((.codexCLI, CodexWorkTaskReader(databaseURL: codexWorkDatabase
+            ?? codexDirectory.deletingLastPathComponent().appendingPathComponent("sqlite/codex-dev.db"))))
         if let workBuddyDatabase {
             externalReaders.append((.workBuddy, WorkBuddyTaskReader(databaseURL: workBuddyDatabase,
                 projectsDirectory: workBuddyProjects, source: .workBuddy)))
@@ -157,18 +164,56 @@ public final class AgentSessionMonitor {
         }
         for (source, externalReader) in externalReaders where enabled.contains(source) {
             let records = externalReader.poll(now: now)
+            if externalReader is CodexWorkTaskReader {
+                if externalReader.isAvailable { codexWorkLastAvailableAt = now }
+                else if now.timeIntervalSince(codexWorkLastAvailableAt ?? launchedAt) >= Self.cloudStatusReadGrace {
+                    // A stale cloud cache cannot confirm ongoing work when its
+                    // source has been unreadable for two minutes. Keep history
+                    // and expire the menu entry without inventing a turn end.
+                    for (id, var session) in sessions where session.isCodexWork
+                        && !session.state.isTerminal && session.state != .unknown {
+                        session.state = .unknown
+                        session.stateObservedAt = now
+                        session.phase = "Work · 云端状态暂未同步，请打开原会话查看"
+                        sessions[id] = session
+                        history.observe(session, event: nil)
+                    }
+                }
+            }
             // Runs the reader calls internal must not survive as tasks, even when an
             // earlier build already archived them.
             history.removeSessions(source: source, ids: externalReader.ignoredSessionIDs)
             if externalReader.isAvailable {
                 let visibleIDs = Set(records.map { $0.session.id })
-                sessions = sessions.filter { $0.value.source != source || visibleIDs.contains($0.key) }
+                sessions = sessions.filter {
+                    $0.value.source != source || !externalReader.managesSession($0.value.sessionID)
+                        || visibleIDs.contains($0.key)
+                }
             }
             for var record in records where externalReader.isAvailable {
                 let old = sessions[record.session.id]
+                // Work has no turn IDs. Keep a stable observation revision until
+                // its explicit state changes, so an older read acknowledgement
+                // cannot clear a newer result with the same catalog timestamp.
+                if record.session.isCodexWork, old?.state == record.session.state {
+                    record.session.stateObservedAt = old?.stateObservedAt ?? record.session.stateObservedAt
+                } else if record.session.isCodexWork, record.session.state == .unknown, old != nil {
+                    record.session.stateObservedAt = now
+                }
+                // External snapshots replace the session, but output counters
+                // need their previous baseline (including after app restart).
+                let newTurn = old?.state.isTerminal == true
+                    && (record.session.state == .running || record.session.state.isWaiting)
+                var rate = newTurn ? nil : old?.outputRate
+                if let total = record.sessionOutputTokens {
+                    var next = rate ?? SessionOutputRate()
+                    next.observe(total: total, scope: "session", at: record.lastActivityAt, turnStart: nil)
+                    rate = next
+                }
+                record.session.outputRate = rate ?? record.session.outputRate
                 record.session.unread = old?.unread ?? false
                 if let old, !firstPoll, previousEnabled.contains(source),
-                   record.lastActivityAt > old.lastActivityAt, old.state != record.session.state {
+                   record.lastActivityAt >= old.lastActivityAt, old.state != record.session.state {
                     if record.session.state == .completed || record.session.state == .failed {
                         record.session.unread = true
                         alerts[record.session.id] = record.session

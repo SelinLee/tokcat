@@ -8,7 +8,7 @@ public enum ProviderCostSource: String, Sendable, Equatable, Codable {
     case ccSwitchCatalog
     /// Inferred median rates from historical reported costs for the same provider+model.
     case inferred
-    /// Tokcat built-in / user pricing table (× multiplier).
+    /// tokcat built-in / user pricing table (× multiplier).
     case localCatalog
     /// Explicit free tier (`:free`, `*-free`, zero catalog rate).
     case free
@@ -167,7 +167,7 @@ public struct ProviderCostResolver: Sendable {
             )
         }
 
-        // 5) Local Tokcat catalog / user overrides (provider-scoped rows win).
+        // 5) Local tokcat catalog / user overrides (provider-scoped rows win).
         if let model = candidates.first {
             var match = localCatalog.matchedEntry(forModel: model, provider: nil)
             var providerForCost: String? = nil

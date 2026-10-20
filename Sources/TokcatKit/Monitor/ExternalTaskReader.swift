@@ -13,9 +13,12 @@ protocol ExternalTaskReader: AnyObject {
     /// CLI's internal delegated runs. Records an earlier build wrote for them are
     /// stale and must be dropped rather than kept as tasks.
     var ignoredSessionIDs: Set<String> { get }
+    /// A reader can own a subset of a source (Work and rollouts both use Codex).
+    func managesSession(_ id: String) -> Bool
     func poll(now: Date) -> [AgentTaskRecord]
 }
 
 extension ExternalTaskReader {
     var ignoredSessionIDs: Set<String> { [] }
+    func managesSession(_ id: String) -> Bool { true }
 }

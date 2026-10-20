@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Build a distributable Tokcat.app (ad-hoc signed) + zip + DMG.
+# Build a distributable tokcat.app (ad-hoc signed) + zip + DMG.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="Tokcat"
+APP_NAME="tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.7.6}"
-BUILD_NUMBER="${TOKCAT_BUILD:-9}"
+VERSION="${TOKCAT_VERSION:-0.7.7}"
+BUILD_NUMBER="${TOKCAT_BUILD:-12}"
 
 DIST_DIR="$ROOT/dist"
 APP_DIR="$DIST_DIR/${APP_NAME}.app"
@@ -59,12 +59,12 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 # SwiftPM resource bundle next to the executable.
-RES_BUNDLE_SRC="$(dirname "$BIN")/Tokcat_TokcatApp.bundle"
+RES_BUNDLE_SRC="$(dirname "$BIN")/tokcat_TokcatApp.bundle"
 if [[ ! -d "$RES_BUNDLE_SRC" ]]; then
-  RES_BUNDLE_SRC="$(find "$ROOT/.build" -type d -name 'Tokcat_TokcatApp.bundle' | head -1 || true)"
+  RES_BUNDLE_SRC="$(find "$ROOT/.build" -type d -name 'tokcat_TokcatApp.bundle' | head -1 || true)"
 fi
 if [[ ! -d "$RES_BUNDLE_SRC" ]]; then
-  echo "Resource bundle Tokcat_TokcatApp.bundle not found" >&2
+  echo "Resource bundle tokcat_TokcatApp.bundle not found" >&2
   exit 1
 fi
 
@@ -105,7 +105,7 @@ copy_resource_bundle() {
   <key>CFBundleIdentifier</key>
   <string>com.selinlee.tokcat.resources</string>
   <key>CFBundleName</key>
-  <string>Tokcat_TokcatApp</string>
+  <string>tokcat_TokcatApp</string>
   <key>CFBundlePackageType</key>
   <string>BNDL</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -120,10 +120,10 @@ BUNDLEPLIST
   fi
 }
 
-copy_resource_bundle "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
+copy_resource_bundle "$RESOURCES_DIR/tokcat_TokcatApp.bundle"
 
 # App icon (.icns): generated from the bundled cat head so Finder/Dock show the
-# Tokcat icon instead of a generic app glyph. Single source of truth stays the
+# tokcat icon instead of a generic app glyph. Single source of truth stays the
 # tokcat_head_menu.png in App/Resources.
 echo "==> Generating ${APP_NAME}.icns"
 ICON_SOURCE="$ROOT/App/Resources/tokcat_head_menu.png"
@@ -181,7 +181,7 @@ PLIST
 
 echo "==> Ad-hoc codesign"
 # Sign nested resource bundles first, then the app.
-codesign --force --sign - "$RESOURCES_DIR/Tokcat_TokcatApp.bundle"
+codesign --force --sign - "$RESOURCES_DIR/tokcat_TokcatApp.bundle"
 codesign --force --sign - "$MACOS_DIR/${EXEC_NAME}"
 codesign --force --deep --options runtime --sign - "$APP_DIR" || codesign --force --deep --sign - "$APP_DIR"
 
@@ -234,16 +234,16 @@ elif command -v sha256sum >/dev/null 2>&1; then
 fi
 
 cat > "$DIST_DIR/INSTALL.txt" <<TXT
-Tokcat ${VERSION} — macOS 多 Agent AI 任务监控、用量统计与可选桌面猫咪
+tokcat ${VERSION} — macOS 多 Agent AI 任务监控、用量统计与可选桌面猫咪
 
 推荐安装（DMG）：
-1. 打开 Tokcat-${VERSION}-macos.dmg
-2. 将 Tokcat.app 拖到 Applications
-3. 首次启动：右键 Tokcat.app → 打开（ad-hoc 签名，需绕过 Gatekeeper 一次）
+1. 打开 tokcat-${VERSION}-macos.dmg
+2. 将 tokcat.app 拖到 Applications
+3. 首次启动：右键 tokcat.app → 打开（ad-hoc 签名，需绕过 Gatekeeper 一次）
 4. 菜单栏出现猫头图标
 
 备选（Zip）：
-1. 解压 Tokcat-${VERSION}-macos.zip 得到 Tokcat.app
+1. 解压 tokcat-${VERSION}-macos.zip 得到 tokcat.app
 2. 拖到 /Applications（或任意位置）
 3. 同样：右键 → 打开
 
@@ -255,7 +255,7 @@ Tokcat ${VERSION} — macOS 多 Agent AI 任务监控、用量统计与可选桌
 - Codex 额度来自客户端写入的本地日志，仅在客户端运行时显示；无需 API key
 
 卸载：
-- 删除 Tokcat.app
+- 删除 tokcat.app
 - 可选删除 ~/Library/Application Support/TokenCat/
 TXT
 

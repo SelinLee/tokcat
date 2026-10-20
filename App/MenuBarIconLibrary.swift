@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import TokcatKit
 
-/// Draws menu-bar glyphs from the built-in library (custom Tokcat face or SF Symbols).
+/// Draws menu-bar glyphs from the built-in library (custom tokcat face or SF Symbols).
 enum MenuBarIconLibrary {
     static func draw(
         style: MenuBarIconStyle,
@@ -28,7 +28,7 @@ enum MenuBarIconLibrary {
         pointSize: CGFloat,
         activity: MenuBarAgentActivity = .idle
     ) -> NSImage {
-        // Tokcat expressions need a bit of horizontal room for badges.
+        // tokcat expressions need a bit of horizontal room for badges.
         let widthMul: CGFloat = (style == .tokcat || style == .rainTokcat) ? 1.55 : 1.0
         let pixelW = ceil(pointSize * 2 * widthMul)
         let pixelH = ceil(pointSize * 2)

@@ -144,7 +144,7 @@ struct MainSidebar: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Tokcat")
+                Text("tokcat")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(MonitorTheme.primaryText)
                 Text("多 Agent 状态监控")
@@ -156,7 +156,7 @@ struct MainSidebar: View {
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tokcat 多 Agent 状态监控")
+        .accessibilityLabel("tokcat 多 Agent 状态监控")
     }
 
     private func sidebarSectionLabel(_ title: String) -> some View {

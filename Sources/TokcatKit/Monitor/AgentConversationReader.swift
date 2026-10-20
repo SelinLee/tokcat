@@ -38,11 +38,15 @@ public enum AgentConversationReader {
             || source == .deepseekHarness
     }
 
+    public static func supports(_ session: AgentSession) -> Bool {
+        supports(session.source) && !session.isCodexWork
+    }
+
     /// Reads a bounded tail on demand. Only user/assistant text and attachment placeholders are exposed;
     /// system/developer messages, reasoning, tool inputs/results and embedded binary data are excluded.
     public static func read(task: AgentTaskRecord, maxBytes: Int = 4_194_304,
                             maxMessages: Int = 200) throws -> AgentConversationSnapshot {
-        guard supports(task.session.source) else { throw ReadError.unsupported }
+        guard supports(task.session) else { throw ReadError.unsupported }
         guard let path = task.logPath else { throw ReadError.missingLog }
         let url = URL(fileURLWithPath: path)
         if task.session.source == .deepseekHarness {

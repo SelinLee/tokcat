@@ -97,7 +97,11 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public func menuBarUncertaintyAge(at now: Date) -> TimeInterval? {
         switch displayState(at: now) {
         case .unknown:
-            return max(0, now.timeIntervalSince(lastActivityAt))
+            // A cloud status can disappear without changing the conversation's
+            // timestamp. Give that transition one grace period; repeated reads
+            // and restarts retain the same observation revision.
+            let since = isCodexWork ? max(lastActivityAt, stateObservedAt ?? lastActivityAt) : lastActivityAt
+            return max(0, now.timeIntervalSince(since))
         case .interrupted: return max(0, now.timeIntervalSince(lastActivityAt))
         default: return nil
         }
@@ -106,6 +110,12 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public func showsMenuBarDot(at now: Date) -> Bool {
         guard !state.isTerminal || unread else { return false }
         return menuBarUncertaintyAge(at: now).map { $0 < 13 } ?? true
+    }
+
+    /// The main task browser retains discovered Work conversations. The menu
+    /// uses showsMenuBarDot instead, so an unknown cloud status cannot linger.
+    public func showsInTaskMonitorList(at now: Date) -> Bool {
+        (isCodexWork && state == .unknown) || showsMenuBarDot(at: now)
     }
 
     /// nil distinguishes missing usage from a measured zero-output interval.
@@ -208,6 +218,7 @@ public struct AgentSessionSummary: Equatable, Sendable {
     public var mode: MenuBarAgentMode
 
     public init(sessions: [AgentSession], now: Date = Date()) {
+        let sessions = sessions.filter { $0.showsMenuBarDot(at: now) }
         let waiting = sessions.filter { $0.state.isWaiting }.count
         let failed = sessions.filter { $0.state == .failed && $0.unread }.count
         let completed = sessions.filter { $0.state == .completed && $0.unread }.count

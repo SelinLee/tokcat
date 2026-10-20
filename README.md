@@ -1,6 +1,6 @@
 <div align="center">
 
-# Tokcat
+# tokcat
 
 **Keep your agents' work in view.**
 
@@ -129,18 +129,18 @@ CC Switch can add provider attribution, reported charges, and pricing multiplier
 
 Claude Code hooks are opt-in. DeepSeek Harness covers `dsh web` and DSH Desktop; waiting prompts require the harness's **timed ask-user** mode. Cursor and Gemini CLI adapters are disabled by default and require compatible local usage records. [Setup and data sources](docs/AgentSupport.md)
 
-Tokcat displays what local sources report. A quiet log does not prove completion, and a finished turn does not prove the whole project is done. Missing metrics stay unavailable; no invented progress percentages are shown.
+tokcat displays what local sources report. A quiet log does not prove completion, and a finished turn does not prove the whole project is done. Missing metrics stay unavailable; no invented progress percentages are shown.
 
 ## Get started
 
-1. Install and open Tokcat, then use your agents as usual.
+1. Install and open tokcat, then use your agents as usual.
 2. Enable Claude Code hooks in **Settings → Agent** if you want its task states; restart existing Claude Code sessions.
 3. Pick menu-bar metrics and watch the task dots. Open **Tasks** for conversations, or **Usage** for trends.
 4. Choose toki / biti and an attachment in **Settings → Desktop companion**.
 
 ## Install
 
-Requires **macOS 13+**. Download a DMG or ZIP from [Releases](https://github.com/SelinLee/tokcat/releases), place `Tokcat.app` in Applications, then right-click → **Open** on first launch. Builds are ad-hoc signed; Developer ID notarization is not included. The release asset's architecture follows the build host.
+Requires **macOS 13+**. Download a DMG or ZIP from [Releases](https://github.com/SelinLee/tokcat/releases), place `tokcat.app` in Applications, then right-click → **Open** on first launch. Builds are ad-hoc signed; Developer ID notarization is not included. The release asset's architecture follows the build host.
 
 Monitoring reads local records; no API key is required. Usage data stays in `~/Library/Application Support/Tokcat/`, and task caches / optional Claude hooks in `~/Library/Application Support/TokenCat/`. The companion shares the task monitor's state. Upgrading preserves usage history and monitoring preferences.
 
@@ -154,7 +154,7 @@ swift test
 swift run TokcatApp
 ```
 
-Package a release with `TOKCAT_VERSION=0.7.0 scripts/package_app.sh`. Build artifacts stay in `dist/`.
+Package a release with `TOKCAT_VERSION=0.7.7 scripts/package_app.sh`. Build artifacts stay in `dist/`.
 
 | Location | Purpose |
 |---|---|

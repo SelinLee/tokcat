@@ -4,7 +4,7 @@ import Foundation
 /// must load their own resources so the status icon and pet also work after moving.
 enum TokcatResources {
     static let bundle: Bundle = {
-        if let url = Bundle.main.resourceURL?.appendingPathComponent("Tokcat_TokcatApp.bundle"),
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("tokcat_TokcatApp.bundle"),
            let packaged = Bundle(url: url) {
             return packaged
         }

@@ -297,7 +297,7 @@ struct TaskDetailView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("对话内容").font(.subheadline.weight(.semibold))
-                    if AgentConversationReader.supports(session.source) {
+                    if AgentConversationReader.supports(session) {
                         Button { ConversationWindowController.show(task: task) } label: {
                             Label("查看对话内容", systemImage: "bubble.left.and.bubble.right")
                         }.buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
@@ -335,9 +335,8 @@ struct TaskDetailView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    if session.source == .codexCLI, UUID(uuidString: session.sessionID) != nil,
-                       let url = URL(string: "codex://threads/" + session.sessionID) {
-                        Button("打开 Codex 会话") { NSWorkspace.shared.open(url) }
+                    if let url = session.codexConversationURL {
+                        Button(session.isCodexWork ? "打开 Work 会话" : "打开 Codex 会话") { NSWorkspace.shared.open(url) }
                     }
                     if let path = session.projectPath { Button("打开项目文件夹") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } }
                     if let path = task.logPath { Button("定位源记录") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) } }

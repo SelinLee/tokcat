@@ -90,8 +90,13 @@ struct TaskConversationView: View {
             }
             Divider()
             HStack {
-                Text("只读本地对话 · 自动更新 · 不另存正文").font(.caption2).foregroundStyle(.secondary)
+                Text(task.session.isCodexWork ? "Work 对话请在原客户端查看" : "只读本地对话 · 自动更新 · 不另存正文")
+                    .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
+                if task.session.isCodexWork, let url = task.session.codexConversationURL {
+                    Button("打开 Work 会话") { NSWorkspace.shared.open(url) }
+                        .buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
+                }
                 if let path = task.logPath {
                     Button("定位原始记录") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                         .buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
@@ -118,7 +123,7 @@ struct TaskConversationView: View {
                         readError = error.localizedDescription
                     }
                 }
-                guard AgentConversationReader.supports(task.session.source) else { return }
+                guard AgentConversationReader.supports(task.session) else { return }
                 do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
             } while !Task.isCancelled
         }

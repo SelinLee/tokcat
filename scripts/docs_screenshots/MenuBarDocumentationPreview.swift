@@ -44,7 +44,7 @@ enum MenuBarDocumentationPreview {
             }
             let content = VStack(alignment: .leading, spacing: 22) {
                 HStack {
-                    Text("TOKCAT / MENU BAR").font(.system(size: 11, weight: .semibold)).tracking(1.5)
+                    Text("tokcat / MENU BAR").font(.system(size: 11, weight: .semibold)).tracking(1.5)
                     Spacer()
                     Text("Live AI status, right where you work.").font(.system(size: 12)).foregroundStyle(.secondary)
                 }

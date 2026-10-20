@@ -731,7 +731,7 @@ final class AppModel: ObservableObject {
             let message: String
             do {
                 try ClaudeSessionHooks.configure(executable: executable)
-                message = enabled ? "已启用。请重新打开 Claude Code 会话以加载状态监控。" : "已移除 Tokcat 的 Claude 状态接入，其他配置保留。"
+                message = enabled ? "已启用。请重新打开 Claude Code 会话以加载状态监控。" : "已移除 tokcat 的 Claude 状态接入，其他配置保留。"
             } catch { message = "状态接入未更改：\(error.localizedDescription)" }
             DispatchQueue.main.async { self?.sessionMonitoringMessage = message }
         }
@@ -739,7 +739,7 @@ final class AppModel: ObservableObject {
 
     private func requestAgentNotifications() {
         guard Bundle.main.bundleIdentifier != nil else {
-            sessionMonitoringMessage = "系统通知需要从打包后的 Tokcat.app 启用。菜单栏提醒仍可使用。"
+            sessionMonitoringMessage = "系统通知需要从打包后的 tokcat.app 启用。菜单栏提醒仍可使用。"
             return
         }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in

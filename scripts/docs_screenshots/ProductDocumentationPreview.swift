@@ -21,7 +21,7 @@ enum ProductDocumentationPreview {
         settings.enabledAgentSources = []
         settingsStore.save(settings)
         let database = dataDirectory.appendingPathComponent("usage.sqlite3")
-        let now = Date()
+        let now = ISO8601DateFormatter().date(from: "2026-09-30T09:42:00Z")!
         let sources: [AgentSource] = [.codexCLI, .claudeCode, .workBuddy, .workBuddyAI, .deepseekHarness]
         let models = ["gpt-6", "claude-sonnet-4", "hy3", "hy3", "deepseek-v4"]
         let providers = ["OpenAI", "Anthropic", "Tencent", "Tencent", "DeepSeek"]
@@ -36,19 +36,25 @@ enum ProductDocumentationPreview {
                             source: sources[index], model: models[index], provider: providers[index],
                             inputTokens: factor * (800 + index * 170), outputTokens: factor * (180 + index * 50),
                             cacheReadTokens: factor * 320, costUSD: Double(factor) * (0.012 + Double(index) * 0.004),
-                            costIsEstimated: false)
+                            costIsEstimated: false, latencyMs: Double(factor * 300))
                         try store.appendTokenEvent(event)
                     }
                 }
             }
         }
+        try seedQuota(in: dataDirectory, now: now)
+        let quota = UsageQuotaStore(directories: [dataDirectory])
+        quota.refresh(UsagePeriod.week.dateInterval(containing: now))
+        let quotaDeadline = Date().addingTimeInterval(8)
+        while quota.isLoading && Date() < quotaDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.03)) }
+        guard !quota.isLoading, !quota.days.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
         let monitor = AgentSessionMonitor(codexDirectory: dataDirectory, supportDirectory: dataDirectory,
             recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil, deepSeekHarnessDirectories: [])
         let model = AppModel(settingsStore: settingsStore, usageStoreURL: database, sessionMonitor: monitor)
-        model.refreshUsageStats(period: .week, groupBy: .agent)
+        model.refreshUsageStats(period: .week, groupBy: .agent, date: now)
         let deadline = Date().addingTimeInterval(3)
         while model.isUsageStatsLoading && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.03)) }
-        guard model.usageSnapshot(period: .week, groupBy: .agent).eventCount > 0 else { throw CocoaError(.fileReadCorruptFile) }
+        guard model.usageSnapshot(period: .week, groupBy: .agent, date: now).eventCount > 0 else { throw CocoaError(.fileReadCorruptFile) }
 
         for dark in [false, true] {
             let theme = dark ? "dark" : "light"
@@ -57,8 +63,8 @@ enum ProductDocumentationPreview {
                 let content = HStack(spacing: 0) {
                     MainSidebar(selection: .constant(.stats)).frame(width: 140)
                     Divider()
-                    StatsDashboardView(model: model, period: .week, groupBy: .agent, metric: metric)
-                }.frame(width: 1180, height: 1010)
+                    StatsDashboardView(model: model, period: .week, groupBy: .agent, metric: metric, date: now, quotaStore: quota)
+                }.frame(width: 1180, height: 1510)
                     .environment(\.locale, Locale(identifier: "en_US"))
                     .environment(\.colorScheme, dark ? .dark : .light)
                 try capture(NSHostingView(rootView: content), to: directory.appendingPathComponent(
@@ -70,6 +76,33 @@ enum ProductDocumentationPreview {
                 .environment(\.colorScheme, dark ? .dark : .light)
             try capture(NSHostingView(rootView: support), to: directory.appendingPathComponent("agents-\(theme).png"))
         }
+    }
+
+    private static func seedQuota(in directory: URL, now: Date) throws {
+        let start = Calendar.current.startOfDay(for: now)
+        var logs = Data()
+        var total = 0
+        for offset in stride(from: 11, through: 0, by: -1) {
+            let day = Calendar.current.date(byAdding: .day, value: -offset, to: start)!
+            for hour in [8, 10, 12, 14, 16, 18] {
+                total += ((offset * 3 + hour) % 7 + 2) * 7000
+                let date = day.addingTimeInterval(Double(hour * 3600))
+                let model = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"][(hour + offset) % 3]
+                let primary: [String: Any] = ["used_percent": (hour - 8) * 3, "window_minutes": 300,
+                    "resets_at": day.addingTimeInterval(86400).timeIntervalSince1970]
+                let secondary: [String: Any] = ["used_percent": hour - 8, "window_minutes": 10080,
+                    "resets_at": day.addingTimeInterval(7 * 86400).timeIntervalSince1970]
+                let tokens = ["input_tokens": total, "cached_input_tokens": total / 2, "output_tokens": total / 10]
+                let payload: [String: Any] = ["type": "token_count", "info": ["total_token_usage": tokens],
+                    "rate_limits": ["plan_type": "pro", "primary": primary, "secondary": secondary]]
+                logs.append(try JSONSerialization.data(withJSONObject: ["type": "turn_context", "payload": ["model": model]]))
+                logs.append(10)
+                logs.append(try JSONSerialization.data(withJSONObject: ["type": "event_msg",
+                    "timestamp": ISO8601DateFormatter().string(from: date), "payload": payload]))
+                logs.append(10)
+            }
+        }
+        try logs.write(to: directory.appendingPathComponent("quota.jsonl"))
     }
 
     private static func companionTour(dark: Bool, now: Date, to url: URL) throws {

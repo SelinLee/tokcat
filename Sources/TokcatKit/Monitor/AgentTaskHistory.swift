@@ -15,6 +15,9 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable, Identifiable {
     public var modelName: String?
     public var toolCalls: Int?
     public var turnTokens: Int?
+    /// Optional lifetime output counter published by an external reader. Used
+    /// only for throughput deltas; input/cache tokens are never included.
+    public var sessionOutputTokens: Int?
     public var timeline: [AgentTaskActivity]
     public var activityOnly: Bool
     public var logPath: String?

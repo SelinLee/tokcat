@@ -159,8 +159,8 @@ public struct DesktopCompanionSnapshot: Equatable, Sendable {
         let name = selected == nil ? fallbackModel : record?.modelName
         let source = selected?.source ?? fallbackSource
         character = .resolve(model: name, source: source)
-        model = name ?? source?.displayName ?? "Tokcat"
-        sourceName = source?.displayName ?? "Tokcat"
+        model = name ?? source?.displayName ?? "tokcat"
+        sourceName = source?.displayName ?? "tokcat"
         state = selected?.displayState(at: now)
         taskID = record?.id
         title = record?.displayTitle ?? selected?.projectName ?? "今天也陪你一起工作"

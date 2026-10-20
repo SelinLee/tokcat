@@ -78,7 +78,10 @@ def main():
     path.write_text(text)
     path = work / 'App/StatsDashboardView.swift'
     path.write_text(path.read_text().replace('Locale(identifier: "zh_CN")', 'Locale(identifier: "en_US")')
-        .replace('"d日"', '"d"'))
+        .replace('"d日"', '"d"').replace('.pickerStyle(.segmented)\n    }', '.labelsHidden().pickerStyle(.segmented)\n    }'))
+    path = work / 'App/UsageQuotaView.swift'
+    path.write_text(path.read_text().replace('.pickerStyle(.segmented).frame(width: 180)',
+        '.labelsHidden().pickerStyle(.segmented).frame(width: 230)'))
     launcher = work / 'App/TokcatApp.swift'
     text = launcher.read_text().replace('#if DEBUG', '''#if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--preview-readme-product"),

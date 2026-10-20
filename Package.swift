@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tokcat",
+    name: "tokcat",
     platforms: [
         .macOS(.v13)
     ],
