@@ -3,7 +3,8 @@ $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]
 $testRoot = Join-Path $tempParent ('tokcat-package-test-' + [guid]::NewGuid().ToString('N'))
 try {
     $output = Join-Path $testRoot 'output'
-    $extract = Join-Path $testRoot 'extract'
+    # Exercise paths with spaces and non-ASCII characters on Windows PowerShell 5.1.
+    $extract = Join-Path $testRoot ('extract ' + [char]0x6D4B + [char]0x8BD5)
     [IO.Directory]::CreateDirectory($output) | Out-Null
     $archive = & (Join-Path $PSScriptRoot 'Package.ps1') -OutputDirectory $output
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Package was not created.' }
@@ -12,6 +13,11 @@ try {
     foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Monitor.ps1','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $file) -PathType Leaf)) { throw "Package is missing $file" }
     }
+    $settingsPath = Join-Path $testRoot 'claude-fixture\settings.json'
+    & powershell.exe -NoProfile -File (Join-Path $package 'Configure-ClaudeHooks.ps1') -SettingsPath $settingsPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'The extracted Claude hook installer failed.' }
+    $configured = [IO.File]::ReadAllText($settingsPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    if ($configured.hooks.Stop[0].hooks[0].args[-1] -ne (Join-Path $package 'ClaudeHook.ps1')) { throw 'The extracted hook path was not preserved.' }
     $codexRoot = Join-Path $testRoot 'codex'
     $sessions = Join-Path $codexRoot 'sessions'
     [IO.Directory]::CreateDirectory($sessions) | Out-Null
