@@ -2,11 +2,21 @@
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
 . (Join-Path $PSScriptRoot 'Conversation.ps1')
 . (Join-Path $PSScriptRoot 'Usage.ps1')
+. (Join-Path $PSScriptRoot 'Instance.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('tokcat-test-' + [guid]::NewGuid())
 $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
 function Assert-Equal($actual, $expected, $label) { if ($actual -ne $expected) { throw "$label : expected '$expected', got '$actual'" } }
 try {
+    $instanceName = 'tokcat-test-instance-' + [guid]::NewGuid()
+    $firstInstance = Open-TokcatInstance $instanceName; $secondInstance = $null
+    try {
+        Assert-Equal $firstInstance.IsFirst $true 'first application instance owns guard'
+        $secondInstance = Open-TokcatInstance $instanceName
+        Assert-Equal $secondInstance.IsFirst $false 'duplicate application instance detected'
+        [void]$secondInstance.Event.Set()
+        Assert-Equal ($firstInstance.Event.WaitOne(0)) $true 'duplicate launch signals existing instance'
+    } finally { if ($secondInstance) { Close-TokcatInstance $secondInstance }; Close-TokcatInstance $firstInstance }
     $log = Join-Path $sessions 'rollout-test.jsonl'
     $rows = @(
         '{"type":"session_meta","payload":{"id":"s1","cwd":"C:\\demo"}}',
@@ -231,6 +241,18 @@ public static class TokcatTestDatabase {
     try { Write-NotificationPreference $preferencePath $false } catch { $badPreferenceRejected = $true }
     Assert-Equal $badPreferenceRejected $true 'unsupported preferences rejected'
     Assert-Equal ([IO.File]::ReadAllText($preferencePath)) $badPreferences 'unsupported preferences preserved'
+    $stripPreference = Join-Path (Join-Path $root 'preferences') 'strip.json'
+    Assert-Equal (Read-StatusStripPreference $stripPreference) $true 'status strip visible by default'
+    Write-StatusStripPreference $stripPreference $false
+    Assert-Equal (Read-StatusStripPreference $stripPreference) $false 'status strip visibility persists'
+    Write-StatusStripPreference $stripPreference $true
+    Assert-Equal (Read-StatusStripPreference $stripPreference) $true 'status strip can be re-enabled'
+    $badStrip = '{"version":2,"visible":false}'
+    [IO.File]::WriteAllText($stripPreference, $badStrip)
+    $badStripRejected = $false
+    try { Write-StatusStripPreference $stripPreference $true } catch { $badStripRejected = $true }
+    Assert-Equal $badStripRejected $true 'unsupported status strip settings rejected'
+    Assert-Equal ([IO.File]::ReadAllText($stripPreference)) $badStrip 'unsupported status strip settings preserved'
     $reminderFile = Join-Path (Join-Path $root 'reminders') 'state.json'
     $saved = @{}
     Sync-ReminderStore @($workCompleted) $unread $saved $launch
@@ -353,6 +375,8 @@ public static class TokcatTestDatabase {
     $prices = @(Get-PriceCatalog (Join-Path $PSScriptRoot 'UsagePricing.json'))
     Assert-Equal (Find-UsagePrice $prices 'gpt-5.6-sol' 'private-relay') $null 'official prices not assigned to relays'
     Assert-Equal (Find-UsagePrice $prices 'gpt-5.6-sol-custom' 'openai') $null 'unknown model variant is not priced'
+    Assert-Equal (Find-UsagePrice $prices 'gpt-5.6-sol' 'anthropic') $null 'official price is not assigned to a different vendor'
+    Assert-Equal (Find-UsagePrice $prices 'claude-3-5-sonnet-20241022' 'openai') $null 'Claude price is not assigned to OpenAI provider'
     $resumeRows = @(
         '{"type":"session_meta","payload":{"id":"resumed","model_provider":"private-relay"}}',
         $context,
@@ -384,6 +408,29 @@ public static class TokcatTestDatabase {
     [IO.File]::WriteAllText($priceOverride, '{"version":1,"models":[]}')
     Assert-Equal (Get-UsagePricePath $PSScriptRoot $priceLocal $true) $priceOverride 'custom reference prices preserved'
     Assert-Equal ([IO.File]::ReadAllText($priceOverride)) '{"version":1,"models":[]}' 'editing does not overwrite custom prices'
+    $claudeUsageFile = Join-Path $claudeProject 'claude-usage.jsonl'
+    $claudeUsageRows = @(
+        ('{"type":"assistant","timestamp":"' + $usageNow.AddMinutes(-3).ToString('o') + '","message":{"id":"msg-one","model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":100,"cache_read_input_tokens":80,"cache_creation_input_tokens":20,"output_tokens":50}}}'),
+        ('{"type":"assistant","timestamp":"' + $usageNow.AddMinutes(-2).ToString('o') + '","message":{"id":"msg-one","model":"claude-3-5-sonnet-20241022","usage":{"output_tokens":55}}}'),
+        ('{"type":"assistant","timestamp":"' + $usageNow.AddMinutes(-1).ToString('o') + '","message":{"id":"msg-two","model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":10,"output_tokens":5}}}'),
+        ('{"type":"user","timestamp":"' + $usageNow.ToString('o') + '","message":{"id":"ignore","model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":999,"output_tokens":999}}}')
+    )
+    [IO.File]::WriteAllText($claudeUsageFile, ($claudeUsageRows -join "`n") + "`n" + '{"type":"assistant"', (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $secondProject 'claude-copy.jsonl'), ($claudeUsageRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $claudeUsage = Get-ClaudeUsage $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $claudeUsage.Rows.Count 1 'Claude duplicate message IDs merged across files'
+    Assert-Equal $claudeUsage.Rows[0].Input 110 'Claude input tokens'
+    Assert-Equal $claudeUsage.Rows[0].Cache 80 'Claude cache reads'
+    Assert-Equal $claudeUsage.Rows[0].CacheWrite 20 'Claude cache writes'
+    Assert-Equal $claudeUsage.Rows[0].Output 60 'Claude latest streaming output'
+    if ([math]::Abs($claudeUsage.Rows[0].EstimatedUSD - 0.001329) -gt 0.000000001) { throw 'Claude reference estimate is incorrect' }
+    $noWritePrice = Join-Path $usageRoot 'no-write.json'
+    [IO.File]::WriteAllText($noWritePrice, '{"version":1,"models":[{"model":"claude-3-5-sonnet","input":3,"cache_read":0.3,"output":15}]}')
+    $claudeUnpriced = Get-ClaudeUsage $root 7 $noWritePrice $usageNow
+    Assert-Equal $claudeUnpriced.Rows[0].UnpricedTokens 255 'cache writes without a price remain unpriced'
+    $combined = Get-CombinedUsage $usageRoot $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Claude Code' }).Count 1 'combined usage includes Claude'
+    Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Codex' }).Count 2 'combined usage keeps Codex provider groups'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'
@@ -418,4 +465,11 @@ public static class TokcatTestDatabase {
         Assert-Equal $LASTEXITCODE 0 'window and notification-area initialization'
     } finally { $env:USERPROFILE = $previousProfile; $env:APPDATA = $previousAppData; $env:LOCALAPPDATA = $previousLocalData }
     Write-Host 'Windows monitor parser checks passed.'
-} finally { Remove-Item -LiteralPath $root -Recurse -Force }
+} finally {
+    if (Test-Path -LiteralPath $root) {
+        $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $resolved = (Resolve-Path -LiteralPath $root).Path
+        if (-not $resolved.StartsWith($tempParent, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolved) -notmatch '^tokcat-test-[0-9a-f-]{36}$') { throw 'Refusing to remove an unexpected test path.' }
+        try { Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop } catch { Write-Warning "Temporary test directory retained because a file is in use: $resolved" }
+    }
+}

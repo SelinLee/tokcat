@@ -335,6 +335,23 @@ function Write-NotificationPreference([string]$Path, [bool]$Enabled) {
     if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
 }
 
+function Read-StatusStripPreference([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { return $true }
+    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
+    $visible = Get-Field $doc 'visible'
+    if ((Get-Field $doc 'version') -ne 1 -or $visible -isnot [bool]) { throw 'Status strip settings have an unsupported format.' }
+    return $visible
+}
+
+function Write-StatusStripPreference([string]$Path, [bool]$Visible) {
+    if ([IO.File]::Exists($Path)) { $null = Read-StatusStripPreference $Path }
+    $directory = [IO.Path]::GetDirectoryName($Path); [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $json = [pscustomobject]@{ version=1; visible=$Visible } | ConvertTo-Json -Depth 3
+    $tmp = Join-Path $directory ('.strip-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+    if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
+}
+
 function Convert-QuotaNumber($Value) {
     if ($null -eq $Value -or $Value -is [bool]) { return $null }
     $number = 0.0

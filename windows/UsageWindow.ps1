@@ -1,7 +1,7 @@
 ﻿function Show-UsageWindow($Owner, [string]$CodexHome, [bool]$TestMode = $false) {
     $baseDirectory = $PSScriptRoot
     $window = New-Object Windows.Forms.Form
-    $window.Text = 'tokcat · Codex 用量统计'; $window.Size = New-Object Drawing.Size(1040,600)
+    $window.Text = 'tokcat · Agent 用量统计'; $window.Size = New-Object Drawing.Size(1180,600)
     $window.MinimumSize = New-Object Drawing.Size(650,350); $window.StartPosition = 'CenterParent'; $window.Font = $Owner.Font
     $controls = New-Object Windows.Forms.FlowLayoutPanel
     $controls.Dock = 'Top'; $controls.Height = 38
@@ -13,29 +13,29 @@
     $controls.Controls.Add($caption); $controls.Controls.Add($period); $controls.Controls.Add($refresh); $controls.Controls.Add($editPrices)
     $list = New-Object Windows.Forms.ListView
     $list.Dock = 'Fill'; $list.View = 'Details'; $list.FullRowSelect = $true; $list.GridLines = $true
-    foreach ($column in @(@('日期',110),@('模型',180),@('提供方',120),@('输入',110),@('缓存读取',110),@('输出',110),@('参考估价 USD',140),@('未计价 tokens',130))) { [void]$list.Columns.Add($column[0], $column[1]) }
+    foreach ($column in @(@('日期',110),@('来源',105),@('模型',180),@('提供方',120),@('输入',105),@('缓存读取',105),@('缓存写入',105),@('输出',105),@('参考估价 USD',130),@('未计价 tokens',130))) { [void]$list.Columns.Add($column[0], $column[1]) }
     $summary = New-Object Windows.Forms.Label
     $summary.Dock = 'Bottom'; $summary.Height = 72; $summary.Padding = New-Object Windows.Forms.Padding(8,5,0,0)
-    $summary.Text = '正在读取本地 Codex 日志…'
+    $summary.Text = '正在读取本地 Agent 日志…'
     $window.Controls.Add($list); $window.Controls.Add($summary); $window.Controls.Add($controls)
     $context = [pscustomobject]@{ Worker=$null; Handle=$null; Done=$false; Error=$null; Deadline=[datetimeoffset]::UtcNow.AddSeconds(45) }
     $poll = New-Object Windows.Forms.Timer; $poll.Interval = 300
     $resolvePrice = ${function:Get-UsagePricePath}
     $start = {
         if ($context.Worker) { $context.Worker.Dispose(); $context.Worker = $null; $context.Handle = $null }
-        $context.Done = $false; $context.Error = $null; $summary.Text = '正在后台读取本地 Codex 日志…'; $list.Items.Clear()
+        $context.Done = $false; $context.Error = $null; $summary.Text = '正在后台读取本地 Agent 日志…'; $list.Items.Clear()
         $period.Enabled = $false; $refresh.Enabled = $false
         $days = @(1,7,30)[$period.SelectedIndex]
         try {
             $pricePath = & $resolvePrice $baseDirectory $env:LOCALAPPDATA $false
             $workerScript = {
-                param($directory,$homePath,$days,$pricePath)
+                param($directory,$homePath,$userDirectory,$days,$pricePath)
                 $ErrorActionPreference = 'Stop'
                 . (Join-Path $directory 'Monitor.ps1'); . (Join-Path $directory 'Usage.ps1')
-                Get-CodexUsage $homePath $days $pricePath
+                Get-CombinedUsage $homePath $userDirectory $days $pricePath
             }.ToString()
             $context.Worker = [PowerShell]::Create()
-            [void]$context.Worker.AddScript($workerScript).AddArgument($baseDirectory).AddArgument($CodexHome).AddArgument($days).AddArgument($pricePath)
+            [void]$context.Worker.AddScript($workerScript).AddArgument($baseDirectory).AddArgument($CodexHome).AddArgument($env:USERPROFILE).AddArgument($days).AddArgument($pricePath)
             $context.Handle = $context.Worker.BeginInvoke()
             $poll.Start()
         } catch { $context.Error = $_.Exception.Message; $context.Done = $true; $summary.Text = '无法开始读取：' + $context.Error; $period.Enabled = $true; $refresh.Enabled = $true; if ($TestMode) { $window.Close() } }
@@ -50,17 +50,17 @@
                 $result = $result[0]
                 if ($null -eq $result -or $null -eq $result.PSObject.Properties['Rows']) { throw '后台读取未返回有效统计。' }
                 if ($TestMode -and @($result.Rows | Where-Object { $_.Model -eq 'gpt-5.6-sol' -and $_.Output -eq 3 }).Count -eq 0) { throw '用量窗口没有显示测试数据。' }
-                $inputTotal = [long]0; $cacheTotal = [long]0; $outputTotal = [long]0; $cost = [double]0; $unpriced = [long]0
+                $inputTotal = [long]0; $cacheTotal = [long]0; $cacheWriteTotal = [long]0; $outputTotal = [long]0; $cost = [double]0; $unpriced = [long]0
                 $list.BeginUpdate(); $list.Items.Clear()
                 foreach ($row in $result.Rows) {
-                    $inputTotal += $row.Input; $cacheTotal += $row.Cache; $outputTotal += $row.Output; $cost += $row.EstimatedUSD; $unpriced += $row.UnpricedTokens
+                    $inputTotal += $row.Input; $cacheTotal += $row.Cache; $cacheWriteTotal += $row.CacheWrite; $outputTotal += $row.Output; $cost += $row.EstimatedUSD; $unpriced += $row.UnpricedTokens
                     $item = New-Object Windows.Forms.ListViewItem([string]$row.Date)
-                    $estimated = if ($row.UnpricedTokens -gt 0) { '未计价' } else { ('${0:N4}' -f $row.EstimatedUSD) }
-                    foreach ($value in @($row.Model, $row.Provider, ('{0:N0}' -f $row.Input), ('{0:N0}' -f $row.Cache), ('{0:N0}' -f $row.Output), $estimated, ('{0:N0}' -f $row.UnpricedTokens))) { [void]$item.SubItems.Add([string]$value) }
+                    $estimated = if ($row.UnpricedTokens -gt 0 -and $row.EstimatedUSD -gt 0) { ('${0:N4} + 未计价' -f $row.EstimatedUSD) } elseif ($row.UnpricedTokens -gt 0) { '未计价' } else { ('${0:N4}' -f $row.EstimatedUSD) }
+                    foreach ($value in @($row.Source, $row.Model, $row.Provider, ('{0:N0}' -f $row.Input), ('{0:N0}' -f $row.Cache), ('{0:N0}' -f $row.CacheWrite), ('{0:N0}' -f $row.Output), $estimated, ('{0:N0}' -f $row.UnpricedTokens))) { [void]$item.SubItems.Add([string]$value) }
                     [void]$list.Items.Add($item)
                 }
                 $list.EndUpdate()
-                $summary.Text = "输入 $inputTotal · 缓存读取 $cacheTotal · 输出 $outputTotal · 参考估价 $('${0:N4}' -f $cost) · 未计价 $unpriced`n仅 Codex 本地观测；估价依据可编辑的参考单价，不代表订阅或实际账单。文件 $($result.FilesScanned)，读取失败 $($result.ReadErrors)。"
+                $summary.Text = "输入 $inputTotal · 缓存读取 $cacheTotal · 缓存写入 $cacheWriteTotal · 输出 $outputTotal · 参考估价 $('${0:N4}' -f $cost) · 未计价 $unpriced`nCodex / Claude Code 本地观测；估价依据可编辑的参考单价，不代表订阅或实际账单。文件 $($result.FilesScanned)，读取失败 $($result.ReadErrors)。"
                 $context.Done = $true
             } catch { $context.Error = $_.Exception.Message; $context.Done = $true; $summary.Text = '读取失败：' + $context.Error }
         }

@@ -33,9 +33,9 @@ function Get-PriceCatalog([string]$Path) {
     $entries = New-Object 'System.Collections.Generic.List[object]'
     foreach ($entry in $catalog.models) {
         $model = Get-Field $entry 'model'; $provider = Get-Field $entry 'provider'
-        $inputRate = Convert-QuotaNumber (Get-Field $entry 'input'); $cacheRate = Convert-QuotaNumber (Get-Field $entry 'cache_read'); $outputRate = Convert-QuotaNumber (Get-Field $entry 'output')
-        if ($model -isnot [string] -or [string]::IsNullOrWhiteSpace($model) -or $null -eq $inputRate -or $null -eq $cacheRate -or $null -eq $outputRate -or $inputRate -lt 0 -or $cacheRate -lt 0 -or $outputRate -lt 0) { throw '参考单价文件包含无效条目。' }
-        $entries.Add([pscustomobject]@{ Model=$model.ToLowerInvariant(); Provider=([string]$provider).ToLowerInvariant(); Input=$inputRate; Cache=$cacheRate; Output=$outputRate })
+        $inputRate = Convert-QuotaNumber (Get-Field $entry 'input'); $cacheRate = Convert-QuotaNumber (Get-Field $entry 'cache_read'); $outputRate = Convert-QuotaNumber (Get-Field $entry 'output'); $writeValue = Get-Field $entry 'cache_write'; $writeRate = Convert-QuotaNumber $writeValue
+        if ($model -isnot [string] -or [string]::IsNullOrWhiteSpace($model) -or $null -eq $inputRate -or $null -eq $cacheRate -or $null -eq $outputRate -or $inputRate -lt 0 -or $cacheRate -lt 0 -or $outputRate -lt 0 -or ($null -ne $writeValue -and ($null -eq $writeRate -or $writeRate -lt 0))) { throw '参考单价文件包含无效条目。' }
+        $entries.Add([pscustomobject]@{ Model=$model.ToLowerInvariant(); Provider=([string]$provider).ToLowerInvariant(); Input=$inputRate; Cache=$cacheRate; CacheWrite=$writeRate; Output=$outputRate })
     }
     return $entries.ToArray()
 }
@@ -45,9 +45,11 @@ function Find-UsagePrice([object[]]$Prices, [string]$Model, [string]$Provider) {
     $modelKey = $Model.ToLowerInvariant(); $providerKey = ([string]$Provider).ToLowerInvariant()
     $best = $null; $bestScore = -1
     foreach ($price in $Prices) {
-        if ($modelKey -ne $price.Model -and $modelKey -notmatch ('^' + [regex]::Escape($price.Model) + '-\d{4}-\d{2}-\d{2}$')) { continue }
+        if ($modelKey -ne $price.Model -and $modelKey -notmatch ('^' + [regex]::Escape($price.Model) + '-(?:\d{4}-\d{2}-\d{2}|\d{8})$')) { continue }
         if ($price.Provider -and $providerKey -ne $price.Provider) { continue }
-        if (-not $price.Provider -and $providerKey -and $providerKey -ne 'openai') { continue }
+        if (-not $price.Provider -and $providerKey -and $providerKey -notin @('openai','anthropic')) { continue }
+        if (-not $price.Provider -and $providerKey -eq 'openai' -and $price.Model.StartsWith('claude', [StringComparison]::Ordinal)) { continue }
+        if (-not $price.Provider -and $providerKey -eq 'anthropic' -and -not $price.Model.StartsWith('claude', [StringComparison]::Ordinal)) { continue }
         $score = $price.Model.Length + $(if ($price.Provider) { 10000 } else { 0 })
         if ($score -gt $bestScore) { $best = $price; $bestScore = $score }
     }
@@ -98,11 +100,76 @@ function Get-CodexUsage([string]$CodexHome, [int]$Days, [string]$PricePath, [dat
         $day = $entry.At.LocalDateTime.ToString('yyyy-MM-dd'); $modelName = if ($entry.Model) { $entry.Model } else { '未知模型' }
         $providerName = if ($entry.Provider) { $entry.Provider } else { '未标注' }
         $key = $day + "`n" + $modelName + "`n" + $providerName
-        if (-not $groups.ContainsKey($key)) { $groups[$key] = [pscustomobject]@{ Date=$day; Source='Codex'; Model=$modelName; Provider=$providerName; Input=[long]0; Cache=[long]0; Output=[long]0; EstimatedUSD=[double]0; UnpricedTokens=[long]0 } }
+        if (-not $groups.ContainsKey($key)) { $groups[$key] = [pscustomobject]@{ Date=$day; Source='Codex'; Model=$modelName; Provider=$providerName; Input=[long]0; Cache=[long]0; CacheWrite=[long]0; Output=[long]0; EstimatedUSD=[double]0; UnpricedTokens=[long]0 } }
         $group = $groups[$key]; $group.Input += $delta.Input; $group.Cache += $delta.Cache; $group.Output += $delta.Output
         $price = Find-UsagePrice $prices $entry.Model $entry.Provider
         if ($null -eq $price) { $group.UnpricedTokens += $delta.Input + $delta.Cache + $delta.Output }
         else { $group.EstimatedUSD += ($delta.Input * $price.Input + $delta.Cache * $price.Cache + $delta.Output * $price.Output) / 1000000.0 }
     }
     return [pscustomobject]@{ Days=$days; Start=$start.ToString('yyyy-MM-dd'); End=$Now.LocalDateTime.ToString('yyyy-MM-dd'); Rows=@($groups.Values | Sort-Object Date, Model, Provider); FilesScanned=$filesScanned; ReadErrors=$readErrors }
+}
+
+function Get-ClaudeUsage([string]$UserDirectory, [int]$Days, [string]$PricePath, [datetimeoffset]$Now = [datetimeoffset]::Now) {
+    $days = [math]::Max(1, [math]::Min(30, $Days)); $start = $Now.LocalDateTime.Date.AddDays(1 - $days)
+    $prices = @(Get-PriceCatalog $PricePath)
+    if (-not ('TokcatCodexLogReader' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs') }
+    $root = Join-Path (Join-Path $UserDirectory '.claude') 'projects'
+    $requests = @{}; $readErrors = 0; $filesScanned = 0
+    if (Test-Path -LiteralPath $root) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $root -Filter '*.jsonl' -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $start })) {
+            $lineNumber = 0
+            try {
+                foreach ($line in [TokcatCodexLogReader]::Read($file.FullName)) {
+                    $lineNumber++
+                    if (-not $line.Contains('"usage"') -or -not $line.Contains('"assistant"')) { continue }
+                    try { $row = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+                    if ((Get-Field $row 'type') -ne 'assistant') { continue }
+                    $message = Get-Field $row 'message'; $model = Get-Field $message 'model'; $usage = Get-Field $message 'usage'
+                    if ($model -isnot [string] -or -not $model -or $null -eq $usage) { continue }
+                    $at = [datetimeoffset]::MinValue
+                    if (-not [datetimeoffset]::TryParse([string](Get-Field $row 'timestamp'), [ref]$at) -or $at.LocalDateTime -lt $start -or $at -gt $Now) { continue }
+                    $values = @{}; $valid = $true
+                    foreach ($field in @('input_tokens','cache_read_input_tokens','cache_creation_input_tokens','output_tokens')) {
+                        $raw = Get-Field $usage $field; $count = Get-UsageNumber $usage $field
+                        if ($null -eq $count -and $null -ne $raw) { $valid = $false; break }
+                        $values[$field] = if ($null -eq $count) { [long]0 } else { $count }
+                    }
+                    if (-not $valid) { continue }
+                    $id = Get-Field $message 'id'; if (-not $id) { $id = Get-Field $row 'uuid' }; if (-not $id) { $id = $file.FullName + ':' + $lineNumber }
+                    $total = $values.input_tokens + $values.cache_read_input_tokens + $values.cache_creation_input_tokens + $values.output_tokens
+                    if ($total -eq 0) { continue }
+                    $old = $requests[[string]$id]
+                    if ($old) {
+                        # A streamed update can omit or temporarily reduce a field.
+                        # Preserve the largest observed cumulative value per request.
+                        if ($old.Model -ne $model) { continue }
+                        $values.input_tokens = [math]::Max($values.input_tokens, $old.Input)
+                        $values.cache_read_input_tokens = [math]::Max($values.cache_read_input_tokens, $old.Cache)
+                        $values.cache_creation_input_tokens = [math]::Max($values.cache_creation_input_tokens, $old.CacheWrite)
+                        $values.output_tokens = [math]::Max($values.output_tokens, $old.Output)
+                        if ($old.At -gt $at) { $at = $old.At }
+                        $total = $values.input_tokens + $values.cache_read_input_tokens + $values.cache_creation_input_tokens + $values.output_tokens
+                    }
+                    $requests[[string]$id] = [pscustomobject]@{ At=$at; Model=$model; Input=$values.input_tokens; Cache=$values.cache_read_input_tokens; CacheWrite=$values.cache_creation_input_tokens; Output=$values.output_tokens; Total=$total }
+                }
+                $filesScanned++
+            } catch { $readErrors++ }
+        }
+    }
+    $groups = @{}
+    foreach ($entry in $requests.Values) {
+        $day = $entry.At.LocalDateTime.ToString('yyyy-MM-dd'); $key = $day + "`n" + $entry.Model
+        if (-not $groups.ContainsKey($key)) { $groups[$key] = [pscustomobject]@{ Date=$day; Source='Claude Code'; Model=$entry.Model; Provider='未标注'; Input=[long]0; Cache=[long]0; CacheWrite=[long]0; Output=[long]0; EstimatedUSD=[double]0; UnpricedTokens=[long]0 } }
+        $group = $groups[$key]; $group.Input += $entry.Input; $group.Cache += $entry.Cache; $group.CacheWrite += $entry.CacheWrite; $group.Output += $entry.Output
+        $price = Find-UsagePrice $prices $entry.Model ''
+        if ($null -eq $price -or ($entry.CacheWrite -gt 0 -and $null -eq $price.CacheWrite)) { $group.UnpricedTokens += $entry.Total }
+        else { $group.EstimatedUSD += ($entry.Input * $price.Input + $entry.Cache * $price.Cache + $entry.CacheWrite * $price.CacheWrite + $entry.Output * $price.Output) / 1000000.0 }
+    }
+    return [pscustomobject]@{ Days=$days; Rows=@($groups.Values | Sort-Object Date, Model); FilesScanned=$filesScanned; ReadErrors=$readErrors }
+}
+
+function Get-CombinedUsage([string]$CodexHome, [string]$UserDirectory, [int]$Days, [string]$PricePath, [datetimeoffset]$Now = [datetimeoffset]::Now) {
+    $codex = Get-CodexUsage $CodexHome $Days $PricePath $Now
+    $claude = Get-ClaudeUsage $UserDirectory $Days $PricePath $Now
+    return [pscustomobject]@{ Days=$codex.Days; Start=$codex.Start; End=$codex.End; Rows=@(@($codex.Rows) + @($claude.Rows) | Sort-Object Date,Source,Model,Provider); FilesScanned=$codex.FilesScanned + $claude.FilesScanned; ReadErrors=$codex.ReadErrors + $claude.ReadErrors }
 }

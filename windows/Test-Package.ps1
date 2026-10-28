@@ -10,7 +10,7 @@ try {
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Package was not created.' }
     Expand-Archive -LiteralPath $archive -DestinationPath $extract
     $package = Join-Path $extract 'tokcat-windows'
-    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Monitor.ps1','Conversation.ps1','Usage.ps1','UsageWindow.ps1','UsagePricing.json','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
+    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Instance.ps1','Monitor.ps1','Conversation.ps1','Usage.ps1','UsageWindow.ps1','UsagePricing.json','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $file) -PathType Leaf)) { throw "Package is missing $file" }
     }
     $settingsPath = Join-Path $testRoot 'claude-fixture\settings.json'
@@ -37,7 +37,7 @@ try {
     if (Test-Path -LiteralPath $testRoot) {
         $resolved = (Resolve-Path -LiteralPath $testRoot).Path
         if ($resolved.StartsWith($tempParent, [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::GetFileName($resolved) -match '^tokcat-package-test-[0-9a-f]{32}$') {
-            Remove-Item -LiteralPath $resolved -Recurse -Force
+            try { Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop } catch { Write-Warning "Temporary test directory retained because a file is in use: $resolved" }
         } else { throw 'Refusing to remove an unexpected test path.' }
     }
 }
