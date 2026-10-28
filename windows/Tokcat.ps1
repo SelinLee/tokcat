@@ -11,6 +11,7 @@ if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
 [void][Tokcat.Native]::SetCurrentProcessExplicitAppUserModelID('tokcat.Windows.Monitor')
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
+. (Join-Path $PSScriptRoot 'Conversation.ps1')
 
 $form = New-Object Windows.Forms.Form
 $form.Text = 'tokcat · Agent 监控'
@@ -45,6 +46,7 @@ $script:reminderError = $false
 try { $script:savedReminders = Read-ReminderStore $script:reminderPath } catch { $script:savedReminders = @{}; $script:reminderError = $true }
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
+$openRaw = $listMenu.Items.Add('打开原始记录')
 $list.ContextMenuStrip = $listMenu
 
 function Set-TrayIcon([string[]]$States, [string]$Text) {
@@ -82,6 +84,43 @@ function Format-NetworkRateShort($BytesPerSecond) {
     if ($null -eq $BytesPerSecond) { return '—' }
     if ($BytesPerSecond -ge 1048576) { return ('{0:N1}M' -f ($BytesPerSecond / 1048576)) }
     return ('{0:N1}K' -f ($BytesPerSecond / 1024))
+}
+
+function Show-AgentConversation($Session, [bool]$TestMode = $false) {
+    $path = Resolve-ConversationPath $Session $env:USERPROFILE
+    if (-not $path) { if ($TestMode) { $script:smokeError = 'Conversation path was not found.' } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地对话记录。', 'tokcat') }; return }
+    $viewer = New-Object Windows.Forms.Form
+    $viewer.Text = 'tokcat · ' + [string]$Session.Title
+    $viewer.StartPosition = 'CenterParent'; $viewer.Size = New-Object Drawing.Size(800,600); $viewer.MinimumSize = New-Object Drawing.Size(500,300); $viewer.Font = $form.Font
+    $textBox = New-Object Windows.Forms.TextBox
+    $textBox.Multiline = $true; $textBox.ReadOnly = $true; $textBox.ScrollBars = 'Vertical'; $textBox.WordWrap = $true; $textBox.Dock = 'Fill'
+    $button = New-Object Windows.Forms.Button
+    $button.Text = '刷新对话'; $button.Dock = 'Bottom'; $button.Height = 34
+    $viewer.Controls.Add($textBox); $viewer.Controls.Add($button)
+    $reader = ${function:Read-AgentConversation}
+    $load = {
+        try {
+            $snapshot = & $reader $Session $path
+            $builder = New-Object Text.StringBuilder
+            if ($snapshot.Truncated) { [void]$builder.AppendLine('[仅显示最近的部分对话]'); [void]$builder.AppendLine() }
+            foreach ($message in $snapshot.Messages) {
+                $role = if ($message.Role -eq 'user') { '用户' } else { '助手' }
+                [void]$builder.AppendLine('[' + $role + ']'); [void]$builder.AppendLine($message.Text); [void]$builder.AppendLine()
+            }
+            if ($builder.Length -eq 0) { [void]$builder.Append('尚无可显示的用户或助手文本。') }
+            $textBox.Text = $builder.ToString()
+        } catch { $textBox.Text = '无法读取对话：' + $_.Exception.Message }
+    }.GetNewClosure()
+    $button.Add_Click($load)
+    $viewer.Add_Shown($load)
+    if ($TestMode) {
+        $viewerTimer = New-Object Windows.Forms.Timer
+        $testOutcome = [pscustomobject]@{ Error=$null }
+        $viewerTimer.Interval = 500
+        $check = { $viewerTimer.Stop(); if (-not $textBox.Text.Contains('fixture conversation')) { $testOutcome.Error = 'Conversation viewer did not show fixture text.' }; $viewer.Close() }.GetNewClosure()
+        $viewerTimer.Add_Tick($check); $viewer.Add_Shown({ $viewerTimer.Start() }.GetNewClosure())
+    }
+    try { [void]$viewer.ShowDialog($form); if ($TestMode -and $testOutcome.Error) { $script:smokeError = $testOutcome.Error } } finally { if ($TestMode) { $viewerTimer.Dispose() }; $viewer.Dispose() }
 }
 
 function Update-Sessions {
@@ -128,7 +167,7 @@ function Update-Sessions {
             if ($state -in @('running','waiting','approval','stalled') -or ($state -in @('completed','failed') -and $script:unread.ContainsKey($key))) { $dotStates.Add($state) }
             $rate = if ($rates.ContainsKey($key)) { '{0:N1}' -f $rates[$key] } else { '—' }
             foreach ($value in @($s.Source, $s.Title, $s.Project, $s.Phase, $s.Model, $s.OutputTokens, $rate, $s.Updated.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))) { [void]$row.SubItems.Add([string]$value) }
-            $row.Tag = if ($s.Source -eq 'Codex Work') { $s.Url } else { $s.Path }
+            $row.Tag = $s
             $row.ForeColor = [Drawing.Color]::FromName($(switch ($state) { 'waiting' {'DarkOrange'} 'approval' {'DarkOrange'} 'failed' {'Red'} 'stalled' {'DarkOrange'} 'running' {'DarkGoldenrod'} 'completed' {'ForestGreen'} default {'Gray'} }))
             [void]$list.Items.Add($row)
             if ($row.Name -eq $selectedKey) { $row.Selected = $true }
@@ -141,7 +180,7 @@ function Update-Sessions {
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击打开记录" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
+        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message
@@ -153,9 +192,10 @@ function Update-Sessions {
 $open.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
 $refresh.Add_Click({ Update-Sessions })
 $markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
+$openRaw.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $item = $list.SelectedItems[0].Tag; $path = Resolve-ConversationPath $item $env:USERPROFILE; if ($path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $path + '"') } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地记录。', 'tokcat') } } })
 $exit.Add_Click({ $script:quitting = $true; $form.Close() })
 $tray.Add_DoubleClick({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
-$list.Add_DoubleClick({ if ($list.SelectedItems.Count -gt 0) { $target = [string]$list.SelectedItems[0].Tag; if ($target.StartsWith('https://chatgpt.com/c/')) { Start-Process $target } elseif ($target) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $target + '"') } } })
+$list.Add_DoubleClick({ if ($list.SelectedItems.Count -gt 0) { $item = $list.SelectedItems[0].Tag; if ($item.Source -eq 'Codex Work') { Start-Process $item.Url } elseif ($item.Source -in @('Codex','Claude Code','WorkBuddy','WorkBuddy AI','DeepSeek Harness')) { Show-AgentConversation $item } elseif ($item.Path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $item.Path + '"') } } })
 $form.Add_FormClosing({ param($sender,$e) if (-not $script:quitting -and $e.CloseReason -eq 'UserClosing') { $e.Cancel = $true; $form.Hide() } })
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 5000
@@ -169,6 +209,8 @@ if ($SmokeTest) {
         $smokeTimer.Stop()
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
+        $testRow = @($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' } | Select-Object -First 1)
+        if ($testRow.Count -gt 0) { Show-AgentConversation $testRow[0].Tag $true }
         Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
         $iconBitmap = $tray.Icon.ToBitmap()
         $taskbarBitmap = $form.Icon.ToBitmap()

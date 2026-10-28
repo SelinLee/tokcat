@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
+. (Join-Path $PSScriptRoot 'Conversation.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('tokcat-test-' + [guid]::NewGuid())
 $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
@@ -255,6 +256,65 @@ public static class TokcatTestDatabase {
     Assert-Equal (Format-CodexQuota $quota $quotaNow) '5h 75% / 周 —' 'expired quota remains unavailable'
     Assert-Equal (Format-CodexQuota $quota $quotaNow.AddHours(2)) '5h — / 周 —' 'passed reset does not imply replenishment'
     Assert-Equal (Format-CodexQuota $null $quotaNow) '5h — / 周 —' 'missing quota is unavailable'
+    $conversationFile = Join-Path $root 'conversation.jsonl'
+    $conversationLines = @(
+        '{"type":"session_meta","payload":{"id":"conversation"}}',
+        '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"question"},{"type":"input_image","image_url":"private binary"}]}}',
+        '{"type":"response_item","payload":{"type":"message","role":"system","content":"hidden system"}}',
+        '{"type":"response_item","payload":{"type":"reasoning","text":"hidden reasoning"}}',
+        '{"type":"response_item","payload":{"type":"function_call_output","output":"hidden tool"}}',
+        '{"id":"reply","type":"response_item","payload":{"type":"message","role":"assistant","content":"first"}}',
+        '{"id":"reply","type":"response_item","payload":{"type":"message","role":"assistant","content":"final"}}'
+    )
+    [IO.File]::WriteAllText($conversationFile, ($conversationLines -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $conversationSession = [pscustomobject]@{ Source='Codex'; Id='conversation'; Path=$conversationFile }
+    $conversation = Read-AgentConversation $conversationSession $conversationFile
+    Assert-Equal $conversation.Messages.Count 2 'conversation roles and deduplication'
+    Assert-Equal $conversation.Messages[0].Text "question`n`n[图片]" 'attachment placeholder'
+    Assert-Equal $conversation.Messages[1].Text 'final' 'latest streaming message wins'
+    $shortConversation = Read-AgentConversation $conversationSession $conversationFile 1
+    Assert-Equal $shortConversation.Messages.Count 1 'conversation message limit'
+    Assert-Equal $shortConversation.Truncated $true 'truncation is reported'
+    $wrong = [pscustomobject]@{ Source='Codex'; Id='other'; Path=$conversationFile }; $rejected = $false
+    try { $null = Read-AgentConversation $wrong $conversationFile } catch { $rejected = $true }
+    Assert-Equal $rejected $true 'conversation session mismatch rejected'
+    $dshConversation = Join-Path $root 'dsh-conversation.json'
+    [IO.File]::WriteAllText($dshConversation, '{"record":{"rows":{"turnOutline":{"val":{"turns":[{"turn":1,"prompt":"hello","response":"answer"}],"draft":"draft"}}}}}')
+    $dshTask = [pscustomobject]@{ Source='DeepSeek Harness'; Id='dsh-conversation'; Path=$dshConversation }
+    $outline = Read-AgentConversation $dshTask $dshConversation
+    Assert-Equal $outline.Messages.Count 3 'DeepSeek turn outline and draft'
+    Assert-Equal $outline.Messages[2].Text 'draft' 'DeepSeek streaming draft'
+    $sourceId = '00000000-0000-0000-0000-000000000020'
+    $claudeProject = Join-Path $root '.claude\projects\project-a'
+    New-Item -ItemType Directory -Path $claudeProject -Force | Out-Null
+    $claudeLog = Join-Path $claudeProject ($sourceId + '.jsonl')
+    $claudeRows = @(
+        ('{"type":"user","sessionId":"' + $sourceId + '","message":{"role":"user","content":"hello"}}'),
+        '{"type":"assistant","sessionId":"other","message":{"role":"assistant","content":"wrong session"}}',
+        ('{"type":"assistant","sessionId":"' + $sourceId + '","message":{"role":"assistant","content":[{"type":"thinking","thinking":"secret"},{"type":"text","text":"answer"}]}}'),
+        ('{"type":"assistant","isSidechain":true,"sessionId":"' + $sourceId + '","message":{"role":"assistant","content":"internal"}}')
+    )
+    [IO.File]::WriteAllText($claudeLog, ($claudeRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $claudeTask = [pscustomobject]@{ Source='Claude Code'; Id=$sourceId; Path=$null }
+    Assert-Equal (Resolve-ConversationPath $claudeTask $root) $claudeLog 'Claude transcript resolved by session ID'
+    $claudeConversation = Read-AgentConversation $claudeTask $claudeLog
+    Assert-Equal $claudeConversation.Messages.Count 2 'Claude session and sidechain isolation'
+    Assert-Equal $claudeConversation.Messages[1].Text 'answer' 'Claude thinking excluded'
+    $secondProject = Join-Path $root '.claude\projects\project-b'
+    New-Item -ItemType Directory -Path $secondProject -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $secondProject ($sourceId + '.jsonl')), '')
+    Assert-Equal (Resolve-ConversationPath $claudeTask $root) $null 'ambiguous transcript paths rejected'
+    $buddyLog = Join-Path $root 'buddy-conversation.jsonl'
+    $buddyRows = @(
+        ('{"type":"message","id":"a","sessionId":"' + $sourceId + '","role":"user","content":"inspect"}'),
+        '{"type":"reasoning","content":"hidden"}',
+        ('{"type":"message","id":"b","sessionId":"' + $sourceId + '","role":"assistant","content":"done"}')
+    )
+    [IO.File]::WriteAllText($buddyLog, ($buddyRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $buddyTask = [pscustomobject]@{ Source='WorkBuddy'; Id=$sourceId; Path=$buddyLog }
+    $buddyConversation = Read-AgentConversation $buddyTask $buddyLog
+    Assert-Equal $buddyConversation.Messages.Count 2 'WorkBuddy conversation excludes non-message records'
+    Assert-Equal $buddyConversation.Messages[1].Text 'done' 'WorkBuddy assistant text'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'
@@ -280,6 +340,7 @@ public static class TokcatTestDatabase {
     Assert-Equal $network.Up 20 'unaffected adapter remains measured'
     $previousProfile = $env:USERPROFILE; $previousAppData = $env:APPDATA; $previousLocalData = $env:LOCALAPPDATA
     try {
+        [IO.File]::AppendAllText($log, "`n" + '{"type":"response_item","payload":{"type":"message","role":"user","content":"fixture conversation"}}' + "`n")
         $env:USERPROFILE = $root; $env:APPDATA = $root; $env:LOCALAPPDATA = $root
         & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Tokcat.ps1') -CodexHome $root -SmokeTest
         Assert-Equal $LASTEXITCODE 0 'window and notification-area initialization'
