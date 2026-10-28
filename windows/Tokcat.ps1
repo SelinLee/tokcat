@@ -298,6 +298,8 @@ if ($SmokeTest) {
         if ($testRow.Count -gt 0) { Show-AgentConversation $testRow[0].Tag $true }
         $usageError = Show-UsageWindow $form $CodexHome $true
         if ($usageError) { $script:smokeError = 'Usage window: ' + $usageError }
+        $proxyUsageError = Show-UsageWindow $form $CodexHome $true $true
+        if ($proxyUsageError) { $script:smokeError = 'Proxy usage window: ' + $proxyUsageError }
         Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
         $iconBitmap = $tray.Icon.ToBitmap()
         $taskbarBitmap = $form.Icon.ToBitmap()

@@ -109,6 +109,18 @@ public static class TokcatTestDatabase {
             if (sqlite3_exec(db, Encoding.UTF8.GetBytes(sql + "\0"), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) != 0) throw new Exception("fixture failed");
         } finally { sqlite3_close(db); }
     }
+    public static void CreateProxy(string path) {
+        IntPtr db; if (sqlite3_open_v2(Encoding.UTF8.GetBytes(path + "\0"), out db, 6, IntPtr.Zero) != 0) throw new Exception("open failed");
+        try {
+            string now = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+            string sql = "CREATE TABLE proxy_request_logs(app_type TEXT,provider_id TEXT,model TEXT,request_model TEXT,pricing_model TEXT,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,cache_creation_tokens INTEGER,total_cost_usd TEXT,created_at INTEGER,data_source TEXT);" +
+                "INSERT INTO proxy_request_logs VALUES('codex','relay-a','gpt-x',NULL,NULL,100,10,20,5,'0.123'," + now + ",'proxy');" +
+                "INSERT INTO proxy_request_logs VALUES('codex','relay-a','gpt-x',NULL,NULL,3,4,0,0,'0'," + now + ",'proxy');" +
+                "INSERT INTO proxy_request_logs VALUES('codex','relay-a','gpt-x',NULL,NULL,1000,1000,0,0,'10'," + now + ",'import');" +
+                "INSERT INTO proxy_request_logs VALUES('codex','relay-a','gpt-x',NULL,NULL,-1,1,0,0,'1'," + now + ",'proxy');";
+            if (sqlite3_exec(db, Encoding.UTF8.GetBytes(sql + "\0"), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) != 0) throw new Exception("fixture failed");
+        } finally { sqlite3_close(db); }
+    }
 }
 '@
     [TokcatTestDatabase]::Create((Join-Path $dbDir 'codex-dev.db'))
@@ -127,6 +139,17 @@ public static class TokcatTestDatabase {
     Assert-Equal $active[0].Title 'Named task' 'WorkBuddy custom title'
     Assert-Equal $active[0].Source 'WorkBuddy AI' 'WorkBuddy source separation'
     Assert-Equal @($buddy | Where-Object { $_.State -eq 'completed' }).Count 1 'WorkBuddy completion'
+    $proxyRoot = Join-Path $root '.cc-switch'
+    New-Item -ItemType Directory -Path $proxyRoot | Out-Null
+    [TokcatTestDatabase]::CreateProxy((Join-Path $proxyRoot 'cc-switch.db'))
+    $proxy = Get-CCSwitchUsage $root 7 ([datetimeoffset]::Now.AddSeconds(3))
+    Assert-Equal $proxy.Rows.Count 1 'CC Switch groups proxy records'
+    Assert-Equal $proxy.Rows[0].Input 103 'CC Switch excludes imported records'
+    Assert-Equal $proxy.Rows[0].Cache 20 'CC Switch cache reads'
+    Assert-Equal $proxy.Rows[0].CacheWrite 5 'CC Switch cache writes'
+    Assert-Equal $proxy.Rows[0].EstimatedUSD 0.123 'CC Switch reported cost'
+    Assert-Equal $proxy.Rows[0].UnpricedTokens 7 'zero cost stays unknown'
+    Assert-Equal $proxy.Invalid 1 'invalid proxy records skipped'
     $claudeDir = Join-Path $root 'claude-state'
     $hook = Join-Path $PSScriptRoot 'ClaudeHook.ps1'
     $claudeId = '00000000-0000-0000-0000-000000000010'

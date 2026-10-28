@@ -16,6 +16,8 @@ public static class TokcatWorkCatalog {
     [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)] static extern int sqlite3_column_type(IntPtr stmt, int column);
     [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)] static extern double sqlite3_column_double(IntPtr stmt, int column);
     [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)] static extern int sqlite3_column_int(IntPtr stmt, int column);
+    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)] static extern long sqlite3_column_int64(IntPtr stmt, int column);
+    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)] static extern int sqlite3_bind_int64(IntPtr stmt, int index, long value);
     static byte[] Utf8(string s) { return Encoding.UTF8.GetBytes(s + "\0"); }
     static string Text(IntPtr stmt, int column) {
         IntPtr p = sqlite3_column_text(stmt, column); if (p == IntPtr.Zero) return null;
@@ -26,6 +28,25 @@ public static class TokcatWorkCatalog {
     }
     public sealed class Row { public string Host, Id, Title; public double Updated; public int? Status; }
     public sealed class BuddyRow { public string Id, Project, Title, Status, Model; public double Updated; }
+    public sealed class ProxyRow { public string App, Provider, Model, Input, Output, CacheRead, CacheWrite, ReportedCost; public long CreatedAt; }
+    public static ProxyRow[] ReadProxy(string path, long from, long until) {
+        IntPtr db; int result = sqlite3_open_v2(Utf8(path), out db, 1 | 0x8000, IntPtr.Zero);
+        if (result != 0) { if (db != IntPtr.Zero) sqlite3_close(db); throw new InvalidOperationException("CC Switch database unavailable"); }
+        try {
+            sqlite3_busy_timeout(db, 500);
+            const string query = "SELECT app_type,provider_id,COALESCE(NULLIF(pricing_model,''),NULLIF(model,''),request_model),input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,total_cost_usd,created_at FROM proxy_request_logs WHERE data_source='proxy' AND created_at>=?1 AND created_at<?2 ORDER BY created_at DESC LIMIT 100001";
+            var rows = new List<ProxyRow>(); IntPtr stmt = Prepare(db, query);
+            try {
+                if (sqlite3_bind_int64(stmt, 1, from) != 0 || sqlite3_bind_int64(stmt, 2, until) != 0) throw new InvalidOperationException("CC Switch query binding failed");
+                int rc; while ((rc = sqlite3_step(stmt)) == 100) rows.Add(new ProxyRow {
+                    App=Text(stmt,0), Provider=Text(stmt,1), Model=Text(stmt,2), Input=Text(stmt,3), Output=Text(stmt,4),
+                    CacheRead=Text(stmt,5), CacheWrite=Text(stmt,6), ReportedCost=Text(stmt,7), CreatedAt=sqlite3_column_int64(stmt,8)
+                });
+                if (rc != 101) throw new InvalidOperationException("CC Switch database read failed");
+            } finally { sqlite3_finalize(stmt); }
+            return rows.ToArray();
+        } finally { sqlite3_close(db); }
+    }
     public static BuddyRow[] ReadBuddy(string path, double since) {
         IntPtr db; int result = sqlite3_open_v2(Utf8(path), out db, 1 | 0x8000, IntPtr.Zero);
         if (result != 0) { if (db != IntPtr.Zero) sqlite3_close(db); throw new InvalidOperationException("WorkBuddy database unavailable"); }

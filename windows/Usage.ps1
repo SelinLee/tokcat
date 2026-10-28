@@ -173,3 +173,37 @@ function Get-CombinedUsage([string]$CodexHome, [string]$UserDirectory, [int]$Day
     $claude = Get-ClaudeUsage $UserDirectory $Days $PricePath $Now
     return [pscustomobject]@{ Days=$codex.Days; Start=$codex.Start; End=$codex.End; Rows=@(@($codex.Rows) + @($claude.Rows) | Sort-Object Date,Source,Model,Provider); FilesScanned=$codex.FilesScanned + $claude.FilesScanned; ReadErrors=$codex.ReadErrors + $claude.ReadErrors }
 }
+
+# This view is deliberately separate: proxy records can also occur in agent logs.
+function Get-CCSwitchUsage([string]$UserDirectory, [int]$Days, [datetimeoffset]$Now = [datetimeoffset]::Now) {
+    $days = [math]::Max(1, [math]::Min(30, $Days))
+    $start = $Now.LocalDateTime.Date.AddDays(1 - $days)
+    $from = [datetimeoffset]::new($start).ToUnixTimeSeconds()
+    $until = $Now.ToUnixTimeSeconds() + 1
+    $path = Join-Path $UserDirectory '.cc-switch\cc-switch.db'
+    if (-not [IO.File]::Exists($path)) { return [pscustomobject]@{ Rows=@(); FilesScanned=0; ReadErrors=0; Present=$false; Truncated=$false; Invalid=0 } }
+    if (-not ('TokcatWorkCatalog' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'WorkCatalog.cs') }
+    $records = @([TokcatWorkCatalog]::ReadProxy($path, $from, $until)); $truncated = $records.Count -gt 100000
+    $groups = @{}; $invalid = 0
+    foreach ($entry in @($records | Select-Object -First 100000)) {
+        $counts = @(); $valid = $true
+        foreach ($raw in @($entry.Input, $entry.CacheRead, $entry.CacheWrite, $entry.Output)) {
+            $number = [long]0
+            if ($null -ne $raw -and (-not [long]::TryParse($raw, [ref]$number) -or $number -lt 0)) { $valid = $false; break }
+            $counts += $number
+        }
+        if (-not $valid) { $invalid++; continue }
+        $total = [double]$counts[0] + $counts[1] + $counts[2] + $counts[3]
+        if ($total -eq 0) { continue }
+        $at = [datetimeoffset]::FromUnixTimeSeconds($entry.CreatedAt)
+        $day = $at.LocalDateTime.ToString('yyyy-MM-dd')
+        $app = if ($entry.App) { $entry.App } else { '未知应用' }; $provider = if ($entry.Provider) { $entry.Provider } else { '未标注' }; $model = if ($entry.Model) { $entry.Model } else { '未知模型' }
+        $key = $day + "`n" + $app + "`n" + $provider + "`n" + $model
+        if (-not $groups.ContainsKey($key)) { $groups[$key] = [pscustomobject]@{ Date=$day; Source=$app; Model=$model; Provider=$provider; Input=[long]0; Cache=[long]0; CacheWrite=[long]0; Output=[long]0; EstimatedUSD=[double]0; UnpricedTokens=[long]0 } }
+        $group = $groups[$key]; $group.Input += $counts[0]; $group.Cache += $counts[1]; $group.CacheWrite += $counts[2]; $group.Output += $counts[3]
+        $cost = [double]0
+        if ([double]::TryParse($entry.ReportedCost, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$cost) -and $cost -gt 0 -and -not [double]::IsInfinity($cost) -and -not [double]::IsNaN($cost)) { $group.EstimatedUSD += $cost }
+        else { $group.UnpricedTokens += $total }
+    }
+    return [pscustomobject]@{ Rows=@($groups.Values | Sort-Object Date,Source,Model,Provider); FilesScanned=1; ReadErrors=0; Present=$true; Truncated=$truncated; Invalid=$invalid }
+}
