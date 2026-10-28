@@ -58,6 +58,7 @@ $tray = New-Object Windows.Forms.NotifyIcon
 $tray.ContextMenuStrip = $menu; $tray.Visible = $true
 $script:icon = $null; $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
+$script:dshBaseline = @{}; $script:dshUsagePath = Join-Path $env:LOCALAPPDATA 'Tokcat\dsh-usage.jsonl'; $script:dshUsageError = $false
 $gpuSampler = New-Object TokcatGpuMetrics
 if (-not $SmokeTest) { $gpuSampler.Start() }
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
@@ -193,7 +194,9 @@ function Update-Sessions {
         $kimiRoots = @((Join-Path $env:USERPROFILE '.kimi-work'), (Join-Path $env:USERPROFILE '.kimi-webbridge'))
         if ($env:APPDATA) { $kimiRoots += @((Join-Path $env:APPDATA 'kimi-desktop'), (Join-Path $env:APPDATA 'kimi')) }
         $activity = @(Get-ActivitySessions @((Join-Path $env:USERPROFILE '.openclaw\agents')) 'OpenClaw') + @(Get-ActivitySessions $kimiRoots 'Kimi')
-        $sessions = @(@(Get-CodexSessions $CodexHome) + @(Get-DshSessions $dshHomes) + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
+        $dshSessions = @(Get-DshSessions $dshHomes)
+        try { Save-DshUsage $dshSessions $script:dshBaseline $script:dshUsagePath ([datetimeoffset]::Now); $script:dshUsageError = $false } catch { $script:dshUsageError = $true }
+        $sessions = @(@(Get-CodexSessions $CodexHome) + $dshSessions + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
         $quota = Get-CodexQuota $CodexHome
         $quotaText = Format-CodexQuota $quota ([datetimeoffset]::UtcNow)
         $quotaLabel.Text = 'Codex 本地额度：' + $quotaText + $(if ($quota) { ' · 记录时间 ' + $quota.ObservedAt.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } else { ' · 等待记录' })
@@ -247,7 +250,7 @@ function Update-Sessions {
             $tray.ShowBalloonTip(5000, 'tokcat', $detail, [Windows.Forms.ToolTipIcon]::Info)
         }
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · GPU $gpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError -or $script:stripPreferenceError) { ' · 设置保存不可用' } else { '' })
+        $note.Text = "CPU $cpu · GPU $gpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:dshUsageError) { ' · DeepSeek 用量保存不可用' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError -or $script:stripPreferenceError) { ' · 设置保存不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message

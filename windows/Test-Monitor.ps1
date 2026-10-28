@@ -451,9 +451,91 @@ public static class TokcatTestDatabase {
     [IO.File]::WriteAllText($noWritePrice, '{"version":1,"models":[{"model":"claude-3-5-sonnet","input":3,"cache_read":0.3,"output":15}]}')
     $claudeUnpriced = Get-ClaudeUsage $root 7 $noWritePrice $usageNow
     Assert-Equal $claudeUnpriced.Rows[0].UnpricedTokens 255 'cache writes without a price remain unpriced'
-    $combined = Get-CombinedUsage $usageRoot $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    $clawRoot = Join-Path $root '.openclaw\agents'; $kimiRoot = Join-Path $root '.kimi-work'
+    [IO.Directory]::CreateDirectory($clawRoot) | Out-Null; [IO.Directory]::CreateDirectory($kimiRoot) | Out-Null
+    $clawRows = @(
+        ('{"type":"model.completed","ts":"' + $usageNow.AddMinutes(-1).ToString('o') + '","modelId":"model-x","provider":"relay","data":{"usage":{"input":999,"output":999},"promptCache":{"lastCallUsage":{"input":10,"output":3,"cacheRead":2,"cacheWrite":1}}}}'),
+        ('{"type":"model.completed","ts":"' + $usageNow.AddDays(-8).ToString('o') + '","modelId":"model-x","data":{"usage":{"input":999,"output":999}}}'),
+        ('{"type":"model.completed","ts":"' + $usageNow.AddMinutes(-1).ToString('o') + '","modelId":"model-x","data":{"usage":{"input":-1,"output":999}}}')
+    )
+    [IO.File]::WriteAllText((Join-Path $clawRoot 'test.trajectory.jsonl'), ($clawRows -join "`n") + "`n")
+    $kimiMs = $usageNow.AddMinutes(-1).ToUnixTimeMilliseconds()
+    $kimiRow = '{"type":"usage.record","time":' + $kimiMs + ',"model":"kimi-test","usage":{"inputOther":20,"output":4,"inputCacheRead":3,"inputCacheCreation":2}}'
+    [IO.File]::WriteAllText((Join-Path $kimiRoot 'wire.jsonl'), $kimiRow + "`n")
+    $clawUsage = Get-ActivityUsage @($clawRoot, $clawRoot) 'OpenClaw' 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $clawUsage.Rows.Count 1 'OpenClaw usage grouped'
+    Assert-Equal $clawUsage.Rows[0].Input 10 'OpenClaw prefers last call usage and avoids duplicate root'
+    Assert-Equal $clawUsage.Rows[0].UnpricedTokens 16 'unknown OpenClaw provider stays unpriced'
+    $kimiUsage = Get-ActivityUsage @($kimiRoot) 'Kimi' 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $kimiUsage.Rows[0].Input 20 'Kimi input usage'
+    Assert-Equal $kimiUsage.Rows[0].Cache 3 'Kimi cached input'
+    Assert-Equal $kimiUsage.Rows[0].CacheWrite 2 'Kimi cache writes'
+    Assert-Equal $kimiUsage.Rows[0].UnpricedTokens 29 'unknown Kimi model stays unpriced'
+    $workTraces = Join-Path $root '.workbuddy\traces\worker'; $workAITraces = Join-Path $root '.workbuddy-ai\traces\worker'
+    [IO.Directory]::CreateDirectory($workTraces) | Out-Null; [IO.Directory]::CreateDirectory($workAITraces) | Out-Null
+    $buddyTime = $usageNow.AddMinutes(-1).ToString('o')
+    $buddyTrace = '{"trace":{"modelInfo":{"models":["gpt-5.6-sol"]}},"spans":[' +
+        '{"type":"generation","spanId":"one","endedAt":"' + $buddyTime + '"},' +
+        '{"type":"generation","spanId":"one","endedAt":"' + $buddyTime + '","usage":{"prompt_tokens":100,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":25}}},' +
+        '{"type":"generation","spanId":"one","endedAt":"' + $buddyTime + '","usage":{"prompt_tokens":100,"completion_tokens":10}},' +
+        '{"type":"generation","spanId":"two","endedAt":"' + $buddyTime + '","toolOutput":"{\"model\":\"gpt-5.6-sol\",\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":5,\"cached_tokens\":5}}"},' +
+        '{"type":"generation","spanId":"three","endedAt":"' + $buddyTime + '","toolOutput":[{"usage":{"prompt_tokens":12,"completion_tokens":3,"cached_tokens":2}},{"usage":{"prompt_tokens":0,"completion_tokens":0}}]}]}'
+    [IO.File]::WriteAllText((Join-Path $workTraces 'trace_one.json'), $buddyTrace)
+    [IO.File]::WriteAllText((Join-Path $workAITraces 'trace_two.json'), $buddyTrace)
+    $buddyUsage = Get-WorkBuddyUsage $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $buddyUsage.Rows.Count 2 'both WorkBuddy sources included'
+    Assert-Equal $buddyUsage.ReadErrors 0 'WorkBuddy traces parsed'
+    Assert-Equal $buddyUsage.Rows[0].Input 100 'WorkBuddy input excludes cached tokens'
+    Assert-Equal $buddyUsage.Rows[0].Cache 32 'WorkBuddy cache tokens'
+    Assert-Equal $buddyUsage.Rows[0].Output 18 'WorkBuddy generation spans deduplicated'
+    [IO.File]::WriteAllText($dsh, '{"record":{"identity":{"cwd":"C:\\demo"},"rows":{"modelSelection":{"val":{"lastUsed":{"model":"model-x","provider":"relay"}}},"tokenUsage":{"val":{"totals":{"uncachedInputTokens":100,"outputTokens":10,"cacheReadTokens":50,"cacheWriteTokens":5}}}}}}')
+    $projected = Convert-DshSession $dsh
+    Assert-Equal $projected.Provider 'relay' 'DeepSeek projection retains provider for usage'
+    Assert-Equal $projected.Usage.cacheReadTokens 50 'DeepSeek projection exposes cumulative usage'
+    $endToEndPath = Join-Path $root 'dsh-e2e\Tokcat\dsh-usage.jsonl'; $endToEnd = @{}
+    Save-DshUsage @(Get-DshSessions @($dshHome)) $endToEnd $endToEndPath $usageNow
+    $projectedData = [IO.File]::ReadAllText($dsh, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    $projectedData.record.rows.tokenUsage.val.totals.outputTokens = 16
+    [IO.File]::WriteAllText($dsh, ($projectedData | ConvertTo-Json -Depth 20 -Compress))
+    Save-DshUsage @(Get-DshSessions @($dshHome)) $endToEnd $endToEndPath $usageNow
+    $endToEndUsage = Get-DshRecordedUsage (Join-Path $root 'dsh-e2e') 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $endToEndUsage.Rows[0].Output 6 'DeepSeek projection changes reach recorded usage'
+    $dshRecord = Join-Path $root 'Tokcat\dsh-usage.jsonl'; $dshBaselines = @{}
+    $dshItem = [pscustomobject]@{ Id='private-session'; Model='model-x'; Provider='relay'; Usage=[pscustomobject]@{ uncachedInputTokens=100; outputTokens=10; cacheReadTokens=50; cacheWriteTokens=5 } }
+    Save-DshUsage @($dshItem) $dshBaselines $dshRecord $usageNow
+    Assert-Equal ([IO.File]::Exists($dshRecord)) $false 'initial DeepSeek totals establish a baseline only'
+    $dshItem.Usage.uncachedInputTokens = 120; $dshItem.Usage.outputTokens = 15; $dshItem.Usage.cacheReadTokens = 54; $dshItem.Usage.cacheWriteTokens = 6
+    Save-DshUsage @($dshItem) $dshBaselines $dshRecord $usageNow
+    $dshUsage = Get-DshRecordedUsage $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $dshUsage.Rows.Count 1 'DeepSeek recorded usage grouped'
+    Assert-Equal $dshUsage.Rows[0].Input 20 'DeepSeek input delta'
+    Assert-Equal $dshUsage.Rows[0].Cache 4 'DeepSeek cache delta'
+    Assert-Equal $dshUsage.Rows[0].Output 5 'DeepSeek output delta'
+    Assert-Equal $dshUsage.Rows[0].UnpricedTokens 30 'unknown DeepSeek pricing remains unpriced'
+    if ([IO.File]::ReadAllText($dshRecord).Contains('private-session')) { throw 'DeepSeek usage journal contains a session ID' }
+    $dshItem.Usage.uncachedInputTokens = 1; $dshItem.Usage.outputTokens = 1; $dshItem.Usage.cacheReadTokens = 1; $dshItem.Usage.cacheWriteTokens = 1
+    Save-DshUsage @($dshItem) $dshBaselines $dshRecord $usageNow
+    Assert-Equal @(Get-Content -LiteralPath $dshRecord).Count 1 'DeepSeek reset only establishes a new baseline'
+    $dshItem.Model = 'new-model'; $dshItem.Usage.outputTokens = 3
+    Save-DshUsage @($dshItem) $dshBaselines $dshRecord $usageNow
+    $dshUsage = Get-DshRecordedUsage $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal @($dshUsage.Rows | Where-Object { $_.Model -eq '未知模型' -and $_.Output -eq 2 }).Count 1 'model changes stay unattributed'
+    [IO.File]::AppendAllText($dshRecord, '{"partial":')
+    $dshItem.Usage.outputTokens = 4
+    Save-DshUsage @($dshItem) $dshBaselines $dshRecord $usageNow
+    $dshUsage = Get-DshRecordedUsage $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal @($dshUsage.Rows | Where-Object { $_.Model -eq 'new-model' -and $_.Output -eq 1 }).Count 1 'DeepSeek recovers after an incomplete journal line'
+    $blockedParent = Join-Path $root 'not-a-directory'; [IO.File]::WriteAllText($blockedParent, '')
+    $dshItem.Usage.outputTokens = 5; $failedWrite = $false
+    try { Save-DshUsage @($dshItem) $dshBaselines (Join-Path $blockedParent 'usage.jsonl') $usageNow } catch { $failedWrite = $true }
+    Assert-Equal $failedWrite $true 'DeepSeek write failure is reported'
+    Assert-Equal $dshBaselines['private-session'].Output 4 'failed DeepSeek write does not advance baseline'
+    $combined = Get-CombinedUsage $usageRoot $root 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow $root
     Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Claude Code' }).Count 1 'combined usage includes Claude'
     Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Codex' }).Count 2 'combined usage keeps Codex provider groups'
+    Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'OpenClaw' -or $_.Source -eq 'Kimi' }).Count 2 'combined usage includes activity agents'
+    Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'WorkBuddy' -or $_.Source -eq 'WorkBuddy AI' }).Count 2 'combined usage includes both WorkBuddy sources'
+    Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'DeepSeek Harness' }).Count 3 'combined usage includes observed DeepSeek deltas'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     Add-Type -Path (Join-Path $PSScriptRoot 'GpuMetrics.cs') -ReferencedAssemblies System.Management.dll
     $gpuCounters = New-Object 'System.Collections.Generic.Dictionary[string,double]'

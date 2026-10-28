@@ -10,7 +10,7 @@
     [void]$period.Items.AddRange(@('今天','近 7 天','近 30 天')); $period.SelectedIndex = 1
     $sourceLabel = New-Object Windows.Forms.Label; $sourceLabel.Text = '数据来源：'; $sourceLabel.AutoSize = $true; $sourceLabel.Padding = New-Object Windows.Forms.Padding(4,8,0,0)
     $source = New-Object Windows.Forms.ComboBox; $source.DropDownStyle = 'DropDownList'; $source.Width = 160
-    [void]$source.Items.AddRange(@('Codex / Claude 日志','CC Switch 代理')); $source.SelectedIndex = if ($TestProxy) { 1 } else { 0 }
+    [void]$source.Items.AddRange(@('Agent 本地日志','CC Switch 代理')); $source.SelectedIndex = if ($TestProxy) { 1 } else { 0 }
     $refresh = New-Object Windows.Forms.Button; $refresh.Text = '重新读取'; $refresh.Width = 100
     $editPrices = New-Object Windows.Forms.Button; $editPrices.Text = '编辑参考单价'; $editPrices.Width = 120
     $controls.Controls.Add($caption); $controls.Controls.Add($period); $controls.Controls.Add($sourceLabel); $controls.Controls.Add($source); $controls.Controls.Add($refresh); $controls.Controls.Add($editPrices)
@@ -70,7 +70,7 @@
                 if ($source.SelectedIndex -eq 1) {
                     $summary.Text = "输入 $inputTotal · 缓存读取 $cacheTotal · 缓存写入 $cacheWriteTotal · 输出 $outputTotal · 代理记录费用 $('${0:N4}' -f $cost) · 无有效费用 $unpriced`nCC Switch 代理记录单独统计，可能与 Agent 日志重复；上报费用不代表实际账单。" + $(if (-not $result.Present) { ' 未找到数据库。' } else { '' }) + $(if ($result.Truncated) { ' 仅显示最近 100000 条。' } else { '' }) + $(if ($result.Invalid) { " 跳过无效记录 $($result.Invalid) 条。" } else { '' })
                 } else {
-                    $summary.Text = "输入 $inputTotal · 缓存读取 $cacheTotal · 缓存写入 $cacheWriteTotal · 输出 $outputTotal · 参考估价 $('${0:N4}' -f $cost) · 未计价 $unpriced`nCodex / Claude Code 本地观测；估价依据可编辑的参考单价，不代表订阅或实际账单。文件 $($result.FilesScanned)，读取失败 $($result.ReadErrors)。"
+                    $summary.Text = "输入 $inputTotal · 缓存读取 $cacheTotal · 缓存写入 $cacheWriteTotal · 输出 $outputTotal · 参考估价 $('${0:N4}' -f $cost) · 未计价 $unpriced`nAgent 本地观测（DeepSeek 仅记录运行期间增量）；参考估价并非实际账单。文件 $($result.FilesScanned)，读取失败 $($result.ReadErrors)，超大文件 $($result.Skipped)。"
                 }
                 $context.Done = $true
             } catch { $context.Error = $_.Exception.Message; $context.Done = $true; $summary.Text = '读取失败：' + $context.Error }

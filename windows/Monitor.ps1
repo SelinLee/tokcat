@@ -144,11 +144,12 @@ function Convert-DshSession([string]$Path) {
     $pending = Get-Field $stats 'pendingCalls'
     $boundary = Get-Field (Get-Field (Get-ProjectionValue $rows 'turnBoundary') 'lastStepBoundary') 'kind'
     $state = if ($asking) { 'waiting' } elseif ($null -ne (Get-Field $stats 'openStep') -or ($pending -and @($pending.PSObject.Properties).Count -gt 0) -or $boundary -eq 'start') { 'running' } elseif ($boundary -eq 'end') { 'completed' } else { 'unknown' }
-    $model = Get-Field (Get-Field (Get-ProjectionValue $rows 'modelSelection') 'lastUsed') 'model'
-    $output = Get-Field (Get-Field (Get-ProjectionValue $rows 'tokenUsage') 'totals') 'outputTokens'
+    $selection = Get-Field (Get-ProjectionValue $rows 'modelSelection') 'lastUsed'
+    $model = Get-Field $selection 'model'; $provider = Get-Field $selection 'provider'
+    $usage = Get-Field (Get-ProjectionValue $rows 'tokenUsage') 'totals'; $output = Get-Field $usage 'outputTokens'
     $title = Get-ProjectionValue $rows 'title'; $project = Get-Field $identity 'cwd'
     if (-not $title) { $title = if ($project) { Split-Path $project -Leaf } else { [IO.Path]::GetFileNameWithoutExtension($Path) } }
-    return [pscustomobject]@{ Id = [IO.Path]::GetFileNameWithoutExtension($Path); Source = 'DeepSeek Harness'; Path = $Path; Project = $project; Model = $model; State = $state; Phase = if ($state -eq 'running') { '运行中' } elseif ($state -eq 'waiting') { '等待回答' } else { '' }; Updated = [datetimeoffset]([IO.File]::GetLastWriteTimeUtc($Path)); Started = $null; OutputTokens = $output; Title = $title }
+    return [pscustomobject]@{ Id = [IO.Path]::GetFileNameWithoutExtension($Path); Source = 'DeepSeek Harness'; Path = $Path; Project = $project; Model = $model; Provider = $provider; Usage = $usage; State = $state; Phase = if ($state -eq 'running') { '运行中' } elseif ($state -eq 'waiting') { '等待回答' } else { '' }; Updated = [datetimeoffset]([IO.File]::GetLastWriteTimeUtc($Path)); Started = $null; OutputTokens = $output; Title = $title }
 }
 
 function Get-DshSessions([string[]]$Homes) {
