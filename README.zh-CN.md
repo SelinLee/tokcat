@@ -14,6 +14,10 @@
 
 </div>
 
+## Windows 预览版
+
+[`windows/`](windows/README.md) 提供 Windows 任务栏窗口和通知区域图标，可查看 Codex、Codex Work 和 DeepSeek Harness 会话状态。这是独立的早期版本，尚未覆盖 macOS 版的全部功能和 Agent。
+
 ## 安静贴在桌边的人形挂件
 
 <picture>

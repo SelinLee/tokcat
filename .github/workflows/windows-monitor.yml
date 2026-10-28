@@ -1,0 +1,13 @@
+name: Windows monitor
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  parser:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Windows PowerShell parser
+        shell: powershell
+        run: .\windows\Test-Monitor.ps1

@@ -14,6 +14,10 @@ A native macOS monitor for multiple AI agents: live task states, waiting alerts,
 
 </div>
 
+## Windows preview
+
+A Windows taskbar and notification-area monitor for Codex, Codex Work, and DeepSeek Harness sessions is available in [`windows/`](windows/README.md). It is an early, separate implementation and does not yet provide all macOS features or agent integrations.
+
 ## A quiet desktop companion
 
 <picture>
