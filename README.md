@@ -16,7 +16,7 @@ A native macOS monitor for multiple AI agents: live task states, waiting alerts,
 
 ## Windows preview
 
-A Windows taskbar and notification-area monitor for Codex, Codex Work, and DeepSeek Harness sessions is available in [`windows/`](windows/README.md). It is an early, separate implementation and does not yet provide all macOS features or agent integrations.
+A Windows taskbar and notification-area monitor for Codex, Codex Work, WorkBuddy, DeepSeek Harness, and Claude Code sessions is available in [`windows/`](windows/README.md), with activity-only records for OpenClaw and Kimi. Claude monitoring is opt-in. It is an early, separate implementation and does not yet provide all macOS features or agent integrations.
 
 ## A quiet desktop companion
 
