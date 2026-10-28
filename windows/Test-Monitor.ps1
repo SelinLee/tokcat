@@ -211,6 +211,50 @@ public static class TokcatTestDatabase {
     $workCompleted.State = 'completed'
     Update-ReminderStates @($workCompleted) $seen $unread $true $launch
     Assert-Equal $unread.ContainsKey('Codex Work:cloud') $true 'catalog state transition produces reminder'
+    $reminderFile = Join-Path (Join-Path $root 'reminders') 'state.json'
+    $saved = @{}
+    Sync-ReminderStore @($workCompleted) $unread $saved $launch
+    Write-ReminderStore $reminderFile $saved
+    $loaded = Read-ReminderStore $reminderFile
+    $restored = @{}; $newSeen = @{}
+    Restore-Reminders @($workCompleted) $newSeen $restored $loaded
+    Assert-Equal $restored.ContainsKey('Codex Work:cloud') $true 'unread survives restart'
+    $changed = [pscustomobject]@{ Source='Codex Work'; Id='cloud'; State='completed'; Updated=$workCompleted.Updated.AddSeconds(1) }
+    $mismatch = @{}
+    Restore-Reminders @($changed) @{} $mismatch $loaded
+    Assert-Equal $mismatch.ContainsKey('Codex Work:cloud') $true 'catalog metadata changes retain unread state'
+    $oldCodex = [pscustomobject]@{ State='completed'; Updated=$launch }
+    $changedCodex = [pscustomobject]@{ Source='Codex'; Id='changed'; State='completed'; Updated=$launch.AddSeconds(1) }
+    $mismatch = @{}
+    Restore-Reminders @($changedCodex) @{} $mismatch @{ 'Codex:changed'=$oldCodex }
+    Assert-Equal $mismatch.Count 0 'changed Codex turn does not restore old reminder'
+    Sync-ReminderStore @() @{} $saved $launch
+    Assert-Equal $saved.ContainsKey('Codex Work:cloud') $true 'temporarily unavailable source preserves reminder'
+    $unread.Clear()
+    Sync-ReminderStore @($workCompleted) $unread $saved $launch
+    Write-ReminderStore $reminderFile $saved
+    Assert-Equal (Read-ReminderStore $reminderFile).Count 0 'mark read persists'
+    [IO.File]::WriteAllText($reminderFile, '{"version":99,"items":[]}')
+    $badStore = $false
+    try { $null = Read-ReminderStore $reminderFile } catch { $badStore = $true }
+    Assert-Equal $badStore $true 'unknown reminder store format rejected'
+    $quotaRoot = Join-Path $root 'quota-test'
+    $quotaDir = Join-Path $quotaRoot 'sessions'
+    New-Item -ItemType Directory -Path $quotaDir -Force | Out-Null
+    $quotaNow = [datetimeoffset]::UtcNow
+    $futureReset = $quotaNow.AddHours(1).ToUnixTimeSeconds(); $expiredReset = $quotaNow.AddMinutes(-1).ToUnixTimeSeconds()
+    $quotaFile = Join-Path $quotaDir 'rollout-quota.jsonl'
+    $quotaRows = @(
+        '{"type":"session_meta","payload":{"id":"quota","model_provider":"openai"}}',
+        ('{"type":"event_msg","timestamp":"' + $quotaNow.ToString('o') + '","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":25,"window_minutes":300,"resets_at":' + $futureReset + '},"secondary":{"used_percent":30,"window_minutes":10080,"resets_at":' + $expiredReset + '}}}}'),
+        ('{"type":"event_msg","timestamp":"' + $quotaNow.AddSeconds(1).ToString('o') + '","payload":{"type":"token_count","rate_limits":{"limit_id":"other","primary":{"used_percent":99,"window_minutes":300}}}}')
+    )
+    [IO.File]::WriteAllText($quotaFile, ($quotaRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $quota = Get-CodexQuota $quotaRoot
+    Assert-Equal $quota.FiveHour.Remaining 75 'Codex quota remaining'
+    Assert-Equal (Format-CodexQuota $quota $quotaNow) '5h 75% / 周 —' 'expired quota remains unavailable'
+    Assert-Equal (Format-CodexQuota $quota $quotaNow.AddHours(2)) '5h — / 周 —' 'passed reset does not imply replenishment'
+    Assert-Equal (Format-CodexQuota $null $quotaNow) '5h — / 周 —' 'missing quota is unavailable'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'

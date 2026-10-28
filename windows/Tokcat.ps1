@@ -6,8 +6,9 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
-Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); } }'
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId); } }'
 if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
+[void][Tokcat.Native]::SetCurrentProcessExplicitAppUserModelID('tokcat.Windows.Monitor')
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
 
@@ -24,7 +25,10 @@ foreach ($column in @(@('状态',110),@('来源',130),@('任务',240),@('项目'
 $note = New-Object Windows.Forms.Label
 $note.Dock = 'Bottom'; $note.Height = 38; $note.Padding = New-Object Windows.Forms.Padding(8,5,0,0)
 $note.Text = 'Codex 本地会话 · 双击任务打开日志 · 关闭窗口可保留托盘运行'
-$form.Controls.Add($list); $form.Controls.Add($note)
+$quotaLabel = New-Object Windows.Forms.Label
+$quotaLabel.Dock = 'Top'; $quotaLabel.Height = 27; $quotaLabel.Padding = New-Object Windows.Forms.Padding(8,4,0,0)
+$quotaLabel.Text = 'Codex 本地额度：等待记录'
+$form.Controls.Add($list); $form.Controls.Add($note); $form.Controls.Add($quotaLabel)
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $open = $menu.Items.Add('打开监控窗口')
 $refresh = $menu.Items.Add('立即刷新')
@@ -36,6 +40,9 @@ $script:icon = $null; $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
 $script:launchedAt = [datetimeoffset]::UtcNow
+$script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
+$script:reminderError = $false
+try { $script:savedReminders = Read-ReminderStore $script:reminderPath } catch { $script:savedReminders = @{}; $script:reminderError = $true }
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $list.ContextMenuStrip = $listMenu
@@ -59,6 +66,7 @@ function Set-TrayIcon([string[]]$States, [string]$Text) {
     $newIcon = [Drawing.Icon]::FromHandle($handle).Clone()
     [void][Tokcat.Native]::DestroyIcon($handle)
     $tray.Icon = $newIcon
+    $form.Icon = $newIcon
     if ($script:icon) { $script:icon.Dispose() }; $script:icon = $newIcon
     $tray.Text = if ($Text.Length -gt 63) { $Text.Substring(0,63) } else { $Text }
     $graphics.Dispose(); $bitmap.Dispose()
@@ -80,13 +88,20 @@ function Update-Sessions {
         if ($env:APPDATA) { $kimiRoots += @((Join-Path $env:APPDATA 'kimi-desktop'), (Join-Path $env:APPDATA 'kimi')) }
         $activity = @(Get-ActivitySessions @((Join-Path $env:USERPROFILE '.openclaw\agents')) 'OpenClaw') + @(Get-ActivitySessions $kimiRoots 'Kimi')
         $sessions = @(@(Get-CodexSessions $CodexHome) + @(Get-DshSessions $dshHomes) + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
+        $quota = Get-CodexQuota $CodexHome
+        $quotaText = Format-CodexQuota $quota ([datetimeoffset]::UtcNow)
+        $quotaLabel.Text = 'Codex 本地额度：' + $quotaText + $(if ($quota) { ' · 记录时间 ' + $quota.ObservedAt.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } else { ' · 等待记录' })
         $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
         $metrics = [TokcatSystemMetrics]::Sample()
         $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
         $dotStates = New-Object 'System.Collections.Generic.List[string]'
+        Restore-Reminders $sessions $script:seenStates $script:unread $script:savedReminders
         Update-ReminderStates $sessions $script:seenStates $script:unread $script:bootstrapped $script:launchedAt
+        if (-not $script:reminderError) {
+            try { Sync-ReminderStore $sessions $script:unread $script:savedReminders ([datetimeoffset]::UtcNow); Write-ReminderStore $script:reminderPath $script:savedReminders } catch { $script:reminderError = $true }
+        }
         $selectedKey = if ($list.SelectedItems.Count -gt 0) { $list.SelectedItems[0].Name } else { $null }
         $list.BeginUpdate(); $list.Items.Clear()
         foreach ($s in $sessions) {
@@ -107,12 +122,12 @@ function Update-Sessions {
         }
         $script:bootstrapped = $true
         $list.EndUpdate()
-        $summary = "tokcat: 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled) · CPU $cpu · 内存 $memory"
-        if ($dotStates.Count -gt 6) { $summary = "tokcat: $($dotStates.Count) 个状态 · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · CPU $cpu · 内存 $memory" }
+        $summary = "tokcat: 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · $quotaText · CPU $cpu · 内存 $memory"
+        if ($dotStates.Count -gt 6) { $summary = "tokcat: $($dotStates.Count) 个状态 · 等待 $($counts.waiting + $counts.approval) · $quotaText · CPU $cpu · 内存 $memory" }
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · 内存 $memory · 最近 7 天共 $($sessions.Count) 项 · 双击打开记录" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' })
+        $note.Text = "CPU $cpu · 内存 $memory · 最近 7 天共 $($sessions.Count) 项 · 双击打开记录" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message
@@ -138,12 +153,12 @@ if ($SmokeTest) {
     $smokeTimer.Interval = 1000
     $smokeTimer.Add_Tick({
         $smokeTimer.Stop()
-        if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
+        if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $script:quitting = $true
         $form.Close()
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; $tray.Visible = $false; $tray.Dispose(); if ($script:icon) { $script:icon.Dispose() }; $form.Dispose() }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() } }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }

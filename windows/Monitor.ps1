@@ -3,6 +3,7 @@
 $script:codexCache = @{}
 $script:activityCache = @{}
 $script:rateSamples = @{}
+$script:quotaCache = @{}
 function Get-Field($Object, [string]$Name) {
     if ($null -eq $Object) { return $null }
     $p = $Object.PSObject.Properties[$Name]
@@ -302,4 +303,122 @@ function Update-ReminderStates([object[]]$Sessions, [hashtable]$Seen, [hashtable
         $Seen[$key] = @{ State=$session.State; Updated=$session.Updated }
     }
     foreach ($key in @($Seen.Keys)) { if (-not $present.ContainsKey($key)) { $Seen.Remove($key); $Unread.Remove($key) } }
+}
+
+function Convert-QuotaNumber($Value) {
+    if ($null -eq $Value -or $Value -is [bool]) { return $null }
+    $number = 0.0
+    if ($Value -is [ValueType]) { try { $number = [double]$Value } catch { return $null } }
+    elseif (-not [double]::TryParse([string]$Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$number)) { return $null }
+    if ([double]::IsNaN($number) -or [double]::IsInfinity($number)) { return $null }
+    return $number
+}
+
+function Convert-CodexQuotaEvent($Record) {
+    $payload = Get-Field $Record 'payload'
+    if ((Get-Field $Record 'type') -ne 'event_msg' -or (Get-Field $payload 'type') -ne 'token_count') { return $null }
+    $limits = Get-Field $payload 'rate_limits'; $limitId = Get-Field $limits 'limit_id'
+    if ($null -eq $limits -or ($limitId -and $limitId -ne 'codex')) { return $null }
+    $time = [datetimeoffset]::MinValue
+    if (-not [datetimeoffset]::TryParse([string](Get-Field $Record 'timestamp'), [ref]$time) -or $time -gt [datetimeoffset]::UtcNow.AddMinutes(5)) { return $null }
+    $short = $null; $week = $null
+    foreach ($name in @('primary','secondary')) {
+        $window = Get-Field $limits $name
+        $used = Convert-QuotaNumber (Get-Field $window 'used_percent')
+        $minutes = Convert-QuotaNumber (Get-Field $window 'window_minutes')
+        if ($null -eq $used -or $null -eq $minutes -or $minutes -le 0 -or $minutes -gt 525600) { continue }
+        $reset = Convert-QuotaNumber (Get-Field $window 'resets_at'); $resetAt = $null
+        if ($null -ne $reset -and $reset -ge 0 -and $reset -le 253402300799) { $resetAt = [datetimeoffset]::FromUnixTimeSeconds([long]$reset) }
+        $item = [pscustomobject]@{ Remaining = 100 - [math]::Round([math]::Min(100, [math]::Max(0, $used)), 0, [MidpointRounding]::AwayFromZero); ResetAt = $resetAt }
+        if ($minutes -le 2880) { $short = $item } else { $week = $item }
+    }
+    if ($null -eq $short -and $null -eq $week) { return $null }
+    return [pscustomobject]@{ ObservedAt=$time; FiveHour=$short; Weekly=$week }
+}
+
+function Get-CodexQuota([string]$CodexHome) {
+    $latest = $null; $seen = @{}
+    foreach ($folder in @('sessions','archived_sessions')) {
+        $directory = Join-Path $CodexHome $folder
+        if (-not (Test-Path -LiteralPath $directory)) { continue }
+        $files = @(Get-ChildItem -LiteralPath $directory -Filter '*.jsonl' -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -gt [datetime]::UtcNow.AddDays(-7) } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 20)
+        foreach ($file in $files) {
+            try {
+                $seen[$file.FullName] = $true; $cached = $script:quotaCache[$file.FullName]
+                if ($cached -and $cached.Length -eq $file.Length -and $cached.Modified -eq $file.LastWriteTimeUtc) { $snapshot = $cached.Snapshot }
+                else {
+                    $snapshot = $null; $first = @(Read-SharedLines $file.FullName 1048576 $false)
+                    $meta = $first[0] | ConvertFrom-Json -ErrorAction Stop
+                    $provider = Get-Field (Get-Field $meta 'payload') 'model_provider'
+                    if (-not $provider -or $provider -eq 'openai') {
+                        foreach ($line in @(Read-SharedLines $file.FullName)) {
+                            if (-not $line.Contains('"rate_limits"')) { continue }
+                            try { $record = $line | ConvertFrom-Json -ErrorAction Stop; $candidate = Convert-CodexQuotaEvent $record } catch { continue }
+                            if ($candidate -and ($null -eq $snapshot -or $candidate.ObservedAt -gt $snapshot.ObservedAt)) { $snapshot = $candidate }
+                        }
+                    }
+                    $script:quotaCache[$file.FullName] = @{ Length=$file.Length; Modified=$file.LastWriteTimeUtc; Snapshot=$snapshot }
+                }
+                if ($snapshot -and ($null -eq $latest -or $snapshot.ObservedAt -gt $latest.ObservedAt)) { $latest = $snapshot }
+            } catch { continue }
+        }
+    }
+    foreach ($key in @($script:quotaCache.Keys)) { if (-not $seen.ContainsKey($key)) { $script:quotaCache.Remove($key) } }
+    return $latest
+}
+
+function Format-CodexQuota($Snapshot, [datetimeoffset]$Now) {
+    $short = '—'; $week = '—'
+    if ($Snapshot) {
+        if ($Snapshot.FiveHour -and ($null -eq $Snapshot.FiveHour.ResetAt -or $Snapshot.FiveHour.ResetAt -gt $Now)) { $short = "$($Snapshot.FiveHour.Remaining)%" }
+        if ($Snapshot.Weekly -and ($null -eq $Snapshot.Weekly.ResetAt -or $Snapshot.Weekly.ResetAt -gt $Now)) { $week = "$($Snapshot.Weekly.Remaining)%" }
+    }
+    return "5h $short / 周 $week"
+}
+
+# Persist only reminder identifiers and state revisions, never conversation text.
+function Read-ReminderStore([string]$Path) {
+    $saved = @{}
+    if (-not [IO.File]::Exists($Path)) { return $saved }
+    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
+    $itemsProperty = if ($null -ne $doc) { $doc.PSObject.Properties['items'] } else { $null }
+    if ((Get-Field $doc 'version') -ne 1 -or $null -eq $itemsProperty -or $itemsProperty.Value -isnot [array]) { throw 'Reminder store has an unsupported format.' }
+    foreach ($item in $doc.items) {
+        $key = Get-Field $item 'key'; $state = Get-Field $item 'state'; $updated = [datetimeoffset]::MinValue
+        if (-not ($key -is [string]) -or -not $key -or $state -notin @('completed','failed') -or -not [datetimeoffset]::TryParse([string](Get-Field $item 'updated'), [ref]$updated)) { throw 'Reminder store contains an invalid entry.' }
+        $saved[$key] = [pscustomobject]@{ State=$state; Updated=$updated }
+    }
+    return $saved
+}
+
+function Restore-Reminders([object[]]$Sessions, [hashtable]$Seen, [hashtable]$Unread, [hashtable]$Saved) {
+    foreach ($session in $Sessions) {
+        $key = $session.Source + ':' + $session.Id
+        $previous = $Saved[$key]
+        # Catalog-backed sources publish session state rather than turn IDs;
+        # their metadata timestamp can change while the same result is unread.
+        $sameRevision = $previous -and ($previous.Updated -eq $session.Updated -or $session.Source -in @('Codex Work','WorkBuddy','WorkBuddy AI','DeepSeek Harness'))
+        if (-not $Seen.ContainsKey($key) -and $previous -and $previous.State -eq $session.State -and $sameRevision) { $Unread[$key] = $true }
+    }
+}
+
+function Sync-ReminderStore([object[]]$Sessions, [hashtable]$Unread, [hashtable]$Saved, [datetimeoffset]$Now) {
+    foreach ($session in $Sessions) {
+        $key = $session.Source + ':' + $session.Id
+        if ($Unread.ContainsKey($key) -and $session.State -in @('completed','failed')) { $Saved[$key] = [pscustomobject]@{ State=$session.State; Updated=$session.Updated } }
+        else { $Saved.Remove($key) }
+    }
+    # Unavailable sources do not erase unread reminders, but old records expire.
+    foreach ($key in @($Saved.Keys)) { if ($Saved[$key].Updated -lt $Now.AddDays(-7)) { $Saved.Remove($key) } }
+}
+
+function Write-ReminderStore([string]$Path, [hashtable]$Saved) {
+    $items = @($Saved.Keys | Sort-Object | ForEach-Object { [pscustomobject]@{ key=$_; state=$Saved[$_].State; updated=$Saved[$_].Updated.ToString('o') } })
+    $json = [pscustomobject]@{ version=1; items=$items } | ConvertTo-Json -Depth 5
+    if ([IO.File]::Exists($Path) -and [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) -eq $json) { return }
+    $directory = [IO.Path]::GetDirectoryName($Path)
+    [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $tmp = Join-Path $directory ('.reminders-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+    if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
 }
