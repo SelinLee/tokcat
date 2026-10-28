@@ -155,6 +155,13 @@ if ($SmokeTest) {
         $smokeTimer.Stop()
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
+        Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
+        $iconBitmap = $tray.Icon.ToBitmap()
+        $taskbarBitmap = $form.Icon.ToBitmap()
+        try {
+            if ($iconBitmap.GetPixel(5,9).ToArgb() -ne [Drawing.Color]::Goldenrod.ToArgb() -or $iconBitmap.GetPixel(15,9).ToArgb() -ne [Drawing.Color]::OrangeRed.ToArgb() -or $iconBitmap.GetPixel(25,9).ToArgb() -ne [Drawing.Color]::Red.ToArgb()) { $script:smokeError = 'Task state dots were not drawn in the tray icon.' }
+            if ($taskbarBitmap.GetPixel(5,9).ToArgb() -ne $iconBitmap.GetPixel(5,9).ToArgb() -or $taskbarBitmap.GetPixel(15,9).ToArgb() -ne $iconBitmap.GetPixel(15,9).ToArgb()) { $script:smokeError = 'Taskbar and tray icons did not match.' }
+        } finally { $iconBitmap.Dispose(); $taskbarBitmap.Dispose() }
         $script:quitting = $true
         $form.Close()
     })
