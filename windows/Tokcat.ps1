@@ -23,7 +23,7 @@ $list = New-Object Windows.Forms.ListView
 $list.Dock = 'Fill'; $list.View = 'Details'; $list.FullRowSelect = $true; $list.GridLines = $true
 foreach ($column in @(@('状态',110),@('来源',130),@('任务',240),@('项目',210),@('阶段',170),@('模型',125),@('输出 tokens',90),@('输出 tok/s',90),@('最后活动',145))) { [void]$list.Columns.Add($column[0], $column[1]) }
 $note = New-Object Windows.Forms.Label
-$note.Dock = 'Bottom'; $note.Height = 38; $note.Padding = New-Object Windows.Forms.Padding(8,5,0,0)
+$note.Dock = 'Bottom'; $note.Height = 56; $note.Padding = New-Object Windows.Forms.Padding(8,5,0,0)
 $note.Text = 'Codex 本地会话 · 双击任务打开日志 · 关闭窗口可保留托盘运行'
 $quotaLabel = New-Object Windows.Forms.Label
 $quotaLabel.Dock = 'Top'; $quotaLabel.Height = 27; $quotaLabel.Padding = New-Object Windows.Forms.Padding(8,4,0,0)
@@ -72,6 +72,18 @@ function Set-TrayIcon([string[]]$States, [string]$Text) {
     $graphics.Dispose(); $bitmap.Dispose()
 }
 
+function Format-NetworkRate($BytesPerSecond) {
+    if ($null -eq $BytesPerSecond) { return '—' }
+    if ($BytesPerSecond -ge 1048576) { return ('{0:N1} MiB/s' -f ($BytesPerSecond / 1048576)) }
+    return ('{0:N1} KiB/s' -f ($BytesPerSecond / 1024))
+}
+
+function Format-NetworkRateShort($BytesPerSecond) {
+    if ($null -eq $BytesPerSecond) { return '—' }
+    if ($BytesPerSecond -ge 1048576) { return ('{0:N1}M' -f ($BytesPerSecond / 1048576)) }
+    return ('{0:N1}K' -f ($BytesPerSecond / 1024))
+}
+
 function Update-Sessions {
     if ($script:scanning) { return }
     $script:scanning = $true
@@ -95,6 +107,7 @@ function Update-Sessions {
         $metrics = [TokcatSystemMetrics]::Sample()
         $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
+        $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
         $dotStates = New-Object 'System.Collections.Generic.List[string]'
         Restore-Reminders $sessions $script:seenStates $script:unread $script:savedReminders
@@ -122,12 +135,13 @@ function Update-Sessions {
         }
         $script:bootstrapped = $true
         $list.EndUpdate()
-        $summary = "tokcat: 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · $quotaText · CPU $cpu · 内存 $memory"
-        if ($dotStates.Count -gt 6) { $summary = "tokcat: $($dotStates.Count) 个状态 · 等待 $($counts.waiting + $counts.approval) · $quotaText · CPU $cpu · 内存 $memory" }
+        $downShort = Format-NetworkRateShort $metrics.NetworkDown; $upShort = Format-NetworkRateShort $metrics.NetworkUp
+        $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu 内存$memory ↓$downShort ↑$upShort"
+        if ($dotStates.Count -gt 6) { $summary = "状态$($dotStates.Count) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu 内存$memory ↓$downShort ↑$upShort" }
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · 内存 $memory · 最近 7 天共 $($sessions.Count) 项 · 双击打开记录" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
+        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击打开记录" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message

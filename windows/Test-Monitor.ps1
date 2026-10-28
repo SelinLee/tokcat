@@ -262,6 +262,22 @@ public static class TokcatTestDatabase {
     Start-Sleep -Milliseconds 150
     $nextMetrics = [TokcatSystemMetrics]::Sample()
     if ($null -eq $nextMetrics.CpuPercent -or $nextMetrics.CpuPercent -lt 0 -or $nextMetrics.CpuPercent -gt 100) { throw 'CPU percentage is invalid' }
+    if (($null -eq $nextMetrics.NetworkDown) -ne ($null -eq $nextMetrics.NetworkUp)) { throw 'Network rates must be available together' }
+    if ($null -ne $nextMetrics.NetworkDown -and ($nextMetrics.NetworkDown -lt 0 -or $nextMetrics.NetworkUp -lt 0)) { throw 'Network rate is invalid' }
+    $sampler = New-Object TokcatNetworkRateSampler
+    $before = New-Object 'System.Collections.Generic.Dictionary[string,long[]]'
+    $before.Add('one', [long[]]@(100,200))
+    Assert-Equal ($sampler.Observe($before, 0)) $null 'network needs a baseline'
+    $after = New-Object 'System.Collections.Generic.Dictionary[string,long[]]'
+    $after.Add('one', [long[]]@(300,300)); $after.Add('new', [long[]]@(900000,900000))
+    $network = $sampler.Observe($after, 10)
+    Assert-Equal $network.Down 20 'new adapter does not create a download spike'
+    Assert-Equal $network.Up 10 'new adapter does not create an upload spike'
+    $reset = New-Object 'System.Collections.Generic.Dictionary[string,long[]]'
+    $reset.Add('one', [long[]]@(10,10)); $reset.Add('new', [long[]]@(900100,900200))
+    $network = $sampler.Observe($reset, 20)
+    Assert-Equal $network.Down 10 'reset adapter is rebased'
+    Assert-Equal $network.Up 20 'unaffected adapter remains measured'
     $previousProfile = $env:USERPROFILE; $previousAppData = $env:APPDATA; $previousLocalData = $env:LOCALAPPDATA
     try {
         $env:USERPROFILE = $root; $env:APPDATA = $root; $env:LOCALAPPDATA = $root
