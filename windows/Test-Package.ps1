@@ -10,7 +10,7 @@ try {
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Package was not created.' }
     Expand-Archive -LiteralPath $archive -DestinationPath $extract
     $package = Join-Path $extract 'tokcat-windows'
-    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Monitor.ps1','Conversation.ps1','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
+    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Monitor.ps1','Conversation.ps1','Usage.ps1','UsageWindow.ps1','UsagePricing.json','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $file) -PathType Leaf)) { throw "Package is missing $file" }
     }
     $settingsPath = Join-Path $testRoot 'claude-fixture\settings.json'
@@ -24,7 +24,7 @@ try {
     $sessions = Join-Path $codexRoot 'sessions'
     [IO.Directory]::CreateDirectory($sessions) | Out-Null
     $time = [datetimeoffset]::UtcNow.ToString('o')
-    $log = '{"type":"session_meta","payload":{"id":"package-fixture"}}' + "`n" + '{"type":"event_msg","timestamp":"' + $time + '","payload":{"type":"task_started","turn_id":"t1"}}' + "`n" + '{"type":"response_item","payload":{"type":"message","role":"user","content":"fixture conversation"}}' + "`n"
+    $log = '{"type":"session_meta","payload":{"id":"package-fixture"}}' + "`n" + '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' + "`n" + '{"type":"event_msg","timestamp":"' + $time + '","payload":{"type":"task_started","turn_id":"t1"}}' + "`n" + '{"type":"response_item","payload":{"type":"message","role":"user","content":"fixture conversation"}}' + "`n" + '{"type":"event_msg","timestamp":"' + $time + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3},"last_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}}}' + "`n"
     [IO.File]::WriteAllText((Join-Path $sessions 'rollout-package.jsonl'), $log, (New-Object Text.UTF8Encoding($false)))
     $previousProfile = $env:USERPROFILE; $previousAppData = $env:APPDATA; $previousLocalData = $env:LOCALAPPDATA
     try {

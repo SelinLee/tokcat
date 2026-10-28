@@ -1,6 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
 . (Join-Path $PSScriptRoot 'Conversation.ps1')
+. (Join-Path $PSScriptRoot 'Usage.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('tokcat-test-' + [guid]::NewGuid())
 $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
@@ -333,6 +334,56 @@ public static class TokcatTestDatabase {
     $buddyConversation = Read-AgentConversation $buddyTask $buddyLog
     Assert-Equal $buddyConversation.Messages.Count 2 'WorkBuddy conversation excludes non-message records'
     Assert-Equal $buddyConversation.Messages[1].Text 'done' 'WorkBuddy assistant text'
+    $usageRoot = Join-Path $root 'usage-test'; $usageDir = Join-Path $usageRoot 'sessions'; $archiveDir = Join-Path $usageRoot 'archived_sessions'
+    New-Item -ItemType Directory -Path $usageDir,$archiveDir -Force | Out-Null
+    $usageNow = [datetimeoffset]::Now
+    $row1 = '{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-3).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}'
+    $row2 = '{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-2).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":160,"cached_input_tokens":50,"output_tokens":30}}}}'
+    $row3 = '{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-1).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"cached_input_tokens":50,"output_tokens":31}}}}'
+    $header = '{"type":"session_meta","payload":{"id":"usage-session","model_provider":"openai"}}'
+    $context = '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}'
+    [IO.File]::WriteAllText((Join-Path $usageDir 'rollout-usage.jsonl'), (@($header,$context,$row1,$row2,$row3) -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $archiveDir 'rollout-copy.jsonl'), (@($header,$context,$row1,$row2,$row3) -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $usageResult = Get-CodexUsage $usageRoot 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    Assert-Equal $usageResult.Rows.Count 1 'usage groups duplicated rollouts once'
+    Assert-Equal $usageResult.Rows[0].Input 120 'uncached input deltas'
+    Assert-Equal $usageResult.Rows[0].Cache 50 'cache-read deltas'
+    Assert-Equal $usageResult.Rows[0].Output 31 'output deltas'
+    if ([math]::Abs($usageResult.Rows[0].EstimatedUSD - 0.00046625) -gt 0.000000001) { throw 'estimated cost is incorrect' }
+    $prices = @(Get-PriceCatalog (Join-Path $PSScriptRoot 'UsagePricing.json'))
+    Assert-Equal (Find-UsagePrice $prices 'gpt-5.6-sol' 'private-relay') $null 'official prices not assigned to relays'
+    Assert-Equal (Find-UsagePrice $prices 'gpt-5.6-sol-custom' 'openai') $null 'unknown model variant is not priced'
+    $resumeRows = @(
+        '{"type":"session_meta","payload":{"id":"resumed","model_provider":"private-relay"}}',
+        $context,
+        ('{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-4).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":100},"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1}}}}'),
+        ('{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-3).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1010,"cached_input_tokens":205,"output_tokens":102}}}}'),
+        ('{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-2).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"cached_input_tokens":0,"output_tokens":1},"last_token_usage":{"input_tokens":2,"cached_input_tokens":0,"output_tokens":1}}}}'),
+        ('{"type":"event_msg","timestamp":"' + $usageNow.AddMinutes(-1).ToString('o') + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":1,"output_tokens":3}}}}')
+    )
+    [IO.File]::WriteAllText((Join-Path $usageDir 'rollout-resumed.jsonl'), ($resumeRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $usageResult = Get-CodexUsage $usageRoot 7 (Join-Path $PSScriptRoot 'UsagePricing.json') $usageNow
+    $unpricedRow = @($usageResult.Rows | Where-Object { $_.Provider -eq 'private-relay' })
+    Assert-Equal $unpricedRow.Count 1 'relay usage retained'
+    Assert-Equal $unpricedRow[0].Input 9 'partial and reset baselines are not billed'
+    Assert-Equal $unpricedRow[0].Cache 6 'cache delta after reset'
+    Assert-Equal $unpricedRow[0].Output 4 'output delta after reset'
+    Assert-Equal $unpricedRow[0].UnpricedTokens 19 'unpriced tokens reported separately'
+    $customPrices = Join-Path $usageRoot 'custom-prices.json'
+    [IO.File]::WriteAllText($customPrices, '{"version":1,"models":[{"model":"gpt-5.6-sol","provider":"private-relay","input":2,"cache_read":0.5,"output":4}]}')
+    $scoped = @(Get-PriceCatalog $customPrices)
+    Assert-Equal (Find-UsagePrice $scoped 'gpt-5.6-sol' 'private-relay').Output 4 'provider-scoped price matches'
+    Assert-Equal (Find-UsagePrice $scoped 'gpt-5.6-sol' 'another-relay') $null 'provider-scoped price is isolated'
+    [IO.File]::WriteAllText($customPrices, '{"version":1,"models":[{"model":"x","input":-1,"cache_read":0,"output":0}]}')
+    $badPriceRejected = $false
+    try { $null = Get-PriceCatalog $customPrices } catch { $badPriceRejected = $true }
+    Assert-Equal $badPriceRejected $true 'invalid pricing is rejected'
+    $priceLocal = Join-Path $root 'price-local'
+    Assert-Equal (Get-UsagePricePath $PSScriptRoot $priceLocal $false) (Join-Path $PSScriptRoot 'UsagePricing.json') 'default reference prices used until edited'
+    $priceOverride = Get-UsagePricePath $PSScriptRoot $priceLocal $true
+    [IO.File]::WriteAllText($priceOverride, '{"version":1,"models":[]}')
+    Assert-Equal (Get-UsagePricePath $PSScriptRoot $priceLocal $true) $priceOverride 'custom reference prices preserved'
+    Assert-Equal ([IO.File]::ReadAllText($priceOverride)) '{"version":1,"models":[]}' 'editing does not overwrite custom prices'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'
@@ -359,6 +410,9 @@ public static class TokcatTestDatabase {
     $previousProfile = $env:USERPROFILE; $previousAppData = $env:APPDATA; $previousLocalData = $env:LOCALAPPDATA
     try {
         [IO.File]::AppendAllText($log, "`n" + '{"type":"response_item","payload":{"type":"message","role":"user","content":"fixture conversation"}}' + "`n")
+        $smokeTime = [datetimeoffset]::UtcNow.AddSeconds(-1).ToString('o')
+        $smokeUsage = '{"type":"turn_context","payload":{"model":"gpt-5.6-sol"}}' + "`n" + '{"type":"event_msg","timestamp":"' + $smokeTime + '","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3},"last_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}}}' + "`n"
+        [IO.File]::AppendAllText($log, $smokeUsage)
         $env:USERPROFILE = $root; $env:APPDATA = $root; $env:LOCALAPPDATA = $root
         & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Tokcat.ps1') -CodexHome $root -SmokeTest
         Assert-Equal $LASTEXITCODE 0 'window and notification-area initialization'

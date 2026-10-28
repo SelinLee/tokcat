@@ -6,12 +6,15 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
+Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs')
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId); } }'
 if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
 [void][Tokcat.Native]::SetCurrentProcessExplicitAppUserModelID('tokcat.Windows.Monitor')
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
 . (Join-Path $PSScriptRoot 'Conversation.ps1')
+. (Join-Path $PSScriptRoot 'Usage.ps1')
+. (Join-Path $PSScriptRoot 'UsageWindow.ps1')
 
 $form = New-Object Windows.Forms.Form
 $form.Text = 'tokcat · Agent 监控'
@@ -29,10 +32,14 @@ $note.Text = 'Codex 本地会话 · 双击任务打开日志 · 关闭窗口可�
 $quotaLabel = New-Object Windows.Forms.Label
 $quotaLabel.Dock = 'Top'; $quotaLabel.Height = 27; $quotaLabel.Padding = New-Object Windows.Forms.Padding(8,4,0,0)
 $quotaLabel.Text = 'Codex 本地额度：等待记录'
-$form.Controls.Add($list); $form.Controls.Add($note); $form.Controls.Add($quotaLabel)
+$topBar = New-Object Windows.Forms.Panel; $topBar.Dock = 'Top'; $topBar.Height = 35
+$usageButton = New-Object Windows.Forms.Button; $usageButton.Text = '用量统计'; $usageButton.Width = 100; $usageButton.Dock = 'Left'
+$quotaLabel.Dock = 'Fill'; $topBar.Controls.Add($quotaLabel); $topBar.Controls.Add($usageButton)
+$form.Controls.Add($list); $form.Controls.Add($note); $form.Controls.Add($topBar)
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $open = $menu.Items.Add('打开监控窗口')
 $refresh = $menu.Items.Add('立即刷新')
+$usageMenu = $menu.Items.Add('用量统计')
 $notificationMenu = $menu.Items.Add('启用状态通知')
 [void]$menu.Items.Add('-')
 $exit = $menu.Items.Add('退出 tokcat')
@@ -203,6 +210,8 @@ function Update-Sessions {
 
 $open.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
 $refresh.Add_Click({ Update-Sessions })
+$usageMenu.Add_Click({ Show-UsageWindow $form $CodexHome })
+$usageButton.Add_Click({ Show-UsageWindow $form $CodexHome })
 $notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') } })
 $markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
 $openRaw.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $item = $list.SelectedItems[0].Tag; $path = Resolve-ConversationPath $item $env:USERPROFILE; if ($path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $path + '"') } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地记录。', 'tokcat') } } })
@@ -224,6 +233,8 @@ if ($SmokeTest) {
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $testRow = @($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' } | Select-Object -First 1)
         if ($testRow.Count -gt 0) { Show-AgentConversation $testRow[0].Tag $true }
+        $usageError = Show-UsageWindow $form $CodexHome $true
+        if ($usageError) { $script:smokeError = 'Usage window: ' + $usageError }
         Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
         $iconBitmap = $tray.Icon.ToBitmap()
         $taskbarBitmap = $form.Icon.ToBitmap()
