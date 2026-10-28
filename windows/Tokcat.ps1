@@ -6,6 +6,8 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); } }'
+if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
 
@@ -33,6 +35,7 @@ $tray.ContextMenuStrip = $menu; $tray.Visible = $true
 $script:icon = $null; $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
+$script:launchedAt = [datetimeoffset]::UtcNow
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $list.ContextMenuStrip = $listMenu
@@ -54,7 +57,6 @@ function Set-TrayIcon([string[]]$States, [string]$Text) {
     }
     $handle = $bitmap.GetHicon()
     $newIcon = [Drawing.Icon]::FromHandle($handle).Clone()
-    if (-not ('Tokcat.Native' -as [type])) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); } }' }
     [void][Tokcat.Native]::DestroyIcon($handle)
     $tray.Icon = $newIcon
     if ($script:icon) { $script:icon.Dispose() }; $script:icon = $newIcon
@@ -84,7 +86,7 @@ function Update-Sessions {
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
         $dotStates = New-Object 'System.Collections.Generic.List[string]'
-        $seenKeys = @{}
+        Update-ReminderStates $sessions $script:seenStates $script:unread $script:bootstrapped $script:launchedAt
         $selectedKey = if ($list.SelectedItems.Count -gt 0) { $list.SelectedItems[0].Name } else { $null }
         $list.BeginUpdate(); $list.Items.Clear()
         foreach ($s in $sessions) {
@@ -94,11 +96,7 @@ function Update-Sessions {
             $label = switch ($state) { 'running' {'运行中'} 'waiting' {'等待回答'} 'approval' {'等待授权'} 'stalled' {'长时间无活动'} 'completed' {'本轮结束'} 'failed' {'失败'} 'interrupted' {'中断'} default {'未知'} }
             $row = New-Object Windows.Forms.ListViewItem($label)
             $row.Name = $s.Source + ':' + $s.Id
-            $key = $row.Name; $seenKeys[$key] = $true
-            $old = $script:seenStates[$key]
-            if ($s.State -in @('running','waiting','approval')) { $script:unread.Remove($key) }
-            elseif ($script:bootstrapped -and $s.State -in @('completed','failed') -and $old -and ($old.State -ne $s.State -or $s.Updated -gt $old.Updated)) { $script:unread[$key] = $true }
-            $script:seenStates[$key] = @{ State=$s.State; Updated=$s.Updated }
+            $key = $row.Name
             if ($state -in @('running','waiting','approval','stalled') -or ($state -in @('completed','failed') -and $script:unread.ContainsKey($key))) { $dotStates.Add($state) }
             $rate = if ($rates.ContainsKey($key)) { '{0:N1}' -f $rates[$key] } else { '—' }
             foreach ($value in @($s.Source, $s.Title, $s.Project, $s.Phase, $s.Model, $s.OutputTokens, $rate, $s.Updated.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))) { [void]$row.SubItems.Add([string]$value) }
@@ -107,7 +105,6 @@ function Update-Sessions {
             [void]$list.Items.Add($row)
             if ($row.Name -eq $selectedKey) { $row.Selected = $true }
         }
-        foreach ($key in @($script:seenStates.Keys)) { if (-not $seenKeys.ContainsKey($key)) { $script:seenStates.Remove($key); $script:unread.Remove($key) } }
         $script:bootstrapped = $true
         $list.EndUpdate()
         $summary = "tokcat: 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled) · CPU $cpu · 内存 $memory"

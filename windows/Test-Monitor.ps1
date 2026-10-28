@@ -23,6 +23,31 @@ try {
     Assert-Equal (Convert-CodexSession $log).State 'running' 'old turn cannot complete new turn'
     [IO.File]::AppendAllText($log, '{"timestamp":"2026-10-28T01:00:08Z","type":"event_msg","payload":{"type":"task_complete"}}')
     Assert-Equal (Convert-CodexSession $log).State 'running' 'partial record ignored'
+    $longLog = Join-Path $sessions 'rollout-long.jsonl'
+    $largePadding = '{"type":"ignored","padding":"' + ('x' * 2200000) + '"}'
+    $longRows = @(
+        '{"type":"session_meta","payload":{"id":"long"}}',
+        '{"timestamp":"2026-10-28T01:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"long-turn"}}',
+        $largePadding,
+        '{"timestamp":"2026-10-28T01:00:01Z","type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"q"}}'
+    )
+    [IO.File]::WriteAllText($longLog, ($longRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    Assert-Equal (Convert-CodexSession $longLog).State 'waiting' 'long log recovers the turn start and skips oversized record'
+    # Keep the later session-list test scoped to its original single fixture.
+    Remove-Item -LiteralPath $longLog -Force
+    $usageLog = Join-Path $sessions 'rollout-usage.jsonl'
+    $usageRows = @(
+        '{"type":"session_meta","payload":{"id":"usage"}}',
+        '{"timestamp":"2026-10-28T01:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"new"}}',
+        '{"timestamp":"2026-10-28T01:00:02Z","type":"token_usage_record","payload":{"turn_id":"new","turn_token_usage":{"output_tokens":20}}}',
+        '{"timestamp":"2026-10-28T01:00:05Z","type":"token_usage_record","payload":{"turn_id":"new","turn_token_usage":{"output_tokens":20}}}',
+        '{"timestamp":"2026-10-28T01:00:06Z","type":"token_usage_record","payload":{"turn_id":"old","turn_token_usage":{"output_tokens":999}}}'
+    )
+    [IO.File]::WriteAllText($usageLog, ($usageRows -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+    $usageSession = Convert-CodexSession $usageLog
+    Assert-Equal $usageSession.OutputTokens 20 'stale turn usage ignored'
+    Assert-Equal $usageSession.Updated ([datetimeoffset]::Parse('2026-10-28T01:00:02Z')) 'only increasing output refreshes activity'
+    Remove-Item -LiteralPath $usageLog -Force
     $internal = Join-Path $sessions 'rollout-internal.jsonl'
     [IO.File]::WriteAllText($internal, '{"type":"session_meta","payload":{"id":"s2","thread_source":"subagent"}}' + "`n")
     Assert-Equal (Convert-CodexSession $internal) $null 'subagent excluded'
@@ -121,6 +146,7 @@ public static class TokcatTestDatabase {
     Assert-Equal @($configured.hooks.Stop).Count 2 'Claude hook installation is idempotent'
     Assert-Equal $configured.hooks.Stop[0].hooks[0].command 'other-tool' 'unrelated hook preserved'
     Assert-Equal $configured.hooks.Stop[1].hooks[0].args[-1] $hook 'hook path passed as a separate argument'
+    Assert-Equal $configured.hooks.Stop[1].hooks[0].onFailure 'continue' 'monitor failures do not block Claude'
     & powershell.exe -NoProfile -File $installer -SettingsPath $config -Remove | Out-Null
     Assert-Equal $LASTEXITCODE 0 'Claude hook removal'
     $configured = [IO.File]::ReadAllText($config) | ConvertFrom-Json
@@ -169,6 +195,22 @@ public static class TokcatTestDatabase {
     $rateSession.State = 'completed'
     $rates = Get-OutputRates @($rateSession) 30
     Assert-Equal $rates.ContainsKey('Codex:rate-test') $false 'completed rate is unavailable'
+    $seen = @{}; $unread = @{}; $launch = [datetimeoffset]::UtcNow
+    $finished = [pscustomobject]@{ Source='Codex'; Id='quick'; State='completed'; Updated=$launch.AddSeconds(1) }
+    Update-ReminderStates @() $seen $unread $false $launch
+    Update-ReminderStates @($finished) $seen $unread $true $launch
+    Assert-Equal $unread.ContainsKey('Codex:quick') $true 'fast completed task gets a reminder'
+    $unread.Clear()
+    $workCompleted = [pscustomobject]@{ Source='Codex Work'; Id='cloud'; State='completed'; Updated=$launch }
+    Update-ReminderStates @($workCompleted) $seen $unread $false $launch
+    $workCompleted.Updated = $launch.AddSeconds(1)
+    Update-ReminderStates @($workCompleted) $seen $unread $true $launch
+    Assert-Equal $unread.ContainsKey('Codex Work:cloud') $false 'catalog metadata alone does not repeat reminder'
+    $workCompleted.State = 'running'
+    Update-ReminderStates @($workCompleted) $seen $unread $true $launch
+    $workCompleted.State = 'completed'
+    Update-ReminderStates @($workCompleted) $seen $unread $true $launch
+    Assert-Equal $unread.ContainsKey('Codex Work:cloud') $true 'catalog state transition produces reminder'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'

@@ -31,7 +31,7 @@ foreach ($name in $events) {
         if ($handlers.Count -gt 0) { $group.hooks = $handlers; $retained += $group }
     }
     if (-not $Remove) {
-        $retained += [pscustomobject]@{ hooks = @([pscustomobject]@{ type = 'command'; command = 'powershell.exe'; args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$hookPath); timeout = 10 }) }
+        $retained += [pscustomobject]@{ hooks = @([pscustomobject]@{ type = 'command'; command = 'powershell.exe'; args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$hookPath); timeout = 10; onFailure = 'continue' }) }
     }
     if ($prop) { $hooks.PSObject.Properties.Remove($name) }
     if ($retained.Count -gt 0) { $hooks | Add-Member -NotePropertyName $name -NotePropertyValue $retained }

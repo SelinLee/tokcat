@@ -29,7 +29,7 @@ function Read-SharedLines([string]$Path, [int]$MaxBytes = 524288, [bool]$Tail = 
     }
 }
 
-function Convert-CodexSession([string]$Path) {
+function Convert-CodexSession([string]$Path, [bool]$FullScan = $false) {
     $first = @(Read-SharedLines $Path 1048576 $false)
     if ($first.Count -eq 0 -or -not $first[0]) { return $null }
     try { $meta = $first[0] | ConvertFrom-Json -ErrorAction Stop } catch { return $null }
@@ -42,7 +42,11 @@ function Convert-CodexSession([string]$Path) {
     if (-not $id) { $id = [IO.Path]::GetFileNameWithoutExtension($Path) }
     $session = [ordered]@{ Id = $id; Source = 'Codex'; Path = $Path; Project = (Get-Field $metadata 'cwd'); Model = $null; State = 'unknown'; Phase = ''; Updated = [datetimeoffset]::MinValue; Started = $null; OutputTokens = $null; OutputScope = $null; TurnId = $null }
     $pending = @{}; $nativeUsage = $false
-    foreach ($line in @(Read-SharedLines $Path)) {
+    if ($FullScan) {
+        if (-not ('TokcatCodexLogReader' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs') }
+        $lines = [TokcatCodexLogReader]::Read($Path)
+    } else { $lines = @(Read-SharedLines $Path) }
+    foreach ($line in $lines) {
         if (-not $line.Trim()) { continue }
         try { $record = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
         $payload = Get-Field $record 'payload'; $type = Get-Field $record 'type'; $kind = Get-Field $payload 'type'
@@ -53,12 +57,16 @@ function Convert-CodexSession([string]$Path) {
             if (Get-Field $payload 'model') { $session.Model = Get-Field $payload 'model' }
             continue
         }
+        if ($stamp -lt $session.Updated) { continue }
         if ($type -eq 'token_usage_record') {
             $usageTurn = Get-Field $payload 'turn_id'
             if ($usageTurn -and $session.TurnId -and $usageTurn -ne $session.TurnId) { continue }
             $usage = Get-Field $payload 'turn_token_usage'
             $tokens = Get-Field $usage 'output_tokens'
-            if ($null -ne $tokens) { $session.OutputTokens = $tokens; $session.OutputScope = 'turn'; $nativeUsage = $true }
+            if ($null -ne $tokens) {
+                if ($session.State -eq 'running' -and ($session.OutputScope -ne 'turn' -or $null -eq $session.OutputTokens -or $tokens -gt $session.OutputTokens)) { $session.Updated = $stamp }
+                $session.OutputTokens = $tokens; $session.OutputScope = 'turn'; $nativeUsage = $true
+            }
             continue
         }
         $turn = Get-Field $payload 'turn_id'
@@ -69,7 +77,7 @@ function Convert-CodexSession([string]$Path) {
                 'task_complete' { $session.State = 'completed'; $session.Phase = '本轮结束'; $session.Updated = $stamp }
                 'task_failed' { $session.State = 'failed'; $session.Phase = '本轮失败'; $session.Updated = $stamp }
                 'turn_aborted' { $session.State = 'interrupted'; $session.Phase = '已中断'; $session.Updated = $stamp }
-                'token_count' { $info = Get-Field $payload 'info'; $usage = Get-Field $info 'total_token_usage'; $count = Get-Field $usage 'output_tokens'; if ($null -ne $count -and -not $nativeUsage) { $session.OutputTokens = $count; $session.OutputScope = 'session' } }
+                'token_count' { $info = Get-Field $payload 'info'; $usage = Get-Field $info 'total_token_usage'; $count = Get-Field $usage 'output_tokens'; if ($null -ne $count -and -not $nativeUsage) { if ($session.State -eq 'running' -and ($session.OutputScope -ne 'session' -or $null -eq $session.OutputTokens -or $count -gt $session.OutputTokens)) { $session.Updated = $stamp }; $session.OutputTokens = $count; $session.OutputScope = 'session' } }
             }
         } elseif ($type -eq 'response_item' -and $session.State -in @('running','waiting')) {
             if ($kind -in @('function_call','custom_tool_call')) {
@@ -89,7 +97,8 @@ function Convert-CodexSession([string]$Path) {
             }
         }
     }
-    if ($session.State -eq 'unknown') { $session.Updated = [datetimeoffset]([IO.File]::GetLastWriteTimeUtc($Path)); $session.Phase = '近期日志中没有状态事件' }
+    if ($session.State -eq 'unknown' -and -not $FullScan -and (Get-Item -LiteralPath $Path).Length -gt 524288) { return Convert-CodexSession $Path $true }
+    if ($session.State -eq 'unknown') { $session.Updated = [datetimeoffset]([IO.File]::GetLastWriteTimeUtc($Path)); $session.Phase = '日志中没有可读取的状态事件' }
     return [pscustomobject]$session
 }
 
@@ -274,4 +283,23 @@ function Get-OutputRates([object[]]$Sessions, [double]$NowSeconds) {
     }
     foreach ($key in @($script:rateSamples.Keys)) { if (-not $seen.ContainsKey($key)) { $script:rateSamples.Remove($key) } }
     return $rates
+}
+
+function Update-ReminderStates([object[]]$Sessions, [hashtable]$Seen, [hashtable]$Unread, [bool]$Bootstrapped, [datetimeoffset]$LaunchedAt) {
+    $present = @{}
+    foreach ($session in $Sessions) {
+        $key = $session.Source + ':' + $session.Id
+        $present[$key] = $true; $old = $Seen[$key]
+        if ($session.State -in @('running','waiting','approval')) { $Unread.Remove($key) }
+        elseif ($Bootstrapped -and $session.State -in @('completed','failed')) {
+            $newSession = $null -eq $old -and $session.Updated -ge $LaunchedAt
+            $changedState = $null -ne $old -and $old.State -ne $session.State
+            # Codex and Claude report turn-ending events; catalog timestamps for
+            # Work, WorkBuddy and DSH can change for unrelated metadata edits.
+            $newTurnEnd = $null -ne $old -and $session.Source -in @('Codex','Claude Code') -and $old.State -eq $session.State -and $session.Updated -gt $old.Updated
+            if ($newSession -or $changedState -or $newTurnEnd) { $Unread[$key] = $true }
+        }
+        $Seen[$key] = @{ State=$session.State; Updated=$session.Updated }
+    }
+    foreach ($key in @($Seen.Keys)) { if (-not $present.ContainsKey($key)) { $Seen.Remove($key); $Unread.Remove($key) } }
 }
