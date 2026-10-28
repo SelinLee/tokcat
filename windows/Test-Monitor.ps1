@@ -198,9 +198,12 @@ public static class TokcatTestDatabase {
     Assert-Equal $rates.ContainsKey('Codex:rate-test') $false 'completed rate is unavailable'
     $seen = @{}; $unread = @{}; $launch = [datetimeoffset]::UtcNow
     $finished = [pscustomobject]@{ Source='Codex'; Id='quick'; State='completed'; Updated=$launch.AddSeconds(1) }
+    Assert-Equal @(Get-NewSessionAlerts @($finished) @{} $false $launch).Count 0 'historical tasks do not notify on startup'
+    Assert-Equal @(Get-NewSessionAlerts @($finished) @{} $true $launch).Count 1 'fast completion notifies once'
     Update-ReminderStates @() $seen $unread $false $launch
     Update-ReminderStates @($finished) $seen $unread $true $launch
     Assert-Equal $unread.ContainsKey('Codex:quick') $true 'fast completed task gets a reminder'
+    Assert-Equal @(Get-NewSessionAlerts @($finished) $seen $true $launch).Count 0 'unchanged completion does not notify again'
     $unread.Clear()
     $workCompleted = [pscustomobject]@{ Source='Codex Work'; Id='cloud'; State='completed'; Updated=$launch }
     Update-ReminderStates @($workCompleted) $seen $unread $false $launch
@@ -212,6 +215,21 @@ public static class TokcatTestDatabase {
     $workCompleted.State = 'completed'
     Update-ReminderStates @($workCompleted) $seen $unread $true $launch
     Assert-Equal $unread.ContainsKey('Codex Work:cloud') $true 'catalog state transition produces reminder'
+    $waiting = [pscustomobject]@{ Source='Codex'; Id='waiting'; State='approval'; Updated=$launch.AddSeconds(1) }
+    $oldWaiting = @{ 'Codex:waiting'=@{ State='running'; Updated=$launch } }
+    Assert-Equal @(Get-NewSessionAlerts @($waiting) $oldWaiting $true $launch).Count 1 'approval transition notifies'
+    $preferencePath = Join-Path (Join-Path $root 'preferences') 'settings.json'
+    Assert-Equal (Read-NotificationPreference $preferencePath) $false 'notifications default off'
+    Write-NotificationPreference $preferencePath $true
+    Assert-Equal (Read-NotificationPreference $preferencePath) $true 'notification preference saved'
+    Write-NotificationPreference $preferencePath $false
+    Assert-Equal (Read-NotificationPreference $preferencePath) $false 'notification preference can be disabled'
+    $badPreferences = '{"version":2,"notifications":true}'
+    [IO.File]::WriteAllText($preferencePath, $badPreferences)
+    $badPreferenceRejected = $false
+    try { Write-NotificationPreference $preferencePath $false } catch { $badPreferenceRejected = $true }
+    Assert-Equal $badPreferenceRejected $true 'unsupported preferences rejected'
+    Assert-Equal ([IO.File]::ReadAllText($preferencePath)) $badPreferences 'unsupported preferences preserved'
     $reminderFile = Join-Path (Join-Path $root 'reminders') 'state.json'
     $saved = @{}
     Sync-ReminderStore @($workCompleted) $unread $saved $launch

@@ -305,6 +305,36 @@ function Update-ReminderStates([object[]]$Sessions, [hashtable]$Seen, [hashtable
     foreach ($key in @($Seen.Keys)) { if (-not $present.ContainsKey($key)) { $Seen.Remove($key); $Unread.Remove($key) } }
 }
 
+function Get-NewSessionAlerts([object[]]$Sessions, [hashtable]$Seen, [bool]$Bootstrapped, [datetimeoffset]$LaunchedAt) {
+    if (-not $Bootstrapped) { return @() }
+    foreach ($session in $Sessions) {
+        if ($session.State -notin @('waiting','approval','completed','failed')) { continue }
+        $key = $session.Source + ':' + $session.Id; $old = $Seen[$key]
+        $newSession = $null -eq $old -and $session.Updated -ge $LaunchedAt
+        $changedState = $null -ne $old -and $old.State -ne $session.State
+        $newTurnEnd = $null -ne $old -and $session.State -in @('completed','failed') -and $session.Source -in @('Codex','Claude Code') -and $old.State -eq $session.State -and $session.Updated -gt $old.Updated
+        if ($newSession -or $changedState -or $newTurnEnd) { $session }
+    }
+}
+
+function Read-NotificationPreference([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { return $false }
+    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
+    $enabled = Get-Field $doc 'notifications'
+    if ((Get-Field $doc 'version') -ne 1 -or $enabled -isnot [bool]) { throw 'Notification settings have an unsupported format.' }
+    return $enabled
+}
+
+function Write-NotificationPreference([string]$Path, [bool]$Enabled) {
+    # Refuse to overwrite malformed or newer settings.
+    if ([IO.File]::Exists($Path)) { $null = Read-NotificationPreference $Path }
+    $directory = [IO.Path]::GetDirectoryName($Path); [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $json = [pscustomobject]@{ version=1; notifications=$Enabled } | ConvertTo-Json -Depth 3
+    $tmp = Join-Path $directory ('.preferences-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+    if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
+}
+
 function Convert-QuotaNumber($Value) {
     if ($null -eq $Value -or $Value -is [bool]) { return $null }
     $number = 0.0

@@ -33,6 +33,7 @@ $form.Controls.Add($list); $form.Controls.Add($note); $form.Controls.Add($quotaL
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $open = $menu.Items.Add('打开监控窗口')
 $refresh = $menu.Items.Add('立即刷新')
+$notificationMenu = $menu.Items.Add('启用状态通知')
 [void]$menu.Items.Add('-')
 $exit = $menu.Items.Add('退出 tokcat')
 $tray = New-Object Windows.Forms.NotifyIcon
@@ -44,6 +45,9 @@ $script:launchedAt = [datetimeoffset]::UtcNow
 $script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
 $script:reminderError = $false
 try { $script:savedReminders = Read-ReminderStore $script:reminderPath } catch { $script:savedReminders = @{}; $script:reminderError = $true }
+$script:preferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\preferences.json'
+$script:preferenceError = $false
+try { $notificationMenu.Checked = Read-NotificationPreference $script:preferencePath } catch { $notificationMenu.Checked = $false; $script:preferenceError = $true }
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $openRaw = $listMenu.Items.Add('打开原始记录')
@@ -149,6 +153,7 @@ function Update-Sessions {
         $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
         $dotStates = New-Object 'System.Collections.Generic.List[string]'
+        $alerts = @(Get-NewSessionAlerts $sessions $script:seenStates $script:bootstrapped $script:launchedAt)
         Restore-Reminders $sessions $script:seenStates $script:unread $script:savedReminders
         Update-ReminderStates $sessions $script:seenStates $script:unread $script:bootstrapped $script:launchedAt
         if (-not $script:reminderError) {
@@ -179,8 +184,15 @@ function Update-Sessions {
         if ($dotStates.Count -gt 6) { $summary = "状态$($dotStates.Count) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu 内存$memory ↓$downShort ↑$upShort" }
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
+        if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
+            $detail = if ($alerts.Count -eq 1) {
+                $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
+                $title = [string]$alert.Title; if ($title.Length -gt 80) { $title = $title.Substring(0,80) + '…' }; "$label · $title"
+            } else { "$($alerts.Count) 个任务状态发生变化，打开 tokcat 查看。" }
+            $tray.ShowBalloonTip(5000, 'tokcat', $detail, [Windows.Forms.ToolTipIcon]::Info)
+        }
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' })
+        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError) { ' · 通知设置不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message
@@ -191,6 +203,7 @@ function Update-Sessions {
 
 $open.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
 $refresh.Add_Click({ Update-Sessions })
+$notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') } })
 $markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
 $openRaw.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $item = $list.SelectedItems[0].Tag; $path = Resolve-ConversationPath $item $env:USERPROFILE; if ($path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $path + '"') } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地记录。', 'tokcat') } } })
 $exit.Add_Click({ $script:quitting = $true; $form.Close() })
