@@ -13,6 +13,7 @@ if (-not $instance.IsFirst) {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
+Add-Type -Path (Join-Path $PSScriptRoot 'GpuMetrics.cs') -ReferencedAssemblies System.Management.dll
 Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs')
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId); } }'
 if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
@@ -57,6 +58,8 @@ $tray = New-Object Windows.Forms.NotifyIcon
 $tray.ContextMenuStrip = $menu; $tray.Visible = $true
 $script:icon = $null; $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
+$gpuSampler = New-Object TokcatGpuMetrics
+if (-not $SmokeTest) { $gpuSampler.Start() }
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
 $script:launchedAt = [datetimeoffset]::UtcNow
 $script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
@@ -197,6 +200,8 @@ function Update-Sessions {
         $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
         $metrics = [TokcatSystemMetrics]::Sample()
         $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
+        $gpuValue = $gpuSampler.Read()
+        $gpu = if ($null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } else { '—' }
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
         $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
@@ -228,12 +233,12 @@ function Update-Sessions {
         $script:bootstrapped = $true
         $list.EndUpdate()
         $downShort = Format-NetworkRateShort $metrics.NetworkDown; $upShort = Format-NetworkRateShort $metrics.NetworkUp
-        $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu 内存$memory ↓$downShort ↑$upShort"
-        if ($dotStates.Count -gt 6) { $summary = "状态$($dotStates.Count) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu 内存$memory ↓$downShort ↑$upShort" }
+        $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort"
+        if ($dotStates.Count -gt 6) { $summary = "状态$($dotStates.Count) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort" }
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $stripText.Text = "运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled) · $quotaText`nCPU $cpu · 内存 $memory · ↓$downShort ↑$upShort · $tokenSpeed tok/s"
+        $stripText.Text = "运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled) · $quotaText`nCPU $cpu · GPU $gpu · 内存 $memory · ↓$downShort ↑$upShort · $tokenSpeed tok/s"
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
                 $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
@@ -242,7 +247,7 @@ function Update-Sessions {
             $tray.ShowBalloonTip(5000, 'tokcat', $detail, [Windows.Forms.ToolTipIcon]::Info)
         }
         $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
-        $note.Text = "CPU $cpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError -or $script:stripPreferenceError) { ' · 设置保存不可用' } else { '' })
+        $note.Text = "CPU $cpu · GPU $gpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError -or $script:stripPreferenceError) { ' · 设置保存不可用' } else { '' })
     } catch {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message
@@ -281,7 +286,7 @@ if ($SmokeTest) {
     $smokeTimer.Add_Tick({
         $smokeTimer.Stop()
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
-        if (-not $strip.Visible -or -not $strip.TopMost -or $null -eq $stripIcon.Image -or -not $stripText.Text.Contains('CPU')) { $script:smokeError = 'Bottom status strip was not initialized.' }
+        if (-not $strip.Visible -or -not $strip.TopMost -or $null -eq $stripIcon.Image -or -not $stripText.Text.Contains('CPU') -or -not $stripText.Text.Contains('GPU')) { $script:smokeError = 'Bottom status strip was not initialized.' }
         $workingArea = [Windows.Forms.Screen]::FromControl($form).WorkingArea
         if ($strip.Right -gt $workingArea.Right -or $strip.Bottom -gt $workingArea.Bottom -or $strip.Left -lt $workingArea.Left -or $strip.Top -lt $workingArea.Top) { $script:smokeError = 'Bottom status strip is outside the screen work area.' }
         $stripButton.PerformClick()
@@ -305,5 +310,5 @@ if ($SmokeTest) {
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; $tray.Visible = $false; $tray.Dispose(); $stripTip.Dispose(); if ($stripIcon.Image) { $stripIcon.Image.Dispose() }; $strip.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() } else { $gpuSampler.Stop() }; $tray.Visible = $false; $tray.Dispose(); $stripTip.Dispose(); if ($stripIcon.Image) { $stripIcon.Image.Dispose() }; $strip.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }

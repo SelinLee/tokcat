@@ -432,6 +432,25 @@ public static class TokcatTestDatabase {
     Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Claude Code' }).Count 1 'combined usage includes Claude'
     Assert-Equal @($combined.Rows | Where-Object { $_.Source -eq 'Codex' }).Count 2 'combined usage keeps Codex provider groups'
     Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
+    Add-Type -Path (Join-Path $PSScriptRoot 'GpuMetrics.cs') -ReferencedAssemblies System.Management.dll
+    $gpuCounters = New-Object 'System.Collections.Generic.Dictionary[string,double]'
+    $gpuCounters['pid_10_luid_0x1_0x2_phys_0_eng_1_engtype_3D'] = 30
+    $gpuCounters['pid_20_luid_0x1_0x2_phys_0_eng_1_engtype_3D'] = 25
+    $gpuCounters['pid_10_luid_0x1_0x2_phys_0_eng_2_engtype_Copy'] = 40
+    $gpuCounters['unexpected'] = 99
+    Assert-Equal ([TokcatGpuMetrics]::BusiestEngine($gpuCounters)) 55 'GPU sums processes per engine and picks busiest'
+    $gpuCounters.Clear()
+    Assert-Equal ([TokcatGpuMetrics]::BusiestEngine($gpuCounters)) $null 'missing GPU counters remain unavailable'
+    $gpuPrevious = New-Object 'System.Collections.Generic.Dictionary[string,uint64[]]'
+    $gpuCurrent = New-Object 'System.Collections.Generic.Dictionary[string,uint64[]]'
+    $gpuPrevious['engine'] = [uint64[]]@(100, 1000)
+    $gpuCurrent['engine'] = [uint64[]]@(150, 1200)
+    $gpuCurrent['new'] = [uint64[]]@(50, 1200)
+    $gpuRates = [TokcatGpuMetrics]::Rates($gpuPrevious, $gpuCurrent)
+    Assert-Equal $gpuRates['engine'] 25 'GPU uses raw counter and time deltas'
+    Assert-Equal $gpuRates.ContainsKey('new') $false 'new GPU instance needs a baseline'
+    $gpuCurrent['engine'] = [uint64[]]@(1, 1300)
+    Assert-Equal ([TokcatGpuMetrics]::Rates($gpuPrevious, $gpuCurrent).Count) 0 'reset GPU counters need a new baseline'
     $firstMetrics = [TokcatSystemMetrics]::Sample()
     Assert-Equal $firstMetrics.CpuPercent $null 'CPU requires a baseline'
     if ($null -eq $firstMetrics.MemoryPercent -or $firstMetrics.MemoryPercent -lt 0 -or $firstMetrics.MemoryPercent -gt 100) { throw 'physical memory percentage is invalid' }
