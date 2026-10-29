@@ -245,11 +245,12 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
             if(inkBottom<inkTop) { inkTop=padding; inkBottom=bounds.Height-padding-1; }
         }
         g.DrawImageUnscaled(textBitmap,0,0); g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        int shown=Math.Min(6,states.Length), rows=Math.Min(3,shown);
+        int shown=Math.Min(6,states.Length);
         int diameter=Math.Max(3,Math.Min((int)Math.Round(9*scale),(int)Math.Floor((inkBottom-inkTop+1-2*scale)/3f)));
         for (int i=0;i<shown;i++) {
             var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
-            float y=rows==1 ? (inkTop+inkBottom+1-diameter)/2f : inkTop+(float)Math.Round((inkBottom-inkTop+1-diameter)*(i%3)/(double)(rows-1));
+            // Fixed top, middle, bottom slots match the macOS task-dot order.
+            float y=inkTop+(float)Math.Round((inkBottom-inkTop+1-diameter)*(i%3)/2.0);
             if(i<dimmed.Length && dimmed[i]) color=Color.FromArgb(51,color);
             using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(float)Math.Round((3+(i/3)*11)*scale)+0.5f,y,diameter-1,diameter-1);
         }

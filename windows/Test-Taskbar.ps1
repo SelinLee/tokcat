@@ -72,13 +72,21 @@ try {
     $preview=$widget.RenderPreview(96)
     try {
         $textRows=[TokcatTaskbarTestPixels]::Ink($preview,18,$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,14)
-        Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -eq $textRows[1]) 'Two dots must align with the top and bottom text edges.'
+        Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -lt $textRows[1]) 'Two dots must occupy the fixed top and middle slots.'
     } finally { $preview.Dispose() }
     foreach ($dpi in @(144,192)) {
         $preview=$widget.RenderPreview($dpi); $scale=$dpi/96.0
         try {
             $textRows=[TokcatTaskbarTestPixels]::Ink($preview,[int](18*$scale),$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,[int](14*$scale))
-            Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -eq $textRows[1]) 'Scaled dot edges must align with the text.'
+            Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -lt $textRows[1]) 'Scaled dots must retain the fixed top and middle slots.'
+        } finally { $preview.Dispose() }
+    }
+    $widget.SetMetrics(@('running'),'17.0 tok/s','5h 80%','15 K/s','161 K/s',$null,$null,$null)
+    foreach ($dpi in @(96,144,192)) {
+        $preview=$widget.RenderPreview($dpi); $scale=$dpi/96.0
+        try {
+            $textRows=[TokcatTaskbarTestPixels]::Ink($preview,[int](18*$scale),$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,[int](14*$scale))
+            Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -lt $preview.Height/2) 'A single dot must use the top slot at every DPI, without vertical centering.'
         } finally { $preview.Dispose() }
     }
     $widget.SetEnabled($false)
