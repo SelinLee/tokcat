@@ -37,10 +37,12 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     Layout latest;
     volatile bool enabled, disposed;
     bool started;
-    sealed class Column { public string Top, Bottom; public Column(string top,string bottom) { Top=top??""; Bottom=bottom??""; } }
+    sealed class Column { public string Top, Bottom, Reserve; public bool Network; public Column(string top,string bottom,string reserve=null,bool network=false) { Top=top??""; Bottom=bottom??""; Reserve=reserve; Network=network; } }
     readonly Color transparent = Color.FromArgb(1,0,1);
     Column[] columns = new Column[] { new Column("tokcat","") };
     Bitmap textBitmap;
+    readonly Bitmap measureBitmap = new Bitmap(1,1);
+    readonly Graphics measureGraphics;
     string textSignature;
     int inkTop, inkBottom;
     string[] states = new string[0];
@@ -60,6 +62,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     public static void EnableDpiAwareness() { try { SetThreadDpiAwarenessContext(new IntPtr(-4)); } catch (EntryPointNotFoundException) {} }
 
     public TokcatTaskbarWidget() {
+        measureGraphics=Graphics.FromImage(measureBitmap);
         timer = new System.Windows.Forms.Timer(); timer.Interval = 750;
         timer.Tick += delegate { RefreshAttachment(); };
         Status = "Waiting for taskbar layout";
@@ -76,9 +79,11 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         states = dots ?? new string[0]; columns=new Column[] { new Column(line1,line2) }; ContentChanged();
     }
     public void SetMetrics(string[] dots,string speed,string quota,string upload,string download,string cpu,string gpu,string memory) {
-        states=dots??new string[0]; var values=new List<Column>(); values.Add(new Column(speed,quota));
+        states=dots??new string[0]; var values=new List<Column>();
+        string quotaSample=System.Text.RegularExpressions.Regex.Replace(quota??"",@"\d+(?:\.\d+)?(?=%)","100");
+        values.Add(new Column(speed,quota,quotaSample));
         if(!string.IsNullOrEmpty(cpu)) values.Add(new Column("CPU",cpu)); if(!string.IsNullOrEmpty(gpu)) values.Add(new Column("GPU",gpu)); if(!string.IsNullOrEmpty(memory)) values.Add(new Column("MEM",memory));
-        values.Add(new Column("\u2191: "+upload,"\u2193: "+download)); columns=values.ToArray(); ContentChanged();
+        values.Add(new Column("\u2191: "+upload,"\u2193: "+download,null,true)); columns=values.ToArray(); ContentChanged();
     }
     string ContentCaption() { var values=new List<string>(); foreach(var c in columns) values.Add(c.Top+" / "+c.Bottom); return "tokcat: "+string.Join(" | ",values.ToArray()); }
     void ContentChanged() {
@@ -86,10 +91,28 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         if(enabled) RefreshAttachment();
     }
     int DotsWidth(float scale) { int count=Math.Min(6,states.Length); return (int)((count>3?25:count>0?14:0)*scale) + (states.Length>6?(int)(25*scale):0); }
-    int ColumnWidth(Column c,Font font) { var flags=TextFormatFlags.NoPadding|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix; return Math.Max(TextRenderer.MeasureText(c.Top,font,Size.Empty,flags).Width,TextRenderer.MeasureText(c.Bottom,font,Size.Empty,flags).Width); }
+    int Measure(string text,Font font) { return TextRenderer.MeasureText(measureGraphics,text??"",font,Size.Empty,TextFormatFlags.NoPadding|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix).Width; }
+    int NetworkLabelWidth(Font font) { return Math.Max(Measure("\u2191:",font),Measure("\u2193:",font)); }
+    int NetworkSpace(Font font) { return Math.Max(Measure(" ",font),(int)Math.Ceiling(font.Size/4)); }
+    int NetworkNumberWidth(Font font) { return Math.Max(Measure("99.9",font),Measure("1023",font)); }
+    int NetworkUnitWidth(Font font) { return Math.Max(Measure("K/s",font),Math.Max(Measure("M/s",font),Measure("G/s",font))); }
+    int ColumnWidth(Column c,Font font) {
+        if(c.Network) return NetworkLabelWidth(font)+2*NetworkSpace(font)+NetworkNumberWidth(font)+NetworkUnitWidth(font);
+        int width=Math.Max(Measure(c.Reserve,font),Math.Max(Measure(c.Top,font),Measure(c.Bottom,font)));
+        return c.Reserve!=null?Math.Max(width,Measure("9999.9 tok/s",font)):width;
+    }
+    void DrawNetworkLine(Graphics g,string text,Font font,Rectangle rect,Color foreground,Color background,TextFormatFlags flags) {
+        int label=NetworkLabelWidth(font),space=NetworkSpace(font),number=NetworkNumberWidth(font),unit=NetworkUnitWidth(font);
+        string value=text.Length>=3?text.Substring(3):text; int separator=value.LastIndexOf(' ');
+        string digits=separator<0?value:value.Substring(0,separator),suffix=separator<0?"":value.Substring(separator+1);
+        TextRenderer.DrawText(g,text.Length>=2?text.Substring(0,2):"",font,new Rectangle(rect.Left,rect.Top,label,rect.Height),foreground,background,flags);
+        TextRenderer.DrawText(g,digits,font,new Rectangle(rect.Left+label+space,rect.Top,number,rect.Height),foreground,background,flags|TextFormatFlags.Right);
+        TextRenderer.DrawText(g,suffix,font,new Rectangle(rect.Left+label+space+number+space,rect.Top,unit,rect.Height),foreground,background,flags);
+    }
+    public static Font CreateTextFont(uint dpi) { return new Font("Segoe UI",12*(dpi==0?96:dpi)/96f,FontStyle.Bold,GraphicsUnit.Pixel); }
     public int PreferredWidth(uint dpi) {
-        float scale=(dpi==0?96:dpi)/96f; int width=DotsWidth(scale)+(int)(6*scale);
-        using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) foreach(var c in columns) width+=ColumnWidth(c,font)+(int)(8*scale);
+        float scale=(dpi==0?96:dpi)/96f; int width=DotsWidth(scale)+(int)(4*scale);
+        using(var font=CreateTextFont(dpi)) for(int i=0;i<columns.Length;i++) width+=ColumnWidth(columns[i],font)+(int)((i==columns.Length-1?2:4)*scale);
         return Math.Max((int)(100*scale),width);
     }
 
@@ -194,38 +217,40 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         bool light=false;
         try { using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) light=key!=null && Convert.ToInt32(key.GetValue("SystemUsesLightTheme",0))!=0; } catch {}
         var background=transparent; var foreground=light?Color.FromArgb(20,20,20):Color.White;
-        int left=DotsWidth(scale)+(int)(6*scale), padding=(int)(3*scale); int half=bounds.Height/2;
+        int left=DotsWidth(scale)+(int)(4*scale), padding=(int)(3*scale); int half=bounds.Height/2;
         string signature=ContentCaption()+"|"+bounds+"|"+dpi+"|"+left+"|"+light;
         if(textBitmap==null || signature!=textSignature) {
             if(textBitmap!=null) textBitmap.Dispose(); textBitmap=new Bitmap(bounds.Width,bounds.Height); textSignature=signature;
-            using(var textGraphics=Graphics.FromImage(textBitmap)) using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
+            using(var textGraphics=Graphics.FromImage(textBitmap)) using(var font=CreateTextFont(dpi)) {
                 textGraphics.Clear(background);
                 var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
                 foreach(var c in columns) {
                     int width=ColumnWidth(c,font);
-                    TextRenderer.DrawText(textGraphics,c.Top,font,new Rectangle(left,padding,width,half-padding),foreground,background,flags);
-                    TextRenderer.DrawText(textGraphics,c.Bottom,font,new Rectangle(left,half,width,half-padding),foreground,background,flags);
-                    left+=width+(int)(8*scale);
+                    var upper=new Rectangle(left,padding,width,half-padding); var lower=new Rectangle(left,half,width,half-padding);
+                    if(c.Network) { DrawNetworkLine(textGraphics,c.Top,font,upper,foreground,background,flags); DrawNetworkLine(textGraphics,c.Bottom,font,lower,foreground,background,flags); }
+                    else { TextRenderer.DrawText(textGraphics,c.Top,font,upper,foreground,background,flags); TextRenderer.DrawText(textGraphics,c.Bottom,font,lower,foreground,background,flags); }
+                    left+=width+(int)(4*scale);
                 }
             }
             inkTop=bounds.Height; inkBottom=-1;
             // Align dots with rendered glyphs, rather than the font's line-box padding.
-            for(int y=0;y<bounds.Height;y++) for(int x=DotsWidth(scale)+(int)(6*scale);x<bounds.Width;x++) {
+            for(int y=0;y<bounds.Height;y++) for(int x=DotsWidth(scale)+(int)(4*scale);x<bounds.Width;x++) {
                 if(textBitmap.GetPixel(x,y).ToArgb()!=background.ToArgb()) { inkTop=Math.Min(inkTop,y); inkBottom=Math.Max(inkBottom,y); break; }
             }
             if(inkBottom<inkTop) { inkTop=padding; inkBottom=bounds.Height-padding-1; }
         }
         g.DrawImageUnscaled(textBitmap,0,0); g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        int shown=Math.Min(6,states.Length), rows=Math.Min(3,shown), diameter=Math.Max(3,(int)Math.Round(7*scale));
+        int shown=Math.Min(6,states.Length), rows=Math.Min(3,shown);
+        int diameter=Math.Max(3,Math.Min((int)Math.Round(9*scale),(int)Math.Floor((inkBottom-inkTop+1-2*scale)/3f)));
         for (int i=0;i<shown;i++) {
             var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
             float y=rows==1 ? (inkTop+inkBottom+1-diameter)/2f : inkTop+(float)Math.Round((inkBottom-inkTop+1-diameter)*(i%3)/(double)(rows-1));
             using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(float)Math.Round((3+(i/3)*11)*scale)+0.5f,y,diameter-1,diameter-1);
         }
-        if(states.Length>6) using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
+        if(states.Length>6) using(var font=CreateTextFont(dpi)) {
             var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
             TextRenderer.DrawText(g,"+"+(states.Length-6),font,new Rectangle((int)(25*scale),0,(int)(25*scale),bounds.Height),foreground,background,flags);
         }
     }
-    public void Dispose() { if (disposed) return; disposed=true; timer.Stop(); timer.Dispose(); if(started) stop.Set(); else stop.Dispose(); if(Handle!=IntPtr.Zero) DestroyHandle(); if(textBitmap!=null) textBitmap.Dispose(); }
+    public void Dispose() { if (disposed) return; disposed=true; timer.Stop(); timer.Dispose(); if(started) stop.Set(); else stop.Dispose(); if(Handle!=IntPtr.Zero) DestroyHandle(); if(textBitmap!=null) textBitmap.Dispose(); measureGraphics.Dispose(); measureBitmap.Dispose(); }
 }

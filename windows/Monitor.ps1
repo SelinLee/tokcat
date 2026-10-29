@@ -129,6 +129,54 @@ function Get-CodexSessions([string]$CodexHome) {
     return @($byId.Values | Sort-Object Updated -Descending)
 }
 
+function New-AgentSnapshotReader([string]$Directory) {
+    $runspace = [runspacefactory]::CreateRunspace(); $runspace.Open(); $worker = [PowerShell]::Create(); $worker.Runspace = $runspace
+    try {
+        [void]$worker.AddScript({ param($directory) . (Join-Path $directory 'Monitor.ps1') }.ToString()).AddArgument($Directory)
+        $null = $worker.Invoke(); if ($worker.HadErrors) { throw 'Unable to initialize agent reader.' }
+        $worker.Commands.Clear()
+        return [pscustomobject]@{ Worker=$worker; Runspace=$runspace; Handle=$null }
+    } catch { $worker.Dispose(); $runspace.Dispose(); throw }
+}
+
+function Request-AgentSnapshot($Reader, [string]$CodexHome, [string]$ProfileDirectory, [string]$AppDataDirectory, [string]$LocalDirectory) {
+    if ($Reader.Handle) { return $false }
+    $Reader.Worker.Commands.Clear(); $Reader.Worker.Streams.Error.Clear()
+    [void]$Reader.Worker.AddCommand('Get-AgentSnapshot').AddParameter('CodexHome',$CodexHome).AddParameter('ProfileDirectory',$ProfileDirectory).AddParameter('AppDataDirectory',$AppDataDirectory).AddParameter('LocalDirectory',$LocalDirectory)
+    $Reader.Handle = $Reader.Worker.BeginInvoke()
+    return $true
+}
+
+function Receive-AgentSnapshot($Reader) {
+    if (-not $Reader.Handle -or -not $Reader.Handle.IsCompleted) { return $null }
+    try {
+        $result = @($Reader.Worker.EndInvoke($Reader.Handle))
+        if ($Reader.Worker.HadErrors -or $result.Count -ne 1) { throw 'Agent background read failed.' }
+        return $result[0]
+    } finally { $Reader.Handle = $null }
+}
+
+function Close-AgentSnapshotReader($Reader) {
+    if (-not $Reader) { return }
+    try { if ($Reader.Handle -and -not $Reader.Handle.IsCompleted) { $Reader.Worker.Stop() } } finally { $Reader.Worker.Dispose(); $Reader.Runspace.Dispose() }
+}
+
+function Get-AgentSnapshot([string]$CodexHome, [string]$ProfileDirectory, [string]$AppDataDirectory, [string]$LocalDirectory) {
+    $dshHomes = @((Join-Path $ProfileDirectory '.dsh'), $env:DSH_HOME)
+    if ($AppDataDirectory) { $dshHomes += @((Join-Path $AppDataDirectory 'DSH Desktop\.dsh'), (Join-Path $AppDataDirectory 'dsh-desktop\.dsh'), (Join-Path $AppDataDirectory '@deepseek-ai\dsh-desktop\.dsh')) }
+    $workError = $false; $buddyError = $false
+    try { $workSessions = @(Get-WorkSessions $CodexHome) } catch { $workSessions = @(); $workError = $true }
+    try { $buddySessions = @(Get-WorkBuddySessions (Join-Path $ProfileDirectory '.workbuddy') 'WorkBuddy') } catch { $buddySessions = @(); $buddyError = $true }
+    try { $buddySessions += @(Get-WorkBuddySessions (Join-Path $ProfileDirectory '.workbuddy-ai') 'WorkBuddy AI') } catch { $buddyError = $true }
+    $claudeSessions = @(Get-ClaudeSessions (Join-Path $LocalDirectory 'Tokcat\claude'))
+    $kimiRoots = @((Join-Path $ProfileDirectory '.kimi-work'), (Join-Path $ProfileDirectory '.kimi-webbridge'))
+    if ($AppDataDirectory) { $kimiRoots += @((Join-Path $AppDataDirectory 'kimi-desktop'), (Join-Path $AppDataDirectory 'kimi')) }
+    $activity = @(Get-ActivitySessions @((Join-Path $ProfileDirectory '.openclaw\agents')) 'OpenClaw') + @(Get-ActivitySessions $kimiRoots 'Kimi')
+    $dshSessions = @(Get-DshSessions $dshHomes)
+    $sessions = @(@(Get-CodexSessions $CodexHome) + $dshSessions + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
+    return [pscustomobject]@{ Sessions=$sessions; DshSessions=$dshSessions; Quota=(Get-CodexQuota $CodexHome); WorkError=$workError; BuddyError=$buddyError }
+}
+
 function Get-ProjectionValue($Rows, [string]$Name) {
     return Get-Field (Get-Field $Rows $Name) 'val'
 }
@@ -355,8 +403,12 @@ function Write-StatusStripPreference([string]$Path, [bool]$Visible) {
 
 function Format-TaskbarNetworkRate($BytesPerSecond) {
     if ($null -eq $BytesPerSecond) { return '—' }
-    if ($BytesPerSecond -ge 1048576) { return ('{0:0.#} M/s' -f ($BytesPerSecond / 1048576)) }
-    return ('{0:0.#} K/s' -f ($BytesPerSecond / 1024))
+    $divisor=1024; $unit='K/s'
+    if ($BytesPerSecond -ge 1073741824) { $divisor=1073741824; $unit='G/s' }
+    elseif ($BytesPerSecond -ge 1048576) { $divisor=1048576; $unit='M/s' }
+    $value=$BytesPerSecond/$divisor
+    if ($value -ge 100) { return ('{0:0} {1}' -f $value,$unit) }
+    return ('{0:0.#} {1}' -f $value,$unit)
 }
 
 function Read-TaskbarMetricsPreference([string]$Path) {

@@ -83,6 +83,9 @@ try { $script:stripEnabled = Read-StatusStripPreference $script:stripPreferenceP
 $stripMenu.Checked = $script:stripEnabled
 $taskbarWidget = New-Object TokcatTaskbarWidget
 $taskbarWidget.Menu = $menu
+$script:snapshotReader = New-AgentSnapshotReader $PSScriptRoot
+$script:latestMetrics = [TokcatSystemMetrics]::Sample()
+$script:taskbarDots = @('unknown'); $script:taskbarTokenSpeed = '—'; $script:taskbarQuota = '—'; $script:agentReadError = $false
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $openRaw = $listMenu.Items.Add('打开原始记录')
@@ -172,29 +175,34 @@ function Show-AgentConversation($Session, [bool]$TestMode = $false) {
     try { [void]$viewer.ShowDialog($form); if ($TestMode -and $testOutcome.Error) { $script:smokeError = $testOutcome.Error } } finally { if ($TestMode) { $viewerTimer.Dispose() }; $viewer.Dispose() }
 }
 
-function Update-Sessions {
+function Update-SystemDisplay([bool]$Sample = $true) {
+    if ($Sample) { $script:latestMetrics = [TokcatSystemMetrics]::Sample() }
+    $metrics = $script:latestMetrics
+    $cpu = if ($script:taskbarMetrics.Cpu -and $null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } elseif ($script:taskbarMetrics.Cpu) { '—' } else { $null }
+    $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
+    $gpu = if ($script:taskbarMetrics.Gpu -and $null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } elseif ($script:taskbarMetrics.Gpu) { '—' } else { $null }
+    $memory = if ($script:taskbarMetrics.Memory -and $null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } elseif ($script:taskbarMetrics.Memory) { '—' } else { $null }
+    $speed = if ($script:agentReadError) { '读取失败' } else { "$($script:taskbarTokenSpeed) tok/s" }
+    $taskbarWidget.SetMetrics($script:taskbarDots, $speed, $script:taskbarQuota, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $cpu, $gpu, $memory)
+}
+
+function Update-Sessions($Snapshot = $null) {
+    if ($null -eq $Snapshot) {
+        try { [void](Request-AgentSnapshot $script:snapshotReader $CodexHome $env:USERPROFILE $env:APPDATA $env:LOCALAPPDATA) }
+        catch { $script:agentReadError = $true; $note.Text = '无法开始读取任务：' + $_.Exception.Message; if ($SmokeTest) { $script:smokeError = $_.Exception.Message } }
+        return
+    }
     if ($script:scanning) { return }
     $script:scanning = $true
     try {
-        $dshHomes = @((Join-Path $env:USERPROFILE '.dsh'), $env:DSH_HOME)
-        if ($env:APPDATA) { $dshHomes += @((Join-Path $env:APPDATA 'DSH Desktop\.dsh'), (Join-Path $env:APPDATA 'dsh-desktop\.dsh'), (Join-Path $env:APPDATA '@deepseek-ai\dsh-desktop\.dsh')) }
-        $workError = $false
-        try { $workSessions = @(Get-WorkSessions $CodexHome) } catch { $workSessions = @(); $workError = $true }
-        $buddyError = $false
-        try { $buddySessions = @(Get-WorkBuddySessions (Join-Path $env:USERPROFILE '.workbuddy') 'WorkBuddy') } catch { $buddySessions = @(); $buddyError = $true }
-        try { $buddySessions += @(Get-WorkBuddySessions (Join-Path $env:USERPROFILE '.workbuddy-ai') 'WorkBuddy AI') } catch { $buddyError = $true }
-        $claudeSessions = @(Get-ClaudeSessions (Join-Path $env:LOCALAPPDATA 'Tokcat\claude'))
-        $kimiRoots = @((Join-Path $env:USERPROFILE '.kimi-work'), (Join-Path $env:USERPROFILE '.kimi-webbridge'))
-        if ($env:APPDATA) { $kimiRoots += @((Join-Path $env:APPDATA 'kimi-desktop'), (Join-Path $env:APPDATA 'kimi')) }
-        $activity = @(Get-ActivitySessions @((Join-Path $env:USERPROFILE '.openclaw\agents')) 'OpenClaw') + @(Get-ActivitySessions $kimiRoots 'Kimi')
-        $dshSessions = @(Get-DshSessions $dshHomes)
+        $workError = $Snapshot.WorkError; $buddyError = $Snapshot.BuddyError
+        $dshSessions = @($Snapshot.DshSessions)
         try { Save-DshUsage $dshSessions $script:dshBaseline $script:dshUsagePath ([datetimeoffset]::Now); $script:dshUsageError = $false } catch { $script:dshUsageError = $true }
-        $sessions = @(@(Get-CodexSessions $CodexHome) + $dshSessions + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
-        $quota = Get-CodexQuota $CodexHome
+        $sessions = @($Snapshot.Sessions); $quota = $Snapshot.Quota; $script:agentReadError = $false
         $quotaText = Format-CodexQuota $quota ([datetimeoffset]::UtcNow)
         $quotaLabel.Text = 'Codex 本地额度：' + $quotaText + $(if ($quota) { ' · 记录时间 ' + $quota.ObservedAt.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } else { ' · 等待记录' })
         $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
-        $metrics = [TokcatSystemMetrics]::Sample()
+        $metrics = $script:latestMetrics
         $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
         $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
         $gpu = if ($null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } else { '—' }
@@ -234,7 +242,8 @@ function Update-Sessions {
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $taskbarWidget.SetMetrics($orderedDots, "$tokenSpeed tok/s", $quotaText, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $(if ($script:taskbarMetrics.Cpu) { $cpu } else { $null }), $(if ($script:taskbarMetrics.Gpu) { $gpu } else { $null }), $(if ($script:taskbarMetrics.Memory) { $memory } else { $null }))
+        $script:taskbarDots = $orderedDots; $script:taskbarTokenSpeed = $tokenSpeed; $script:taskbarQuota = $quotaText
+        Update-SystemDisplay $false
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
                 $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
@@ -248,6 +257,7 @@ function Update-Sessions {
         $list.EndUpdate()
         $note.Text = '刷新失败：' + $_.Exception.Message
         if ($SmokeTest) { $script:smokeError = $_.Exception.Message }
+        $script:agentReadError = $true; $script:taskbarDots = @('unknown')
         Set-TrayIcon @('unknown') 'tokcat: 读取失败，请打开窗口查看'
         $taskbarWidget.SetContent(@('unknown'), 'tokcat 读取失败', '单击查看详情')
     } finally { $script:scanning = $false }
@@ -283,16 +293,26 @@ $form.Add_FormClosing({ param($sender,$e) if (-not $script:quitting -and $e.Clos
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 5000
 $timer.Add_Tick({ Update-Sessions })
+$metricsTimer = New-Object Windows.Forms.Timer; $metricsTimer.Interval = 1000
+$metricsTimer.Add_Tick({ try { Update-SystemDisplay } catch { $note.Text = '指标刷新失败：' + $_.Exception.Message } })
+$snapshotPoll = New-Object Windows.Forms.Timer; $snapshotPoll.Interval = 200
+$snapshotPoll.Add_Tick({
+    try { $snapshot = Receive-AgentSnapshot $script:snapshotReader; if ($null -ne $snapshot) { Update-Sessions $snapshot } }
+    catch { $script:agentReadError = $true; $script:taskbarDots = @('unknown'); $note.Text = '任务读取失败：' + $_.Exception.Message; if ($SmokeTest) { $script:smokeError = $_.Exception.Message } }
+})
 $instanceTimer = New-Object Windows.Forms.Timer
 $instanceTimer.Interval = 500
 $instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }; if ($script:stripEnabled -and $taskbarWidget.Status -ne 'Embedded') { $quotaLabel.Text = '任务栏监控暂不可用：' + $(switch ($taskbarWidget.Status) { 'No free taskbar space' { '任务栏空间不足' } 'Waiting for taskbar layout' { '正在读取布局' } default { '等待任务栏恢复' } }) } })
 Set-TrayIcon @('unknown') 'tokcat: 正在读取 Codex 会话'
-$form.Add_Shown({ Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $instanceTimer.Start(); if (-not $SmokeTest) { $form.Hide() } })
+$form.Add_Shown({ Update-SystemDisplay; Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $metricsTimer.Start(); $snapshotPoll.Start(); $instanceTimer.Start(); if (-not $SmokeTest) { $form.Hide() } })
 if ($SmokeTest) {
     $smokeTimer = New-Object Windows.Forms.Timer
     $smokeTimer.Interval = 1000
+    $script:smokeDeadline = [datetimeoffset]::UtcNow.AddSeconds(30)
     $smokeTimer.Add_Tick({
+        if (-not $script:bootstrapped -and [datetimeoffset]::UtcNow -lt $script:smokeDeadline) { return }
         $smokeTimer.Stop()
+        if ($metricsTimer.Interval -ne 1000 -or -not $metricsTimer.Enabled) { $script:smokeError = 'Lightweight metrics must refresh independently every second.' }
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
         $stripButton.PerformClick()
         if ($taskbarWidget.Visible -or $stripMenu.Checked) { $script:smokeError = 'Taskbar widget did not hide.' }
@@ -321,5 +341,5 @@ if ($SmokeTest) {
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $metricsTimer.Stop(); $metricsTimer.Dispose(); $snapshotPoll.Stop(); $snapshotPoll.Dispose(); Close-AgentSnapshotReader $script:snapshotReader; $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }

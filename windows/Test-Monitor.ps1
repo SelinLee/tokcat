@@ -17,6 +17,7 @@ try {
     Assert-Equal $metricDefaults.Memory $false 'taskbar memory disabled by default'
     Assert-Equal (Format-TaskbarNetworkRate (455*1024)) '455 K/s' 'taskbar network separates units from values'
     Assert-Equal (Format-TaskbarNetworkRate (8.6*1024)) '8.6 K/s' 'taskbar network keeps one fractional digit'
+    Assert-Equal (Format-TaskbarNetworkRate 1073741824) '1 G/s' 'taskbar network scales large values into the reserved field'
     Write-TaskbarMetricsPreference $metricPath $true $false $true
     $metricSaved = Read-TaskbarMetricsPreference $metricPath
     Assert-Equal $metricSaved.Cpu $true 'taskbar metric choice persists'
@@ -591,6 +592,30 @@ public static class TokcatTestDatabase {
     $network = $sampler.Observe($reset, 20)
     Assert-Equal $network.Down 10 'reset adapter is rebased'
     Assert-Equal $network.Up 20 'unaffected adapter remains measured'
+    $reader = New-AgentSnapshotReader $PSScriptRoot
+    try {
+        Assert-Equal (Request-AgentSnapshot $reader $root $root $root $root) $true 'agent snapshot starts asynchronously'
+        Assert-Equal (Request-AgentSnapshot $reader $root $root $root $root) $false 'only one agent scan may be in flight'
+        $deadline=[datetimeoffset]::UtcNow.AddSeconds(15)
+        while (-not $reader.Handle.IsCompleted -and [datetimeoffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 20 }
+        $snapshot=Receive-AgentSnapshot $reader
+        Assert-Equal @($snapshot.Sessions | Where-Object { $_.Source -eq 'Codex' }).Count 1 'background reader returns Codex fixtures'
+        $reader.Worker.Commands.Clear()
+        $readGate=New-Object Threading.ManualResetEvent($false)
+        [void]$reader.Worker.AddScript('param($gate) if (-not $gate.WaitOne(12000)) { throw "UI timer did not progress during the background read." }; [pscustomobject]@{Ready=$true}').AddArgument($readGate)
+        $reader.Handle=$reader.Worker.BeginInvoke()
+        Add-Type -AssemblyName System.Windows.Forms
+        $uiContext=New-Object Windows.Forms.ApplicationContext; $uiTimer=New-Object Windows.Forms.Timer; $uiTimer.Interval=1000
+        $timing=[pscustomobject]@{ Samples=0; Clock=[Diagnostics.Stopwatch]::StartNew() }
+        $uiTimer.Add_Tick({
+            if (-not $reader.Handle.IsCompleted) { $null=[TokcatSystemMetrics]::Sample(); $timing.Samples++; if ($timing.Samples -ge 2) { [void]$readGate.Set() } }
+            if ($reader.Handle.IsCompleted -or $timing.Clock.Elapsed.TotalSeconds -gt 15) { $uiTimer.Stop(); $uiContext.ExitThread() }
+        })
+        try { $uiTimer.Start(); [Windows.Forms.Application]::Run($uiContext) } finally { [void]$readGate.Set(); $uiTimer.Dispose(); $uiContext.Dispose() }
+        Assert-Equal ($timing.Samples -ge 2) $true 'one-second metrics continue during a slow agent read'
+        Assert-Equal (Receive-AgentSnapshot $reader).Ready $true 'slow background read is still collected'
+        $readGate.Dispose()
+    } finally { Close-AgentSnapshotReader $reader }
     $previousProfile = $env:USERPROFILE; $previousAppData = $env:APPDATA; $previousLocalData = $env:LOCALAPPDATA
     try {
         [IO.File]::AppendAllText($log, "`n" + '{"type":"response_item","payload":{"type":"message","role":"user","content":"fixture conversation"}}' + "`n")
