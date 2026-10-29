@@ -15,6 +15,8 @@ try {
     Assert-Equal $metricDefaults.Cpu $false 'taskbar CPU disabled by default'
     Assert-Equal $metricDefaults.Gpu $false 'taskbar GPU disabled by default'
     Assert-Equal $metricDefaults.Memory $false 'taskbar memory disabled by default'
+    Assert-Equal (Format-TaskbarNetworkRate (455*1024)) '455 K/s' 'taskbar network separates units from values'
+    Assert-Equal (Format-TaskbarNetworkRate (8.6*1024)) '8.6 K/s' 'taskbar network keeps one fractional digit'
     Write-TaskbarMetricsPreference $metricPath $true $false $true
     $metricSaved = Read-TaskbarMetricsPreference $metricPath
     Assert-Equal $metricSaved.Cpu $true 'taskbar metric choice persists'

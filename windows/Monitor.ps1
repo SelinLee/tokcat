@@ -353,6 +353,12 @@ function Write-StatusStripPreference([string]$Path, [bool]$Visible) {
     if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
 }
 
+function Format-TaskbarNetworkRate($BytesPerSecond) {
+    if ($null -eq $BytesPerSecond) { return '—' }
+    if ($BytesPerSecond -ge 1048576) { return ('{0:0.#} M/s' -f ($BytesPerSecond / 1048576)) }
+    return ('{0:0.#} K/s' -f ($BytesPerSecond / 1024))
+}
+
 function Read-TaskbarMetricsPreference([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false } }
     $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop

@@ -234,7 +234,7 @@ function Update-Sessions {
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $taskbarWidget.SetMetrics($orderedDots, "$tokenSpeed tok/s", $quotaText, ($upShort + '/s'), ($downShort + '/s'), $(if ($script:taskbarMetrics.Cpu) { $cpu } else { $null }), $(if ($script:taskbarMetrics.Gpu) { $gpu } else { $null }), $(if ($script:taskbarMetrics.Memory) { $memory } else { $null }))
+        $taskbarWidget.SetMetrics($orderedDots, "$tokenSpeed tok/s", $quotaText, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $(if ($script:taskbarMetrics.Cpu) { $cpu } else { $null }), $(if ($script:taskbarMetrics.Gpu) { $gpu } else { $null }), $(if ($script:taskbarMetrics.Memory) { $memory } else { $null }))
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
                 $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }

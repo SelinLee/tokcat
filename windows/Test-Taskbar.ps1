@@ -13,6 +13,7 @@ $scaledBar=New-Object Drawing.Rectangle(0,0,2000,96)
 $scaledSlot=[TokcatTaskbarWidget]::FindSlot($scaledBar,[Drawing.Rectangle[]]@((New-Object Drawing.Rectangle(1600,0,400,96))),960,540,16)
 Assert-Taskbar ($scaledSlot.Width -eq 960 -and $scaledBar.Contains($scaledSlot) -and $scaledSlot.Right -lt 1600) 'Scaled placement must leave room for the tray.'
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TokcatTaskbarTestInput { [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int message, IntPtr w, IntPtr l); }'
+Add-Type -ReferencedAssemblies System.Drawing.dll -TypeDefinition 'using System; using System.Drawing; public static class TokcatTaskbarTestPixels { public static int[] Ink(Bitmap b,int left,int right) { int top=b.Height,bottom=-1; for(int y=0;y<b.Height;y++) for(int x=left;x<right;x++) if(b.GetPixel(x,y).A>0) {top=Math.Min(top,y);bottom=Math.Max(bottom,y);break;} return new int[]{top,bottom}; } public static int[] ColorRows(Bitmap b,int color) {int top=b.Height,bottom=-1;for(int y=0;y<b.Height;y++) for(int x=0;x<b.Width;x++) if(b.GetPixel(x,y).ToArgb()==color){top=Math.Min(top,y);bottom=Math.Max(bottom,y);break;}return new int[]{top,bottom};} }'
 $hostForm = New-Object Windows.Forms.Form
 $hostForm.FormBorderStyle='None'; $hostForm.Size=New-Object Drawing.Size(1000,48); $hostForm.ShowInTaskbar=$false
 $widget = New-Object TokcatTaskbarWidget
@@ -25,17 +26,36 @@ try {
     Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU 10%')) 'Taskbar metrics must be exposed as accessible window text.'
     [void][TokcatTaskbarTestInput]::SendMessage($widget.Handle,0x0202,[IntPtr]::Zero,[IntPtr]::Zero)
     Assert-Taskbar $script:taskbarClicked 'Clicking the taskbar widget must raise the details action.'
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s','5h 80% / week 40%','15K/s','161K/s',$null,$null,$null)
+    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s','5h 80% / week 40%','15 K/s','161 K/s',$null,$null,$null)
     Assert-Taskbar ($widget.PreferredWidth(96) -lt 300) 'Default metrics must size tightly to their content.'
     Assert-Taskbar (-not [TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU')) 'CPU must be omitted when disabled.'
     $preview=$widget.RenderPreview(96)
     try {
         Assert-Taskbar ($preview.GetPixel(0,0).A -eq 0) 'The taskbar background must be transparent.'
-        Assert-Taskbar ($preview.GetPixel(6,8).ToArgb() -eq [Drawing.Color]::Goldenrod.ToArgb()) 'First dot must start the first vertical column.'
-        Assert-Taskbar ($preview.GetPixel(6,24).ToArgb() -eq [Drawing.Color]::OrangeRed.ToArgb()) 'Second dot must be below the first dot.'
-        Assert-Taskbar ($preview.GetPixel(17,8).ToArgb() -eq [Drawing.Color]::ForestGreen.ToArgb()) 'Fourth dot must start the second column.'
+        $textRows=[TokcatTaskbarTestPixels]::Ink($preview,31,$preview.Width)
+        $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,25)
+        Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -eq $textRows[1]) ('Dot-group edges must align with text: dots ' + ($dotRows -join ',') + '; text ' + ($textRows -join ','))
+        $firstRows=[TokcatTaskbarTestPixels]::ColorRows($preview,[Drawing.Color]::Goldenrod.ToArgb())
+        $secondRows=[TokcatTaskbarTestPixels]::ColorRows($preview,[Drawing.Color]::OrangeRed.ToArgb())
+        $fourthRows=[TokcatTaskbarTestPixels]::ColorRows($preview,[Drawing.Color]::ForestGreen.ToArgb())
+        Assert-Taskbar ($secondRows[0] -gt $firstRows[1]) 'Second dot must be below the first dot.'
+        Assert-Taskbar ($fourthRows[0] -eq $firstRows[0]) 'Fourth dot must start the second column.'
+        Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle).Contains('15 K/s')) 'Network values and units must have a separating space.'
         $preview.Save((Join-Path $env:TEMP 'tokcat-taskbar-preview.png'),[Drawing.Imaging.ImageFormat]::Png)
     } finally { $preview.Dispose() }
+    $widget.SetMetrics(@('running','completed'),'17.0 tok/s','5h 80%','15 K/s','161 K/s',$null,$null,$null)
+    $preview=$widget.RenderPreview(96)
+    try {
+        $textRows=[TokcatTaskbarTestPixels]::Ink($preview,20,$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,14)
+        Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -eq $textRows[1]) 'Two dots must align with the top and bottom text edges.'
+    } finally { $preview.Dispose() }
+    foreach ($dpi in @(144,192)) {
+        $preview=$widget.RenderPreview($dpi); $scale=$dpi/96.0
+        try {
+            $textRows=[TokcatTaskbarTestPixels]::Ink($preview,[int](20*$scale),$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,[int](14*$scale))
+            Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -eq $textRows[1]) 'Scaled dot edges must align with the text.'
+        } finally { $preview.Dispose() }
+    }
     $widget.SetEnabled($false)
     Assert-Taskbar (-not $widget.Visible) 'Disabling the taskbar widget must hide it.'
     $hostForm.Close(); $hostForm.Dispose()

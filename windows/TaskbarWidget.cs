@@ -40,6 +40,9 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     sealed class Column { public string Top, Bottom; public Column(string top,string bottom) { Top=top??""; Bottom=bottom??""; } }
     readonly Color transparent = Color.FromArgb(1,0,1);
     Column[] columns = new Column[] { new Column("tokcat","") };
+    Bitmap textBitmap;
+    string textSignature;
+    int inkTop, inkBottom;
     string[] states = new string[0];
     public ContextMenuStrip Menu { get; set; }
     public event EventHandler Clicked;
@@ -75,7 +78,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     public void SetMetrics(string[] dots,string speed,string quota,string upload,string download,string cpu,string gpu,string memory) {
         states=dots??new string[0]; var values=new List<Column>(); values.Add(new Column(speed,quota));
         if(!string.IsNullOrEmpty(cpu)) values.Add(new Column("CPU",cpu)); if(!string.IsNullOrEmpty(gpu)) values.Add(new Column("GPU",gpu)); if(!string.IsNullOrEmpty(memory)) values.Add(new Column("MEM",memory));
-        values.Add(new Column("\u2191 "+upload,"\u2193 "+download)); columns=values.ToArray(); ContentChanged();
+        values.Add(new Column("\u2191: "+upload,"\u2193: "+download)); columns=values.ToArray(); ContentChanged();
     }
     string ContentCaption() { var values=new List<string>(); foreach(var c in columns) values.Add(c.Top+" / "+c.Bottom); return "tokcat: "+string.Join(" | ",values.ToArray()); }
     void ContentChanged() {
@@ -191,22 +194,38 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         bool light=false;
         try { using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) light=key!=null && Convert.ToInt32(key.GetValue("SystemUsesLightTheme",0))!=0; } catch {}
         var background=transparent; var foreground=light?Color.FromArgb(20,20,20):Color.White;
-        g.Clear(background); g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        for (int i=0;i<Math.Min(6,states.Length);i++) {
-            var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
-            using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(3+(i/3)*11)*scale,(bounds.Height/3f*(i%3)+bounds.Height/6f-3.5f*scale),7*scale,7*scale);
-        }
         int left=DotsWidth(scale)+(int)(6*scale), padding=(int)(3*scale); int half=bounds.Height/2;
-        using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
-            var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
-            if(states.Length>6) TextRenderer.DrawText(g,"+"+(states.Length-6),font,new Rectangle((int)(25*scale),0,(int)(25*scale),bounds.Height),foreground,background,flags);
-            foreach(var c in columns) {
-                int width=ColumnWidth(c,font);
-                TextRenderer.DrawText(g,c.Top,font,new Rectangle(left,padding,width,half-padding),foreground,background,flags);
-                TextRenderer.DrawText(g,c.Bottom,font,new Rectangle(left,half,width,half-padding),foreground,background,flags);
-                left+=width+(int)(8*scale);
+        string signature=ContentCaption()+"|"+bounds+"|"+dpi+"|"+left+"|"+light;
+        if(textBitmap==null || signature!=textSignature) {
+            if(textBitmap!=null) textBitmap.Dispose(); textBitmap=new Bitmap(bounds.Width,bounds.Height); textSignature=signature;
+            using(var textGraphics=Graphics.FromImage(textBitmap)) using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
+                textGraphics.Clear(background);
+                var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
+                foreach(var c in columns) {
+                    int width=ColumnWidth(c,font);
+                    TextRenderer.DrawText(textGraphics,c.Top,font,new Rectangle(left,padding,width,half-padding),foreground,background,flags);
+                    TextRenderer.DrawText(textGraphics,c.Bottom,font,new Rectangle(left,half,width,half-padding),foreground,background,flags);
+                    left+=width+(int)(8*scale);
+                }
             }
+            inkTop=bounds.Height; inkBottom=-1;
+            // Align dots with rendered glyphs, rather than the font's line-box padding.
+            for(int y=0;y<bounds.Height;y++) for(int x=DotsWidth(scale)+(int)(6*scale);x<bounds.Width;x++) {
+                if(textBitmap.GetPixel(x,y).ToArgb()!=background.ToArgb()) { inkTop=Math.Min(inkTop,y); inkBottom=Math.Max(inkBottom,y); break; }
+            }
+            if(inkBottom<inkTop) { inkTop=padding; inkBottom=bounds.Height-padding-1; }
+        }
+        g.DrawImageUnscaled(textBitmap,0,0); g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        int shown=Math.Min(6,states.Length), rows=Math.Min(3,shown), diameter=Math.Max(3,(int)Math.Round(7*scale));
+        for (int i=0;i<shown;i++) {
+            var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
+            float y=rows==1 ? (inkTop+inkBottom+1-diameter)/2f : inkTop+(float)Math.Round((inkBottom-inkTop+1-diameter)*(i%3)/(double)(rows-1));
+            using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(float)Math.Round((3+(i/3)*11)*scale)+0.5f,y,diameter-1,diameter-1);
+        }
+        if(states.Length>6) using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
+            var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
+            TextRenderer.DrawText(g,"+"+(states.Length-6),font,new Rectangle((int)(25*scale),0,(int)(25*scale),bounds.Height),foreground,background,flags);
         }
     }
-    public void Dispose() { if (disposed) return; disposed=true; timer.Stop(); timer.Dispose(); if(started) stop.Set(); else stop.Dispose(); if(Handle!=IntPtr.Zero) DestroyHandle(); }
+    public void Dispose() { if (disposed) return; disposed=true; timer.Stop(); timer.Dispose(); if(started) stop.Set(); else stop.Dispose(); if(Handle!=IntPtr.Zero) DestroyHandle(); if(textBitmap!=null) textBitmap.Dispose(); }
 }
