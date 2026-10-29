@@ -21,6 +21,8 @@ if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
 [void][Tokcat.Native]::SetCurrentProcessExplicitAppUserModelID('tokcat.Windows.Monitor')
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Monitor.ps1')
+. (Join-Path $PSScriptRoot 'AgentPresentation.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'ForegroundAgent.cs')
 . (Join-Path $PSScriptRoot 'Conversation.ps1')
 . (Join-Path $PSScriptRoot 'Usage.ps1')
 . (Join-Path $PSScriptRoot 'UsageWindow.ps1')
@@ -70,6 +72,9 @@ $cpuMenu.Checked = $script:taskbarMetrics.Cpu; $gpuMenu.Checked = $script:taskba
 $script:gpuSampler = $null
 if ($script:taskbarMetrics.Gpu -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
+$script:latestSessions = @(); $script:viewedReminders = @{}; $script:dotSignature = ''; $script:traySummary = 'tokcat'; $script:workStatusCache = @{}
+$script:dotObservationPath = Join-Path $env:LOCALAPPDATA 'Tokcat\dot-observations.json'; $script:dotObservationError = $false
+try { $script:dotObservations = Read-DotObservations $script:dotObservationPath } catch { $script:dotObservations = @{}; $script:dotObservationError = $true }
 $script:launchedAt = [datetimeoffset]::UtcNow
 $script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
 $script:reminderError = $false
@@ -186,6 +191,28 @@ function Update-SystemDisplay([bool]$Sample = $true) {
     $taskbarWidget.SetMetrics($script:taskbarDots, $speed, $script:taskbarQuota, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $cpu, $gpu, $memory)
 }
 
+function Save-CurrentReminders {
+    if (-not $script:reminderError) {
+        try { Sync-ReminderStore $script:latestSessions $script:unread $script:savedReminders ([datetimeoffset]::UtcNow); Write-ReminderStore $script:reminderPath $script:savedReminders } catch { $script:reminderError = $true }
+    }
+}
+
+function Update-AgentDots {
+    if (-not $script:bootstrapped -or $script:agentReadError) { return }
+    $now = [datetimeoffset]::UtcNow
+    $foreground = if ($SmokeTest) { '' } else { [TokcatForegroundAgent]::CurrentSource() }
+    $viewed = Update-ViewedReminders $script:latestSessions $script:unread $script:viewedReminders $foreground $now
+    if ($viewed.Changed) { Save-CurrentReminders }
+    $dots = Get-TaskbarDotPresentation $script:latestSessions $script:unread $viewed.FlashingSince $now (-not [TokcatForegroundAgent]::AnimationsEnabled)
+    $signature = ($dots.States -join ',') + '|' + ($dots.Dimmed -join ',')
+    if ($signature -ne $script:dotSignature) {
+        $script:dotSignature = $signature; $script:taskbarDots = $dots.States
+        Update-SystemDisplay $false
+        $taskbarWidget.SetDotDimming($dots.Dimmed)
+        Set-TrayIcon $dots.States $script:traySummary
+    }
+}
+
 function Update-Sessions($Snapshot = $null) {
     if ($null -eq $Snapshot) {
         try { [void](Request-AgentSnapshot $script:snapshotReader $CodexHome $env:USERPROFILE $env:APPDATA $env:LOCALAPPDATA) }
@@ -198,7 +225,11 @@ function Update-Sessions($Snapshot = $null) {
         $workError = $Snapshot.WorkError; $buddyError = $Snapshot.BuddyError
         $dshSessions = @($Snapshot.DshSessions)
         try { Save-DshUsage $dshSessions $script:dshBaseline $script:dshUsagePath ([datetimeoffset]::Now); $script:dshUsageError = $false } catch { $script:dshUsageError = $true }
-        $sessions = @($Snapshot.Sessions); $quota = $Snapshot.Quota; $script:agentReadError = $false
+        $sessions = @(Merge-WorkStatusSnapshot @($Snapshot.Sessions) $script:workStatusCache $Snapshot.WorkAvailable ([datetimeoffset]::UtcNow))
+        $quota = $Snapshot.Quota; $script:agentReadError = $false
+        Update-DotObservations $sessions $script:dotObservations ([datetimeoffset]::UtcNow)
+        if (-not $script:dotObservationError) { try { Write-DotObservations $script:dotObservationPath $script:dotObservations } catch { $script:dotObservationError = $true } }
+        $script:latestSessions = $sessions; $script:dotSignature = ''
         $quotaText = Format-CodexQuota $quota ([datetimeoffset]::UtcNow)
         $quotaLabel.Text = 'Codex 本地额度：' + $quotaText + $(if ($quota) { ' · 记录时间 ' + $quota.ObservedAt.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } else { ' · 等待记录' })
         $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
@@ -209,24 +240,19 @@ function Update-Sessions($Snapshot = $null) {
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
         $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
         $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
-        $dotStates = New-Object 'System.Collections.Generic.List[string]'
         $alerts = @(Get-NewSessionAlerts $sessions $script:seenStates $script:bootstrapped $script:launchedAt)
         Restore-Reminders $sessions $script:seenStates $script:unread $script:savedReminders
         Update-ReminderStates $sessions $script:seenStates $script:unread $script:bootstrapped $script:launchedAt
-        if (-not $script:reminderError) {
-            try { Sync-ReminderStore $sessions $script:unread $script:savedReminders ([datetimeoffset]::UtcNow); Write-ReminderStore $script:reminderPath $script:savedReminders } catch { $script:reminderError = $true }
-        }
+        Save-CurrentReminders
         $selectedKey = if ($list.SelectedItems.Count -gt 0) { $list.SelectedItems[0].Name } else { $null }
         $list.BeginUpdate(); $list.Items.Clear()
         foreach ($s in $sessions) {
-            $state = $s.State
-            if ($s.Source -ne 'Codex Work' -and $state -eq 'running' -and ([datetimeoffset]::UtcNow - $s.Updated).TotalSeconds -ge 120) { $state = 'stalled' }
+            $state = Get-SessionDisplayState $s ([datetimeoffset]::UtcNow)
             if ($counts.ContainsKey($state)) { $counts[$state]++ }
             $label = switch ($state) { 'running' {'运行中'} 'waiting' {'等待回答'} 'approval' {'等待授权'} 'stalled' {'长时间无活动'} 'completed' {'本轮结束'} 'failed' {'失败'} 'interrupted' {'中断'} default {'未知'} }
             $row = New-Object Windows.Forms.ListViewItem($label)
             $row.Name = $s.Source + ':' + $s.Id
             $key = $row.Name
-            if ($state -in @('running','waiting','approval','stalled') -or ($state -in @('completed','failed') -and $script:unread.ContainsKey($key))) { $dotStates.Add($state) }
             $rate = if ($rates.ContainsKey($key)) { '{0:N1}' -f $rates[$key] } else { '—' }
             foreach ($value in @($s.Source, $s.Title, $s.Project, $s.Phase, $s.Model, $s.OutputTokens, $rate, $s.Updated.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))) { [void]$row.SubItems.Add([string]$value) }
             $row.Tag = $s
@@ -238,11 +264,11 @@ function Update-Sessions($Snapshot = $null) {
         $list.EndUpdate()
         $downShort = Format-NetworkRateShort $metrics.NetworkDown; $upShort = Format-NetworkRateShort $metrics.NetworkUp
         $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort"
-        if ($dotStates.Count -gt 6) { $summary = "状态$($dotStates.Count) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort" }
-        $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
-        Set-TrayIcon $orderedDots $summary
+        $script:traySummary = $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $script:taskbarDots = $orderedDots; $script:taskbarTokenSpeed = $tokenSpeed; $script:taskbarQuota = $quotaText
+        $script:taskbarTokenSpeed = $tokenSpeed; $script:taskbarQuota = $quotaText
+        Update-AgentDots
+        Set-TrayIcon $script:taskbarDots $summary
         Update-SystemDisplay $false
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
@@ -284,7 +310,7 @@ $toggleMetric = {
 $cpuMenu.Add_Click($toggleMetric); $gpuMenu.Add_Click($toggleMetric); $memoryMenu.Add_Click($toggleMetric)
 $quitButton.Add_Click({ $script:quitting = $true; $form.Close() })
 $notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') } })
-$markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
+$markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Save-CurrentReminders; Update-AgentDots } })
 $openRaw.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $item = $list.SelectedItems[0].Tag; $path = Resolve-ConversationPath $item $env:USERPROFILE; if ($path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $path + '"') } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地记录。', 'tokcat') } } })
 $exit.Add_Click({ $script:quitting = $true; $form.Close() })
 $tray.Add_DoubleClick({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
@@ -297,7 +323,7 @@ $metricsTimer = New-Object Windows.Forms.Timer; $metricsTimer.Interval = 1000
 $metricsTimer.Add_Tick({ try { Update-SystemDisplay } catch { $note.Text = '指标刷新失败：' + $_.Exception.Message } })
 $snapshotPoll = New-Object Windows.Forms.Timer; $snapshotPoll.Interval = 200
 $snapshotPoll.Add_Tick({
-    try { $snapshot = Receive-AgentSnapshot $script:snapshotReader; if ($null -ne $snapshot) { Update-Sessions $snapshot } }
+    try { $snapshot = Receive-AgentSnapshot $script:snapshotReader; if ($null -ne $snapshot) { Update-Sessions $snapshot }; Update-AgentDots }
     catch { $script:agentReadError = $true; $script:taskbarDots = @('unknown'); $note.Text = '任务读取失败：' + $_.Exception.Message; if ($SmokeTest) { $script:smokeError = $_.Exception.Message } }
 })
 $instanceTimer = New-Object Windows.Forms.Timer

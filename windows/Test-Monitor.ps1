@@ -8,6 +8,8 @@ $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
 function Assert-Equal($actual, $expected, $label) { if ($actual -ne $expected) { throw "$label : expected '$expected', got '$actual'" } }
 try {
+    & powershell.exe -NoProfile -File (Join-Path $PSScriptRoot 'Test-AgentPresentation.ps1')
+    Assert-Equal $LASTEXITCODE 0 'macOS-compatible agent dot lifecycle'
     & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Test-Taskbar.ps1')
     Assert-Equal $LASTEXITCODE 0 'native taskbar child, placement and host recovery'
     $metricPath = Join-Path $root 'taskbar-metrics.json'

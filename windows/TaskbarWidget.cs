@@ -46,6 +46,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     string textSignature;
     int inkTop, inkBottom;
     string[] states = new string[0];
+    bool[] dimmed = new bool[0];
     public ContextMenuStrip Menu { get; set; }
     public event EventHandler Clicked;
     public string Status { get; private set; }
@@ -77,6 +78,10 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     }
     public void SetContent(string[] dots, string line1, string line2) {
         states = dots ?? new string[0]; columns=new Column[] { new Column(line1,line2) }; ContentChanged();
+    }
+    public void SetDotDimming(bool[] values) {
+        dimmed=values??new bool[0];
+        if(Handle!=IntPtr.Zero) InvalidateRect(Handle,IntPtr.Zero,false);
     }
     public void SetMetrics(string[] dots,string speed,string quota,string upload,string download,string cpu,string gpu,string memory) {
         states=dots??new string[0]; var values=new List<Column>();
@@ -245,6 +250,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         for (int i=0;i<shown;i++) {
             var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
             float y=rows==1 ? (inkTop+inkBottom+1-diameter)/2f : inkTop+(float)Math.Round((inkBottom-inkTop+1-diameter)*(i%3)/(double)(rows-1));
+            if(i<dimmed.Length && dimmed[i]) color=Color.FromArgb(51,color);
             using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(float)Math.Round((3+(i/3)*11)*scale)+0.5f,y,diameter-1,diameter-1);
         }
         if(states.Length>6) using(var font=CreateTextFont(dpi)) {

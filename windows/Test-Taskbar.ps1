@@ -54,6 +54,11 @@ try {
         $preview.Save((Join-Path $env:TEMP 'tokcat-taskbar-preview.png'),[Drawing.Imaging.ImageFormat]::Png)
     } finally { $preview.Dispose() }
     $before=$widget.RenderPreview(96)
+    $widget.SetDotDimming(@($true,$true,$true,$true,$true,$true)); $dimmedPreview=$widget.RenderPreview(96)
+    try {
+        Assert-Taskbar (-not [TokcatTaskbarTestPixels]::SameRight($before,$dimmedPreview,$before.Width)) 'Reminder flashing must visibly dim the dots.'
+        Assert-Taskbar ([TokcatTaskbarTestPixels]::SameRight($before,$dimmedPreview,$before.Width-29)) 'Dot flashing must leave metric positions and glyphs unchanged.'
+    } finally { $dimmedPreview.Dispose(); $widget.SetDotDimming(@()) }
     $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'0.3 K/s','999 K/s',$null,$null,$null)
     $after=$widget.RenderPreview(96); $font=[TokcatTaskbarWidget]::CreateTextFont(96); $surface=New-Object Drawing.Bitmap(1,1); $graphics=[Drawing.Graphics]::FromImage($surface)
     try {

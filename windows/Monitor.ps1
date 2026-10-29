@@ -174,7 +174,8 @@ function Get-AgentSnapshot([string]$CodexHome, [string]$ProfileDirectory, [strin
     $activity = @(Get-ActivitySessions @((Join-Path $ProfileDirectory '.openclaw\agents')) 'OpenClaw') + @(Get-ActivitySessions $kimiRoots 'Kimi')
     $dshSessions = @(Get-DshSessions $dshHomes)
     $sessions = @(@(Get-CodexSessions $CodexHome) + $dshSessions + $workSessions + $buddySessions + $claudeSessions + $activity | Sort-Object Updated -Descending)
-    return [pscustomobject]@{ Sessions=$sessions; DshSessions=$dshSessions; Quota=(Get-CodexQuota $CodexHome); WorkError=$workError; BuddyError=$buddyError }
+    $workAvailable=-not $workError -and (Test-Path -LiteralPath (Join-Path $CodexHome 'sqlite\codex-dev.db'))
+    return [pscustomobject]@{ Sessions=$sessions; DshSessions=$dshSessions; Quota=(Get-CodexQuota $CodexHome); WorkError=$workError; WorkAvailable=$workAvailable; BuddyError=$buddyError }
 }
 
 function Get-ProjectionValue($Rows, [string]$Name) {
@@ -341,7 +342,7 @@ function Update-ReminderStates([object[]]$Sessions, [hashtable]$Seen, [hashtable
         $key = $session.Source + ':' + $session.Id
         $present[$key] = $true; $old = $Seen[$key]
         if ($session.State -in @('running','waiting','approval')) { $Unread.Remove($key) }
-        elseif ($Bootstrapped -and $session.State -in @('completed','failed')) {
+        elseif ($Bootstrapped -and $session.State -in @('completed','failed','interrupted')) {
             $newSession = $null -eq $old -and $session.Updated -ge $LaunchedAt
             $changedState = $null -ne $old -and $old.State -ne $session.State
             # Codex and Claude report turn-ending events; catalog timestamps for
@@ -509,7 +510,7 @@ function Read-ReminderStore([string]$Path) {
     if ((Get-Field $doc 'version') -ne 1 -or $null -eq $itemsProperty -or $itemsProperty.Value -isnot [array]) { throw 'Reminder store has an unsupported format.' }
     foreach ($item in $doc.items) {
         $key = Get-Field $item 'key'; $state = Get-Field $item 'state'; $updated = [datetimeoffset]::MinValue
-        if (-not ($key -is [string]) -or -not $key -or $state -notin @('completed','failed') -or -not [datetimeoffset]::TryParse([string](Get-Field $item 'updated'), [ref]$updated)) { throw 'Reminder store contains an invalid entry.' }
+        if (-not ($key -is [string]) -or -not $key -or $state -notin @('completed','failed','interrupted') -or -not [datetimeoffset]::TryParse([string](Get-Field $item 'updated'), [ref]$updated)) { throw 'Reminder store contains an invalid entry.' }
         $saved[$key] = [pscustomobject]@{ State=$state; Updated=$updated }
     }
     return $saved
@@ -529,7 +530,7 @@ function Restore-Reminders([object[]]$Sessions, [hashtable]$Seen, [hashtable]$Un
 function Sync-ReminderStore([object[]]$Sessions, [hashtable]$Unread, [hashtable]$Saved, [datetimeoffset]$Now) {
     foreach ($session in $Sessions) {
         $key = $session.Source + ':' + $session.Id
-        if ($Unread.ContainsKey($key) -and $session.State -in @('completed','failed')) { $Saved[$key] = [pscustomobject]@{ State=$session.State; Updated=$session.Updated } }
+        if ($Unread.ContainsKey($key) -and $session.State -in @('completed','failed','interrupted')) { $Saved[$key] = [pscustomobject]@{ State=$session.State; Updated=$session.Updated } }
         else { $Saved.Remove($key) }
     }
     # Unavailable sources do not erase unread reminders, but old records expire.
