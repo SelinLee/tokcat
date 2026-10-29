@@ -2,7 +2,11 @@
 
 [简体中文](README.zh-CN.md)
 
-Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Windows Forms are included with Windows; no API key is needed. A small always-on-top status strip appears by default at the lower-right edge of the work area, above the taskbar. It is a separate window and does not modify or embed itself into the Windows taskbar. Click it to open the monitor, or right-click it to hide the strip or quit. The main window also has **状态条** and **退出** buttons; visibility is remembered across restarts. Launching it again opens the existing monitor instead of creating another strip.
+Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Windows Forms are included with Windows; no API key is needed. Task dots and two lines of metrics are embedded as a native child window inside the primary horizontal taskbar, in free space near the notification area. The detail window starts hidden. Click the taskbar widget to open details; right-click it to hide it or quit. The detail window's **任务栏** button also toggles visibility. Launching the application again opens the existing detail window.
+
+Taskbar button bounds are observed in the background to choose free space, without resizing Explorer's button containers. If space is insufficient, layout cannot be read, or the taskbar is vertical, the widget hides and details report the reason. There is no floating-window fallback. The widget retries attachment after Explorer recreates the taskbar and hides with the taskbar. Layout supports scaling and negative coordinates; only the primary taskbar is targeted. Visibility is saved in `%LOCALAPPDATA%\Tokcat\taskbar.json`, independently of the previous floating-strip preference.
+
+On an interactive desktop, run `powershell.exe -NoProfile -STA -File .\windows\Test-Taskbar.ps1 -RealTaskbar` to verify the real Explorer parent, taskbar bounds and button avoidance. Ordinary package tests use an isolated host to test embedding, hiding, clicking and host recreation.
 
 GPU utilization appears in the monitor and status strip. It is the busiest engine across GPUs, sampled in the background from Windows performance counters. A dash means the counters are unavailable or still loading.
 

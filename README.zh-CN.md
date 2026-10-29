@@ -16,7 +16,7 @@
 
 ## Windows 预览版
 
-[`windows/`](windows/README.zh-CN.md) 提供 Windows 监控窗口、任务栏上方的悬浮状态条和通知区域图标，可查看 Codex、Codex Work、WorkBuddy、DeepSeek Harness 和 Claude Code 会话状态，以及 OpenClaw、Kimi 的活动记录。Claude 监控需要自行启用 hooks；这是独立的早期版本，尚未覆盖 macOS 版的全部功能和 Agent。
+[`windows/`](windows/README.zh-CN.md) 提供直接嵌入 Windows 任务栏内部的状态与指标、详情窗口和通知区域图标，可查看 Codex、Codex Work、WorkBuddy、DeepSeek Harness 和 Claude Code 会话状态，以及 OpenClaw、Kimi 的活动记录。Claude 监控需要自行启用 hooks；这是独立的早期版本，尚未覆盖 macOS 版的全部功能和 Agent。
 
 ## 安静贴在桌边的人形挂件
 

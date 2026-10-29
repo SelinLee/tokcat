@@ -8,6 +8,8 @@ $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
 function Assert-Equal($actual, $expected, $label) { if ($actual -ne $expected) { throw "$label : expected '$expected', got '$actual'" } }
 try {
+    & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Test-Taskbar.ps1')
+    Assert-Equal $LASTEXITCODE 0 'native taskbar child, placement and host recovery'
     $instanceName = 'tokcat-test-instance-' + [guid]::NewGuid()
     $firstInstance = Open-TokcatInstance $instanceName; $secondInstance = $null
     try {

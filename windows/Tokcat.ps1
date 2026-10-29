@@ -12,6 +12,7 @@ if (-not $instance.IsFirst) {
 }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+. (Join-Path $PSScriptRoot 'Load-TaskbarWidget.ps1')
 Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
 Add-Type -Path (Join-Path $PSScriptRoot 'GpuMetrics.cs') -ReferencedAssemblies System.Management.dll
 Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs')
@@ -42,7 +43,7 @@ $quotaLabel.Dock = 'Top'; $quotaLabel.Height = 27; $quotaLabel.Padding = New-Obj
 $quotaLabel.Text = 'Codex 本地额度：等待记录'
 $topBar = New-Object Windows.Forms.Panel; $topBar.Dock = 'Top'; $topBar.Height = 35
 $usageButton = New-Object Windows.Forms.Button; $usageButton.Text = '用量统计'; $usageButton.Width = 100; $usageButton.Dock = 'Left'
-$stripButton = New-Object Windows.Forms.Button; $stripButton.Text = '状态条'; $stripButton.Width = 78; $stripButton.Dock = 'Left'
+$stripButton = New-Object Windows.Forms.Button; $stripButton.Text = '任务栏'; $stripButton.Width = 100; $stripButton.Dock = 'Left'
 $quitButton = New-Object Windows.Forms.Button; $quitButton.Text = '退出'; $quitButton.Width = 65; $quitButton.Dock = 'Right'
 $quotaLabel.Dock = 'Fill'; $topBar.Controls.Add($quotaLabel); $topBar.Controls.Add($quitButton); $topBar.Controls.Add($stripButton); $topBar.Controls.Add($usageButton)
 $form.Controls.Add($list); $form.Controls.Add($note); $form.Controls.Add($topBar)
@@ -51,7 +52,7 @@ $open = $menu.Items.Add('打开监控窗口')
 $refresh = $menu.Items.Add('立即刷新')
 $usageMenu = $menu.Items.Add('用量统计')
 $notificationMenu = $menu.Items.Add('启用状态通知')
-$stripMenu = $menu.Items.Add('显示底部状态条')
+$stripMenu = $menu.Items.Add('显示任务栏监控')
 [void]$menu.Items.Add('-')
 $exit = $menu.Items.Add('退出 tokcat')
 $tray = New-Object Windows.Forms.NotifyIcon
@@ -69,21 +70,12 @@ try { $script:savedReminders = Read-ReminderStore $script:reminderPath } catch {
 $script:preferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\preferences.json'
 $script:preferenceError = $false
 try { $notificationMenu.Checked = Read-NotificationPreference $script:preferencePath } catch { $notificationMenu.Checked = $false; $script:preferenceError = $true }
-$script:stripPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\status-strip.json'
+$script:stripPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar.json'
 $script:stripPreferenceError = $false
 try { $script:stripEnabled = Read-StatusStripPreference $script:stripPreferencePath } catch { $script:stripEnabled = $true; $script:stripPreferenceError = $true }
 $stripMenu.Checked = $script:stripEnabled
-$strip = New-Object Windows.Forms.Form
-$strip.Text = 'tokcat · 底部状态条'; $strip.FormBorderStyle = 'None'; $strip.StartPosition = 'Manual'
-$strip.ShowInTaskbar = $false; $strip.TopMost = $true; $strip.Size = New-Object Drawing.Size(480,52)
-$strip.BackColor = [Drawing.Color]::FromArgb(30,35,45); $strip.ForeColor = [Drawing.Color]::White; $strip.Font = $form.Font
-$stripIcon = New-Object Windows.Forms.PictureBox; $stripIcon.Dock = 'Left'; $stripIcon.Width = 42; $stripIcon.SizeMode = 'CenterImage'
-$stripText = New-Object Windows.Forms.Label; $stripText.Dock = 'Fill'; $stripText.Padding = New-Object Windows.Forms.Padding(2,4,2,2); $stripText.AutoEllipsis = $true
-$stripText.Text = 'tokcat 正在读取状态…'
-$strip.Controls.Add($stripText); $strip.Controls.Add($stripIcon)
-$strip.ContextMenuStrip = $menu; $stripText.ContextMenuStrip = $menu; $stripIcon.ContextMenuStrip = $menu
-$stripTip = New-Object Windows.Forms.ToolTip
-$stripTip.SetToolTip($stripText, '单击打开 tokcat，右键可隐藏状态条或退出。')
+$taskbarWidget = New-Object TokcatTaskbarWidget
+$taskbarWidget.Menu = $menu
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $openRaw = $listMenu.Items.Add('打开原始记录')
@@ -109,8 +101,6 @@ function Set-TrayIcon([string[]]$States, [string]$Text) {
     [void][Tokcat.Native]::DestroyIcon($handle)
     $tray.Icon = $newIcon
     $form.Icon = $newIcon
-    $newStripImage = $newIcon.ToBitmap(); $oldStripImage = $stripIcon.Image; $stripIcon.Image = $newStripImage
-    if ($oldStripImage) { $oldStripImage.Dispose() }
     if ($script:icon) { $script:icon.Dispose() }; $script:icon = $newIcon
     $tray.Text = if ($Text.Length -gt 63) { $Text.Substring(0,63) } else { $Text }
     $graphics.Dispose(); $bitmap.Dispose()
@@ -119,15 +109,11 @@ function Set-TrayIcon([string[]]$States, [string]$Text) {
 function Set-StatusStrip([bool]$Enabled, [bool]$Persist = $true) {
     if ($Persist) {
         try { Write-StatusStripPreference $script:stripPreferencePath $Enabled; $script:stripPreferenceError = $false }
-        catch { $script:stripPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存状态条设置。', 'tokcat'); return }
+        catch { $script:stripPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存任务栏显示设置。', 'tokcat'); return }
     }
     $script:stripEnabled = $Enabled; $stripMenu.Checked = $Enabled
-    $stripButton.Text = if ($Enabled) { '隐藏状态条' } else { '显示状态条' }
-    if ($Enabled) {
-        $area = [Windows.Forms.Screen]::FromControl($form).WorkingArea
-        $strip.Location = New-Object Drawing.Point([math]::Max($area.Left, $area.Right - $strip.Width - 8), [math]::Max($area.Top, $area.Bottom - $strip.Height - 8))
-        $strip.Show()
-    } else { $strip.Hide() }
+    $stripButton.Text = if ($Enabled) { '隐藏任务栏' } else { '显示任务栏' }
+    $taskbarWidget.SetEnabled($Enabled -and -not $SmokeTest)
 }
 
 function Format-NetworkRate($BytesPerSecond) {
@@ -241,7 +227,7 @@ function Update-Sessions {
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $stripText.Text = "运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled) · $quotaText`nCPU $cpu · GPU $gpu · 内存 $memory · ↓$downShort ↑$upShort · $tokenSpeed tok/s"
+        $taskbarWidget.SetContent($orderedDots, "运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · $tokenSpeed tok/s · $quotaText", "CPU $cpu · GPU $gpu · 内存 $memory · ↓$downShort ↑$upShort")
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
                 $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
@@ -256,6 +242,7 @@ function Update-Sessions {
         $note.Text = '刷新失败：' + $_.Exception.Message
         if ($SmokeTest) { $script:smokeError = $_.Exception.Message }
         Set-TrayIcon @('unknown') 'tokcat: 读取失败，请打开窗口查看'
+        $taskbarWidget.SetContent(@('unknown'), 'tokcat 读取失败', '单击查看详情')
     } finally { $script:scanning = $false }
 }
 
@@ -266,7 +253,7 @@ $usageButton.Add_Click({ Show-UsageWindow $form $CodexHome })
 $toggleStrip = { Set-StatusStrip (-not $script:stripEnabled) }
 $stripMenu.Add_Click($toggleStrip); $stripButton.Add_Click($toggleStrip)
 $showMain = { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }
-$strip.Add_Click($showMain); $stripText.Add_Click($showMain); $stripIcon.Add_Click($showMain)
+$taskbarWidget.Add_Clicked($showMain)
 $quitButton.Add_Click({ $script:quitting = $true; $form.Close() })
 $notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') } })
 $markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
@@ -280,22 +267,19 @@ $timer.Interval = 5000
 $timer.Add_Tick({ Update-Sessions })
 $instanceTimer = New-Object Windows.Forms.Timer
 $instanceTimer.Interval = 500
-$instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() } })
+$instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }; if ($script:stripEnabled -and $taskbarWidget.Status -ne 'Embedded') { $quotaLabel.Text = '任务栏监控暂不可用：' + $(switch ($taskbarWidget.Status) { 'No free taskbar space' { '任务栏空间不足' } 'Waiting for taskbar layout' { '正在读取布局' } default { '等待任务栏恢复' } }) } })
 Set-TrayIcon @('unknown') 'tokcat: 正在读取 Codex 会话'
-$form.Add_Shown({ Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false; $form.Activate() } else { $stripButton.Text = '显示状态条' }; $timer.Start(); $instanceTimer.Start() })
+$form.Add_Shown({ Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $instanceTimer.Start(); if (-not $SmokeTest) { $form.Hide() } })
 if ($SmokeTest) {
     $smokeTimer = New-Object Windows.Forms.Timer
     $smokeTimer.Interval = 1000
     $smokeTimer.Add_Tick({
         $smokeTimer.Stop()
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
-        if (-not $strip.Visible -or -not $strip.TopMost -or $null -eq $stripIcon.Image -or -not $stripText.Text.Contains('CPU') -or -not $stripText.Text.Contains('GPU')) { $script:smokeError = 'Bottom status strip was not initialized.' }
-        $workingArea = [Windows.Forms.Screen]::FromControl($form).WorkingArea
-        if ($strip.Right -gt $workingArea.Right -or $strip.Bottom -gt $workingArea.Bottom -or $strip.Left -lt $workingArea.Left -or $strip.Top -lt $workingArea.Top) { $script:smokeError = 'Bottom status strip is outside the screen work area.' }
         $stripButton.PerformClick()
-        if ($strip.Visible -or $stripMenu.Checked) { $script:smokeError = 'Bottom status strip did not hide.' }
+        if ($taskbarWidget.Visible -or $stripMenu.Checked) { $script:smokeError = 'Taskbar widget did not hide.' }
         $stripButton.PerformClick()
-        if (-not $strip.Visible -or -not $stripMenu.Checked) { $script:smokeError = 'Bottom status strip did not reappear.' }
+        if (-not $stripMenu.Checked) { $script:smokeError = 'Taskbar widget was not enabled.' }
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $testRow = @($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' } | Select-Object -First 1)
         if ($testRow.Count -gt 0) { Show-AgentConversation $testRow[0].Tag $true }
@@ -315,5 +299,5 @@ if ($SmokeTest) {
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() } else { $gpuSampler.Stop() }; $tray.Visible = $false; $tray.Dispose(); $stripTip.Dispose(); if ($stripIcon.Image) { $stripIcon.Image.Dispose() }; $strip.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() } else { $gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }
