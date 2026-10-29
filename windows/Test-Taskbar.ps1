@@ -25,6 +25,17 @@ try {
     Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU 10%')) 'Taskbar metrics must be exposed as accessible window text.'
     [void][TokcatTaskbarTestInput]::SendMessage($widget.Handle,0x0202,[IntPtr]::Zero,[IntPtr]::Zero)
     Assert-Taskbar $script:taskbarClicked 'Clicking the taskbar widget must raise the details action.'
+    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s','5h 80% / week 40%','15K/s','161K/s',$null,$null,$null)
+    Assert-Taskbar ($widget.PreferredWidth(96) -lt 300) 'Default metrics must size tightly to their content.'
+    Assert-Taskbar (-not [TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU')) 'CPU must be omitted when disabled.'
+    $preview=$widget.RenderPreview(96)
+    try {
+        Assert-Taskbar ($preview.GetPixel(0,0).A -eq 0) 'The taskbar background must be transparent.'
+        Assert-Taskbar ($preview.GetPixel(6,8).ToArgb() -eq [Drawing.Color]::Goldenrod.ToArgb()) 'First dot must start the first vertical column.'
+        Assert-Taskbar ($preview.GetPixel(6,24).ToArgb() -eq [Drawing.Color]::OrangeRed.ToArgb()) 'Second dot must be below the first dot.'
+        Assert-Taskbar ($preview.GetPixel(17,8).ToArgb() -eq [Drawing.Color]::ForestGreen.ToArgb()) 'Fourth dot must start the second column.'
+        $preview.Save((Join-Path $env:TEMP 'tokcat-taskbar-preview.png'),[Drawing.Imaging.ImageFormat]::Png)
+    } finally { $preview.Dispose() }
     $widget.SetEnabled($false)
     Assert-Taskbar (-not $widget.Visible) 'Disabling the taskbar widget must hide it.'
     $hostForm.Close(); $hostForm.Dispose()

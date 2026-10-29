@@ -53,6 +53,10 @@ $refresh = $menu.Items.Add('立即刷新')
 $usageMenu = $menu.Items.Add('用量统计')
 $notificationMenu = $menu.Items.Add('启用状态通知')
 $stripMenu = $menu.Items.Add('显示任务栏监控')
+$metricsMenu = $menu.Items.Add('任务栏指标')
+$cpuMenu = $metricsMenu.DropDownItems.Add('CPU'); $cpuMenu.Tag = 'Cpu'
+$gpuMenu = $metricsMenu.DropDownItems.Add('GPU'); $gpuMenu.Tag = 'Gpu'
+$memoryMenu = $metricsMenu.DropDownItems.Add('内存'); $memoryMenu.Tag = 'Memory'
 [void]$menu.Items.Add('-')
 $exit = $menu.Items.Add('退出 tokcat')
 $tray = New-Object Windows.Forms.NotifyIcon
@@ -60,8 +64,11 @@ $tray.ContextMenuStrip = $menu; $tray.Visible = $true
 $script:icon = $null; $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
 $script:dshBaseline = @{}; $script:dshUsagePath = Join-Path $env:LOCALAPPDATA 'Tokcat\dsh-usage.jsonl'; $script:dshUsageError = $false
-$gpuSampler = New-Object TokcatGpuMetrics
-if (-not $SmokeTest) { $gpuSampler.Start() }
+$script:metricsPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar-metrics.json'; $script:metricsPreferenceError = $false
+try { $script:taskbarMetrics = Read-TaskbarMetricsPreference $script:metricsPreferencePath } catch { $script:taskbarMetrics = [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false }; $script:metricsPreferenceError = $true }
+$cpuMenu.Checked = $script:taskbarMetrics.Cpu; $gpuMenu.Checked = $script:taskbarMetrics.Gpu; $memoryMenu.Checked = $script:taskbarMetrics.Memory
+$script:gpuSampler = $null
+if ($script:taskbarMetrics.Gpu -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
 $script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
 $script:launchedAt = [datetimeoffset]::UtcNow
 $script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
@@ -189,7 +196,7 @@ function Update-Sessions {
         $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
         $metrics = [TokcatSystemMetrics]::Sample()
         $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
-        $gpuValue = $gpuSampler.Read()
+        $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
         $gpu = if ($null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } else { '—' }
         $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
         $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
@@ -227,7 +234,7 @@ function Update-Sessions {
         $orderedDots = @($dotStates | Sort-Object { switch ($_) { 'waiting' { 0 } 'approval' { 0 } 'failed' { 1 } 'stalled' { 2 } 'running' { 3 } 'completed' { 4 } default { 5 } } })
         Set-TrayIcon $orderedDots $summary
         $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $taskbarWidget.SetContent($orderedDots, "运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · $tokenSpeed tok/s · $quotaText", "CPU $cpu · GPU $gpu · 内存 $memory · ↓$downShort ↑$upShort")
+        $taskbarWidget.SetMetrics($orderedDots, "$tokenSpeed tok/s", $quotaText, ($upShort + '/s'), ($downShort + '/s'), $(if ($script:taskbarMetrics.Cpu) { $cpu } else { $null }), $(if ($script:taskbarMetrics.Gpu) { $gpu } else { $null }), $(if ($script:taskbarMetrics.Memory) { $memory } else { $null }))
         if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
             $detail = if ($alerts.Count -eq 1) {
                 $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
@@ -254,6 +261,17 @@ $toggleStrip = { Set-StatusStrip (-not $script:stripEnabled) }
 $stripMenu.Add_Click($toggleStrip); $stripButton.Add_Click($toggleStrip)
 $showMain = { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }
 $taskbarWidget.Add_Clicked($showMain)
+$toggleMetric = {
+    param($sender,$event)
+    $value = [pscustomobject]@{ Cpu=$script:taskbarMetrics.Cpu; Gpu=$script:taskbarMetrics.Gpu; Memory=$script:taskbarMetrics.Memory }
+    $key = [string]$sender.Tag; $value.$key = -not $value.$key
+    try { Write-TaskbarMetricsPreference $script:metricsPreferencePath $value.Cpu $value.Gpu $value.Memory; $script:metricsPreferenceError = $false } catch { $script:metricsPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form,'无法保存任务栏指标设置。','tokcat'); return }
+    $script:taskbarMetrics = $value; $cpuMenu.Checked = $value.Cpu; $gpuMenu.Checked = $value.Gpu; $memoryMenu.Checked = $value.Memory
+    if ($value.Gpu -and -not $script:gpuSampler -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
+    elseif (-not $value.Gpu -and $script:gpuSampler) { $script:gpuSampler.Stop(); $script:gpuSampler = $null }
+    Update-Sessions
+}
+$cpuMenu.Add_Click($toggleMetric); $gpuMenu.Add_Click($toggleMetric); $memoryMenu.Add_Click($toggleMetric)
 $quitButton.Add_Click({ $script:quitting = $true; $form.Close() })
 $notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') } })
 $markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Update-Sessions } })
@@ -280,6 +298,10 @@ if ($SmokeTest) {
         if ($taskbarWidget.Visible -or $stripMenu.Checked) { $script:smokeError = 'Taskbar widget did not hide.' }
         $stripButton.PerformClick()
         if (-not $stripMenu.Checked) { $script:smokeError = 'Taskbar widget was not enabled.' }
+        if ($cpuMenu.Checked -or $gpuMenu.Checked -or $memoryMenu.Checked) { $script:smokeError = 'Taskbar hardware metrics must be off by default.' }
+        $cpuMenu.PerformClick()
+        if (-not $cpuMenu.Checked -or -not (Read-TaskbarMetricsPreference $script:metricsPreferencePath).Cpu) { $script:smokeError = 'Taskbar metric toggle did not persist.' }
+        $cpuMenu.PerformClick()
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $testRow = @($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' } | Select-Object -First 1)
         if ($testRow.Count -gt 0) { Show-AgentConversation $testRow[0].Tag $true }
@@ -299,5 +321,5 @@ if ($SmokeTest) {
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() } else { $gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }

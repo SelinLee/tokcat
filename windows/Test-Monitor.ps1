@@ -10,6 +10,15 @@ function Assert-Equal($actual, $expected, $label) { if ($actual -ne $expected) {
 try {
     & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Test-Taskbar.ps1')
     Assert-Equal $LASTEXITCODE 0 'native taskbar child, placement and host recovery'
+    $metricPath = Join-Path $root 'taskbar-metrics.json'
+    $metricDefaults = Read-TaskbarMetricsPreference $metricPath
+    Assert-Equal $metricDefaults.Cpu $false 'taskbar CPU disabled by default'
+    Assert-Equal $metricDefaults.Gpu $false 'taskbar GPU disabled by default'
+    Assert-Equal $metricDefaults.Memory $false 'taskbar memory disabled by default'
+    Write-TaskbarMetricsPreference $metricPath $true $false $true
+    $metricSaved = Read-TaskbarMetricsPreference $metricPath
+    Assert-Equal $metricSaved.Cpu $true 'taskbar metric choice persists'
+    Assert-Equal $metricSaved.Memory $true 'taskbar memory choice persists'
     $instanceName = 'tokcat-test-instance-' + [guid]::NewGuid()
     $firstInstance = Open-TokcatInstance $instanceName; $secondInstance = $null
     try {

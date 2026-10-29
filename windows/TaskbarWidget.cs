@@ -37,7 +37,9 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     Layout latest;
     volatile bool enabled, disposed;
     bool started;
-    string first = "tokcat", second = "";
+    sealed class Column { public string Top, Bottom; public Column(string top,string bottom) { Top=top??""; Bottom=bottom??""; } }
+    readonly Color transparent = Color.FromArgb(1,0,1);
+    Column[] columns = new Column[] { new Column("tokcat","") };
     string[] states = new string[0];
     public ContextMenuStrip Menu { get; set; }
     public event EventHandler Clicked;
@@ -68,8 +70,24 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         else { timer.Stop(); if (Handle != IntPtr.Zero) ShowWindow(Handle, 0); Status = "Hidden"; }
     }
     public void SetContent(string[] dots, string line1, string line2) {
-        states = dots ?? new string[0]; first = line1 ?? ""; second = line2 ?? "";
-        if (Handle != IntPtr.Zero) { SetWindowText(Handle,"tokcat: "+first+" | "+second); InvalidateRect(Handle, IntPtr.Zero, false); }
+        states = dots ?? new string[0]; columns=new Column[] { new Column(line1,line2) }; ContentChanged();
+    }
+    public void SetMetrics(string[] dots,string speed,string quota,string upload,string download,string cpu,string gpu,string memory) {
+        states=dots??new string[0]; var values=new List<Column>(); values.Add(new Column(speed,quota));
+        if(!string.IsNullOrEmpty(cpu)) values.Add(new Column("CPU",cpu)); if(!string.IsNullOrEmpty(gpu)) values.Add(new Column("GPU",gpu)); if(!string.IsNullOrEmpty(memory)) values.Add(new Column("MEM",memory));
+        values.Add(new Column("\u2191 "+upload,"\u2193 "+download)); columns=values.ToArray(); ContentChanged();
+    }
+    string ContentCaption() { var values=new List<string>(); foreach(var c in columns) values.Add(c.Top+" / "+c.Bottom); return "tokcat: "+string.Join(" | ",values.ToArray()); }
+    void ContentChanged() {
+        if (Handle != IntPtr.Zero) { SetWindowText(Handle,ContentCaption()); InvalidateRect(Handle, IntPtr.Zero, false); }
+        if(enabled) RefreshAttachment();
+    }
+    int DotsWidth(float scale) { int count=Math.Min(6,states.Length); return (int)((count>3?25:count>0?14:0)*scale) + (states.Length>6?(int)(25*scale):0); }
+    int ColumnWidth(Column c,Font font) { var flags=TextFormatFlags.NoPadding|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix; return Math.Max(TextRenderer.MeasureText(c.Top,font,Size.Empty,flags).Width,TextRenderer.MeasureText(c.Bottom,font,Size.Empty,flags).Width); }
+    public int PreferredWidth(uint dpi) {
+        float scale=(dpi==0?96:dpi)/96f; int width=DotsWidth(scale)+(int)(6*scale);
+        using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) foreach(var c in columns) width+=ColumnWidth(c,font)+(int)(8*scale);
+        return Math.Max((int)(100*scale),width);
     }
 
     // Rectangles are physical screen coordinates; supports negative monitor origins.
@@ -126,7 +144,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
                     }
                 } catch (Exception ex) { layout.Error = ex.GetType().Name; }
                 lock (gate) { latest = layout; }
-            } while (!stop.WaitOne(1500));
+            } while (!stop.WaitOne(3000));
         } finally { stop.Dispose(); }
     }
     public void RefreshAttachment() {
@@ -137,7 +155,8 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
             Status = layout == null ? "Waiting for taskbar layout" : layout.Error ?? "Taskbar layout expired"; return;
         }
         double scale = layout.Dpi/96.0;
-        var slot = FindSlot(layout.Bounds, layout.Occupied, (int)(480*scale), (int)(270*scale), (int)Math.Ceiling(8*scale));
+        int width=PreferredWidth(layout.Dpi);
+        var slot = FindSlot(layout.Bounds, layout.Occupied, width, width, (int)Math.Ceiling(8*scale));
         if (slot.IsEmpty) { if (Handle != IntPtr.Zero) ShowWindow(Handle, 0); Status = "No free taskbar space"; return; }
         try { Attach(layout.Host, new Rectangle(slot.Left-layout.Bounds.Left, slot.Top-layout.Bounds.Top, slot.Width, slot.Height)); }
         catch (Exception ex) { if (Handle!=IntPtr.Zero) ShowWindow(Handle,0); Status="Taskbar embedding failed: "+ex.GetType().Name; }
@@ -146,9 +165,9 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         if (Handle != IntPtr.Zero && GetParent(Handle) != parent) DestroyHandle();
         if (Handle == IntPtr.Zero) {
             CreateHandle(new CreateParams { Caption="tokcat taskbar", Parent=parent, Style=WS_CHILD|WS_CLIPSIBLINGS, ExStyle=0x08080080 });
-            if(!SetLayeredWindowAttributes(Handle,0,255,2)) { DestroyHandle(); Status="Taskbar rendering failed"; return; }
+            if(!SetLayeredWindowAttributes(Handle,0x00010001,0,1)) { DestroyHandle(); Status="Taskbar rendering failed"; return; }
         }
-        SetWindowText(Handle,"tokcat: "+first+" | "+second);
+        SetWindowText(Handle,ContentCaption());
         if (GetParent(Handle) != parent) { ShowWindow(Handle, 0); Status="Taskbar embedding failed"; return; }
         if (!SetWindowPos(Handle, IntPtr.Zero, clientBounds.X, clientBounds.Y, clientBounds.Width, clientBounds.Height, 0x0010|0x0040)) { Status="Taskbar positioning failed"; ShowWindow(Handle, 0); return; }
         Status="Embedded"; InvalidateRect(Handle, IntPtr.Zero, false);
@@ -157,7 +176,7 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     protected override void WndProc(ref Message m) {
         if (m.Msg == 0x000F) {
             PAINTSTRUCT paint; IntPtr dc = BeginPaint(Handle, out paint);
-            try { using (var graphics=Graphics.FromHdc(dc)) Paint(graphics); } finally { EndPaint(Handle, ref paint); }
+            try { using (var graphics=Graphics.FromHdc(dc)) Paint(graphics,WindowBounds.Size,GetDpiForWindow(Handle)); } finally { EndPaint(Handle, ref paint); }
             m.Result=IntPtr.Zero; return;
         }
         if (m.Msg == 0x0014) { m.Result=new IntPtr(1); return; }
@@ -166,22 +185,27 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         if (m.Msg == 0x0021) { m.Result=new IntPtr(3); return; } // MA_NOACTIVATE
         base.WndProc(ref m);
     }
-    void Paint(Graphics g) {
-        var bounds=WindowBounds; if (bounds.IsEmpty) return;
-        uint dpi=GetDpiForWindow(Handle); float scale=(dpi==0?96:dpi)/96f;
+    public Bitmap RenderPreview(uint dpi) { var bitmap=new Bitmap(PreferredWidth(dpi),(int)(48*(dpi==0?96:dpi)/96.0)); using(var graphics=Graphics.FromImage(bitmap)) Paint(graphics,bitmap.Size,dpi); bitmap.MakeTransparent(transparent); return bitmap; }
+    void Paint(Graphics g, Size bounds, uint dpi) {
+        if (bounds.IsEmpty) return; float scale=(dpi==0?96:dpi)/96f;
         bool light=false;
         try { using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) light=key!=null && Convert.ToInt32(key.GetValue("SystemUsesLightTheme",0))!=0; } catch {}
-        var background=light?Color.FromArgb(240,240,240):Color.FromArgb(32,32,32); var foreground=light?Color.FromArgb(20,20,20):Color.White;
+        var background=transparent; var foreground=light?Color.FromArgb(20,20,20):Color.White;
         g.Clear(background); g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         for (int i=0;i<Math.Min(6,states.Length);i++) {
             var color=Color.Gray; switch(states[i]) { case "running":color=Color.Goldenrod;break;case "waiting":case "approval":color=Color.OrangeRed;break;case "failed":color=Color.Red;break;case "stalled":color=Color.DarkOrange;break;case "completed":color=Color.ForestGreen;break; }
-            using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(3+(i%3)*10)*scale,(bounds.Height/scale/2-10+(i/3)*11)*scale,8*scale,8*scale);
+            using(var brush=new SolidBrush(color)) g.FillEllipse(brush,(3+(i/3)*11)*scale,(bounds.Height/3f*(i%3)+bounds.Height/6f-3.5f*scale),7*scale,7*scale);
         }
-        int left=(int)(38*scale), padding=(int)(3*scale); int half=bounds.Height/2;
+        int left=DotsWidth(scale)+(int)(6*scale), padding=(int)(3*scale); int half=bounds.Height/2;
         using(var font=new Font("Microsoft YaHei UI",11*scale,FontStyle.Regular,GraphicsUnit.Pixel)) {
             var flags=TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix;
-            TextRenderer.DrawText(g,first,font,new Rectangle(left,padding,Math.Max(0,bounds.Width-left-4),half-padding),foreground,background,flags);
-            TextRenderer.DrawText(g,second,font,new Rectangle(left,half,Math.Max(0,bounds.Width-left-4),half-padding),foreground,background,flags);
+            if(states.Length>6) TextRenderer.DrawText(g,"+"+(states.Length-6),font,new Rectangle((int)(25*scale),0,(int)(25*scale),bounds.Height),foreground,background,flags);
+            foreach(var c in columns) {
+                int width=ColumnWidth(c,font);
+                TextRenderer.DrawText(g,c.Top,font,new Rectangle(left,padding,width,half-padding),foreground,background,flags);
+                TextRenderer.DrawText(g,c.Bottom,font,new Rectangle(left,half,width,half-padding),foreground,background,flags);
+                left+=width+(int)(8*scale);
+            }
         }
     }
     public void Dispose() { if (disposed) return; disposed=true; timer.Stop(); timer.Dispose(); if(started) stop.Set(); else stop.Dispose(); if(Handle!=IntPtr.Zero) DestroyHandle(); }

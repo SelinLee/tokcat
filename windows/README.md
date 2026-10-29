@@ -4,11 +4,13 @@
 
 Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Windows Forms are included with Windows; no API key is needed. Task dots and two lines of metrics are embedded as a native child window inside the primary horizontal taskbar, in free space near the notification area. The detail window starts hidden. Click the taskbar widget to open details; right-click it to hide it or quit. The detail window's **任务栏** button also toggles visibility. Launching the application again opens the existing detail window.
 
+The background is transparent and the width follows the content. Task dots are stacked three per column, with a second column for the next three and an overflow count beyond six. Running/waiting count labels are omitted. Output tok/s sits above Codex quota; upload sits above download in the right-hand column. CPU, GPU and memory are off by default and can be enabled through **任务栏指标** in the context menu. Choices are saved in `%LOCALAPPDATA%\Tokcat\taskbar-metrics.json`; GPU sampling stops when GPU is disabled.
+
 Taskbar button bounds are observed in the background to choose free space, without resizing Explorer's button containers. If space is insufficient, layout cannot be read, or the taskbar is vertical, the widget hides and details report the reason. There is no floating-window fallback. The widget retries attachment after Explorer recreates the taskbar and hides with the taskbar. Layout supports scaling and negative coordinates; only the primary taskbar is targeted. Visibility is saved in `%LOCALAPPDATA%\Tokcat\taskbar.json`, independently of the previous floating-strip preference.
 
 On an interactive desktop, run `powershell.exe -NoProfile -STA -File .\windows\Test-Taskbar.ps1 -RealTaskbar` to verify the real Explorer parent, taskbar bounds and button avoidance. Ordinary package tests use an isolated host to test embedding, hiding, clicking and host recreation.
 
-GPU utilization appears in the monitor and status strip. It is the busiest engine across GPUs, sampled in the background from Windows performance counters. A dash means the counters are unavailable or still loading.
+When enabled, GPU utilization is the busiest engine across GPUs, sampled in the background from Windows performance counters. A dash means the counters are unavailable or still loading.
 
 The usage window also has a separate **CC Switch 代理** view of `%USERPROFILE%\.cc-switch\cc-switch.db`. It groups proxy requests by application, model and provider, excludes imported records, and reads at most the latest 100,000 requests in the selected period. Proxy requests can overlap with agent logs, so the views must not be added together. Costs greater than zero are those recorded by the proxy, not an actual bill; zero or invalid costs are shown as unpriced. Usage outside the proxy is not included in that view.
 

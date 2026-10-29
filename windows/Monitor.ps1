@@ -353,6 +353,24 @@ function Write-StatusStripPreference([string]$Path, [bool]$Visible) {
     if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
 }
 
+function Read-TaskbarMetricsPreference([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { return [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false } }
+    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
+    if ((Get-Field $doc 'version') -ne 1) { throw 'Taskbar metric settings have an unsupported format.' }
+    foreach ($name in @('Cpu','Gpu','Memory')) { if ((Get-Field $doc $name) -isnot [bool]) { throw 'Taskbar metric settings must be boolean.' } }
+    return [pscustomobject]@{ Cpu=$doc.Cpu; Gpu=$doc.Gpu; Memory=$doc.Memory }
+}
+
+function Write-TaskbarMetricsPreference([string]$Path, [bool]$Cpu, [bool]$Gpu, [bool]$Memory) {
+    $directory = [IO.Path]::GetDirectoryName($Path); [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $json = [pscustomobject]@{ version=1; Cpu=$Cpu; Gpu=$Gpu; Memory=$Memory } | ConvertTo-Json
+    $tmp = Join-Path $directory ('.metrics-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($tmp, $Path, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($tmp, $Path) }
+    } finally { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } }
+}
+
 function Convert-QuotaNumber($Value) {
     if ($null -eq $Value -or $Value -is [bool]) { return $null }
     $number = 0.0
