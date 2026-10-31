@@ -3,24 +3,31 @@
     $window = New-Object Windows.Forms.Form
     $window.Text = 'tokcat · Agent 用量统计'; $window.Size = New-Object Drawing.Size(1180,600)
     $window.MinimumSize = New-Object Drawing.Size(650,350); $window.StartPosition = 'CenterParent'; $window.Font = $Owner.Font
+    [TokcatUi]::StyleWindow($window)
+    $window.MinimumSize = New-Object Drawing.Size(1040,560)
     $controls = New-Object Windows.Forms.FlowLayoutPanel
-    $controls.Dock = 'Top'; $controls.Height = 38
+    $controls.Dock = 'Top'; $controls.Height = 54; $controls.WrapContents = $false
     $caption = New-Object Windows.Forms.Label; $caption.Text = '统计周期：'; $caption.AutoSize = $true; $caption.Padding = New-Object Windows.Forms.Padding(4,8,0,0)
     $period = New-Object Windows.Forms.ComboBox; $period.DropDownStyle = 'DropDownList'; $period.Width = 105
     [void]$period.Items.AddRange(@('今天','近 7 天','近 30 天')); $period.SelectedIndex = 1
     $sourceLabel = New-Object Windows.Forms.Label; $sourceLabel.Text = '数据来源：'; $sourceLabel.AutoSize = $true; $sourceLabel.Padding = New-Object Windows.Forms.Padding(4,8,0,0)
     $source = New-Object Windows.Forms.ComboBox; $source.DropDownStyle = 'DropDownList'; $source.Width = 160
     [void]$source.Items.AddRange(@('Agent 本地日志','CC Switch 代理')); $source.SelectedIndex = if ($TestProxy) { 1 } else { 0 }
-    $refresh = New-Object Windows.Forms.Button; $refresh.Text = '重新读取'; $refresh.Width = 100
-    $editPrices = New-Object Windows.Forms.Button; $editPrices.Text = '编辑参考单价'; $editPrices.Width = 120
+    $refresh = [TokcatUi]::Button('重新读取', 'refresh', $false); $refresh.Width = 120
+    $editPrices = [TokcatUi]::Button('编辑参考单价', 'record', $false); $editPrices.Width = 150
     $controls.Controls.Add($caption); $controls.Controls.Add($period); $controls.Controls.Add($sourceLabel); $controls.Controls.Add($source); $controls.Controls.Add($refresh); $controls.Controls.Add($editPrices)
+    [TokcatUi]::StyleToolbar($controls)
     $list = New-Object Windows.Forms.ListView
-    $list.Dock = 'Fill'; $list.View = 'Details'; $list.FullRowSelect = $true; $list.GridLines = $true
+    $list.Dock = 'Fill'; [TokcatUi]::StyleList($list)
     foreach ($column in @(@('日期',110),@('来源',105),@('模型',180),@('提供方',120),@('输入',105),@('缓存读取',105),@('缓存写入',105),@('输出',105),@('参考估价 USD',130),@('未计价 tokens',130))) { [void]$list.Columns.Add($column[0], $column[1]) }
+    foreach ($index in 4..9) { $list.Columns[$index].TextAlign = 'Right' }
     $summary = New-Object Windows.Forms.Label
-    $summary.Dock = 'Bottom'; $summary.Height = 72; $summary.Padding = New-Object Windows.Forms.Padding(8,5,0,0)
+    $summary.Dock = 'Bottom'; $summary.Height = 90; $summary.Padding = New-Object Windows.Forms.Padding(14,12,14,6); $summary.ForeColor = [TokcatUi]::Secondary
     $summary.Text = '正在读取本地 Agent 日志…'
     $window.Controls.Add($list); $window.Controls.Add($summary); $window.Controls.Add($controls)
+    $heading = [TokcatUi]::Label('用量统计  /  USAGE', 18, [TokcatUi]::Text)
+    $heading.Dock = 'Top'; $heading.Height = 66; $heading.Padding = New-Object Windows.Forms.Padding(14,16,0,0)
+    $window.Controls.Add($heading)
     $context = [pscustomobject]@{ Worker=$null; Handle=$null; Done=$false; Error=$null; Deadline=[datetimeoffset]::UtcNow.AddSeconds(45) }
     $poll = New-Object Windows.Forms.Timer; $poll.Interval = 300
     $resolvePrice = ${function:Get-UsagePricePath}

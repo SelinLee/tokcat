@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $testRoot = Join-Path $tempParent ('tokcat-package-test-' + [guid]::NewGuid().ToString('N'))
 try {
@@ -10,7 +10,7 @@ try {
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Package was not created.' }
     Expand-Archive -LiteralPath $archive -DestinationPath $extract
     $package = Join-Path $extract 'tokcat-windows'
-    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Instance.ps1','Monitor.ps1','AgentPresentation.ps1','ForegroundAgent.cs','Test-AgentPresentation.ps1','Conversation.ps1','Usage.ps1','UsageWindow.ps1','UsagePricing.json','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','GpuMetrics.cs','TaskbarWidget.cs','Load-TaskbarWidget.ps1','Test-Taskbar.ps1','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
+    foreach ($file in @('Tokcat.cmd','Tokcat.ps1','Instance.ps1','Monitor.ps1','AgentPresentation.ps1','ForegroundAgent.cs','Test-AgentPresentation.ps1','DesktopUi.cs','DesktopPresentation.ps1','Test-DesktopPresentation.ps1','Preview-DesktopUi.ps1','Conversation.ps1','Usage.ps1','UsageWindow.ps1','UsagePricing.json','ClaudeHook.ps1','Configure-ClaudeHooks.ps1','CodexLogReader.cs','WorkCatalog.cs','SystemMetrics.cs','GpuMetrics.cs','TaskbarWidget.cs','Load-TaskbarWidget.ps1','Test-Taskbar.ps1','README.md','README.zh-CN.md','Test-Monitor.ps1','LICENSE')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $file) -PathType Leaf)) { throw "Package is missing $file" }
     }
     $settingsPath = Join-Path $testRoot 'claude-fixture\settings.json'

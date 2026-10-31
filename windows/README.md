@@ -2,7 +2,21 @@
 
 [简体中文](README.zh-CN.md)
 
-Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Windows Forms are included with Windows; no API key is needed. Task dots and two lines of metrics are embedded as a native child window inside the primary horizontal taskbar, in free space near the notification area. The detail window starts hidden. Click the taskbar widget to open details; right-click it to hide it or quit. The detail window's **任务栏** button also toggles visibility. Launching the application again opens the existing detail window.
+Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Windows Forms are included with Windows; no API key is needed. Task dots and two lines of metrics are embedded as a native child window inside the primary horizontal taskbar, in free space near the notification area. The detail window starts hidden. Click the taskbar widget to open details; right-click it to hide it or quit. The detail window's **设置** page also toggles visibility. Launching the application again opens the existing detail window.
+
+## Dashboard and shortcuts
+
+The dashboard follows the Mac app's task/usage/settings navigation, warm light or dark surfaces, and consistent line icons. It reads the Windows app theme at launch and uses system colors in high-contrast mode. Task states have both text and distinct shapes.
+
+- Summary cards count all tasks from the last seven days. Search and filters only affect the list; tasks awaiting input or authorization appear first, followed by failures, inactivity and running tasks.
+- Literal, case-insensitive search covers titles, projects, agents, models and phases, combined with agent and state filters.
+- The selection panel provides conversation, project, original record and mark-read actions. Refreshes preserve the selection and scroll position when those rows remain visible.
+- Settings share the existing taskbar, hardware metric and notification preferences with the tray menu.
+- Use `Ctrl+F` to search, `F5` to refresh, `Esc` to reset filters, and `Enter` or double-click in the task list to open a conversation.
+
+Usage and conversation windows share the same palette and buttons. Agent coverage and desktop companion support remain as described below.
+
+On Windows, `powershell.exe -NoProfile -STA -File .\windows\Preview-DesktopUi.ps1` renders native task/settings screenshots using fixture data into `dist\ui-preview\`, without reading agent data. `Test-DesktopPresentation.ps1` checks search and filtering and is included in `Test-Monitor.ps1`. Full window, tray and taskbar tests require Windows.
 
 The transparent widget follows the macOS layout's compact fixed-width cells and 4-pixel gaps, scaled with DPI. Network arrows, right-aligned numeric fields of about four characters, and units occupy fixed positions, so digit and unit changes do not resize the widget. Widths use the drawing context's glyph measurements without extra padding. Text uses bold 9-point Segoe UI. Larger task dots fill fixed top, middle and bottom slots in each column. A single dot stays at the top, two use the top and middle, and a full column spans the rendered text edges. The next three fill a second column, with an overflow count beyond six. Running/waiting count labels are omitted. Output tok/s sits above Codex quota; upload sits above download in the right-hand column. CPU, GPU and memory are off by default and can be enabled through **任务栏指标** in the context menu. Choices are saved in `%LOCALAPPDATA%\Tokcat\taskbar-metrics.json`; GPU sampling stops when GPU is disabled.
 
