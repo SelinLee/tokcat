@@ -1,0 +1,24 @@
+name: Windows monitor
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  parser:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Windows PowerShell parser
+        shell: powershell
+        run: .\windows\Test-Monitor.ps1
+      - name: Test the packaged application
+        shell: powershell
+        run: .\windows\Test-Package.ps1
+      - name: Package Windows preview
+        shell: powershell
+        run: .\windows\Package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tokcat-windows
+          path: dist/tokcat-windows-*.zip
+          if-no-files-found: error

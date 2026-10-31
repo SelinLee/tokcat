@@ -1,0 +1,444 @@
+﻿param(
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
+    [switch]$SmokeTest
+)
+
+. (Join-Path $PSScriptRoot 'Instance.ps1')
+$instance = Open-TokcatInstance ([Environment]::UserName + '|' + [string]$env:USERPROFILE)
+if (-not $instance.IsFirst) {
+    [void]$instance.Event.Set()
+    Close-TokcatInstance $instance
+    return
+}
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+. (Join-Path $PSScriptRoot 'Load-TaskbarWidget.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'SystemMetrics.cs')
+Add-Type -Path (Join-Path $PSScriptRoot 'GpuMetrics.cs') -ReferencedAssemblies System.Management.dll
+Add-Type -Path (Join-Path $PSScriptRoot 'CodexLogReader.cs')
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Tokcat { public static class Native { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); [DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId); } }'
+if (-not $SmokeTest) { [void][Tokcat.Native]::FreeConsole() }
+[void][Tokcat.Native]::SetCurrentProcessExplicitAppUserModelID('tokcat.Windows.Monitor')
+[System.Windows.Forms.Application]::EnableVisualStyles()
+. (Join-Path $PSScriptRoot 'Monitor.ps1')
+. (Join-Path $PSScriptRoot 'AgentPresentation.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'ForegroundAgent.cs')
+. (Join-Path $PSScriptRoot 'Conversation.ps1')
+. (Join-Path $PSScriptRoot 'Usage.ps1')
+. (Join-Path $PSScriptRoot 'UsageWindow.ps1')
+. (Join-Path $PSScriptRoot 'DesktopPresentation.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'DesktopUi.cs') -ReferencedAssemblies @([Windows.Forms.Form].Assembly.Location, [Drawing.Color].Assembly.Location)
+
+$form = New-Object TokcatMainWindow
+$form.ShowInTaskbar = $true
+$list = $form.Sessions; $note = $form.Note; $quotaLabel = $form.Quota
+$usageButton = $form.UsageButton; $stripButton = $form.StripButton; $quitButton = $form.QuitButton
+$menu = New-Object Windows.Forms.ContextMenuStrip
+$open = $menu.Items.Add('打开监控窗口')
+$refresh = $menu.Items.Add('立即刷新')
+$usageMenu = $menu.Items.Add('用量统计')
+$notificationMenu = $menu.Items.Add('启用状态通知')
+$stripMenu = $menu.Items.Add('显示任务栏监控')
+$metricsMenu = $menu.Items.Add('任务栏指标')
+$cpuMenu = $metricsMenu.DropDownItems.Add('CPU'); $cpuMenu.Tag = 'Cpu'
+$gpuMenu = $metricsMenu.DropDownItems.Add('GPU'); $gpuMenu.Tag = 'Gpu'
+$memoryMenu = $metricsMenu.DropDownItems.Add('内存'); $memoryMenu.Tag = 'Memory'
+[void]$menu.Items.Add('-')
+$exit = $menu.Items.Add('退出 tokcat')
+$tray = New-Object Windows.Forms.NotifyIcon
+$tray.ContextMenuStrip = $menu; $tray.Visible = $true
+$script:icon = $null; $script:quitting = $false; $script:scanning = $false
+$script:smokeError = $null
+$script:dshBaseline = @{}; $script:dshUsagePath = Join-Path $env:LOCALAPPDATA 'Tokcat\dsh-usage.jsonl'; $script:dshUsageError = $false
+$script:metricsPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar-metrics.json'; $script:metricsPreferenceError = $false
+try { $script:taskbarMetrics = Read-TaskbarMetricsPreference $script:metricsPreferencePath } catch { $script:taskbarMetrics = [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false }; $script:metricsPreferenceError = $true }
+$cpuMenu.Checked = $script:taskbarMetrics.Cpu; $gpuMenu.Checked = $script:taskbarMetrics.Gpu; $memoryMenu.Checked = $script:taskbarMetrics.Memory
+$script:gpuSampler = $null
+if ($script:taskbarMetrics.Gpu -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
+$script:seenStates = @{}; $script:unread = @{}; $script:bootstrapped = $false
+$script:latestSessions = @(); $script:latestRates = @{}; $script:viewedReminders = @{}; $script:dotSignature = ''; $script:traySummary = 'tokcat'; $script:workStatusCache = @{}
+$script:dotObservationPath = Join-Path $env:LOCALAPPDATA 'Tokcat\dot-observations.json'; $script:dotObservationError = $false
+try { $script:dotObservations = Read-DotObservations $script:dotObservationPath } catch { $script:dotObservations = @{}; $script:dotObservationError = $true }
+$script:launchedAt = [datetimeoffset]::UtcNow
+$script:reminderPath = Join-Path $env:LOCALAPPDATA 'Tokcat\reminders.json'
+$script:reminderError = $false
+try { $script:savedReminders = Read-ReminderStore $script:reminderPath } catch { $script:savedReminders = @{}; $script:reminderError = $true }
+$script:preferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\preferences.json'
+$script:preferenceError = $false
+try { $notificationMenu.Checked = Read-NotificationPreference $script:preferencePath } catch { $notificationMenu.Checked = $false; $script:preferenceError = $true }
+$script:stripPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar.json'
+$script:stripPreferenceError = $false
+try { $script:stripEnabled = Read-StatusStripPreference $script:stripPreferencePath } catch { $script:stripEnabled = $true; $script:stripPreferenceError = $true }
+$stripMenu.Checked = $script:stripEnabled
+$taskbarWidget = New-Object TokcatTaskbarWidget
+$taskbarWidget.Menu = $menu
+$script:snapshotReader = New-AgentSnapshotReader $PSScriptRoot
+$script:latestMetrics = [TokcatSystemMetrics]::Sample()
+$script:taskbarDots = @('unknown'); $script:taskbarTokenSpeed = '—'; $script:taskbarQuota = '—'; $script:agentReadError = $false
+$listMenu = New-Object Windows.Forms.ContextMenuStrip
+$markRead = $listMenu.Items.Add('标记所选任务已读')
+$openRaw = $listMenu.Items.Add('打开原始记录')
+$list.ContextMenuStrip = $listMenu
+
+function Sync-DesktopPreferences {
+    $form.Cpu.Checked = $cpuMenu.Checked; $form.Gpu.Checked = $gpuMenu.Checked; $form.Memory.Checked = $memoryMenu.Checked
+    $form.Notifications.Checked = $notificationMenu.Checked; $form.Taskbar.Checked = $stripMenu.Checked
+}
+
+function Set-DesktopSelection {
+    if ($form.Updating) { return }
+    if ($list.SelectedItems.Count -eq 0) { $form.SetSelection($null, $null, $null); return }
+    $session = $list.SelectedItems[0].Tag
+    $state = Get-SessionDisplayState $session ([datetimeoffset]::UtcNow)
+    $label = Get-DesktopStateLabel $state
+    $form.SetSelection([string]$session.Title, "$($session.Source) · $label · $($session.Model) · $($session.Phase)`n$($session.Project)", $state)
+    $form.ConversationButton.Enabled = $session.Source -in @('Codex','Codex Work','Claude Code','WorkBuddy','WorkBuddy AI','DeepSeek Harness')
+    $form.ProjectButton.Enabled = -not [string]::IsNullOrWhiteSpace([string]$session.Project)
+    $form.RecordButton.Enabled = $session.Source -ne 'Codex Work'
+    $form.ReadButton.Enabled = $script:unread.ContainsKey($list.SelectedItems[0].Name)
+}
+
+function Update-DesktopSessions {
+    $selectedKey = if ($list.SelectedItems.Count -gt 0) { $list.SelectedItems[0].Name } else { $null }
+    $topKey = if ($list.IsHandleCreated -and $list.TopItem) { $list.TopItem.Name } else { $null }
+    $visible = @(Select-DesktopSessions $script:latestSessions $form.Search.Text ([string]$form.SourceFilter.SelectedItem) $form.StateFilter.SelectedIndex ([datetimeoffset]::UtcNow))
+    $form.Updating = $true; $list.BeginUpdate()
+    try {
+        $list.Items.Clear()
+        foreach ($entry in $visible) {
+            $s = $entry.Session; $key = $entry.Key
+            $row = New-Object Windows.Forms.ListViewItem((Get-DesktopStateLabel $entry.State))
+            $row.Name = $key; $row.ImageKey = $entry.State
+            $rate = if ($script:latestRates.ContainsKey($key)) { '{0:N1}' -f $script:latestRates[$key] } else { '—' }
+            foreach ($value in @($s.Source, $s.Title, $s.Project, $s.Phase, $s.Model, $s.OutputTokens, $rate, $s.Updated.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss'))) { [void]$row.SubItems.Add([string]$value) }
+            $row.Tag = $s; [void]$list.Items.Add($row)
+            if ($key -eq $selectedKey) { $row.Selected = $true; $row.Focused = $true }
+        }
+        if ($topKey -and $list.Items.ContainsKey($topKey)) { $list.TopItem = $list.Items[$topKey] }
+    } finally { $list.EndUpdate(); $form.Updating = $false }
+    $form.SetResults($visible.Count, $script:latestSessions.Count)
+    Set-DesktopSelection
+}
+
+function Open-SelectedConversation {
+    if ($list.SelectedItems.Count -eq 0) { return }
+    $item = $list.SelectedItems[0].Tag
+    try {
+        if ($item.Source -eq 'Codex Work') { Start-Process $item.Url }
+        elseif ($item.Source -in @('Codex','Claude Code','WorkBuddy','WorkBuddy AI','DeepSeek Harness')) { Show-AgentConversation $item }
+        elseif ($item.Path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $item.Path + '"') }
+    } catch { [void][Windows.Forms.MessageBox]::Show($form, '无法打开此任务：' + $_.Exception.Message, 'tokcat') }
+}
+
+function Set-TrayIcon([string[]]$States, [string]$Text) {
+    $bitmap = New-Object Drawing.Bitmap(32,32)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $graphics.SmoothingMode = 'AntiAlias'
+    if (-not $States -or $States.Count -eq 0) { $States = @('unknown') }
+    $shown = @($States | Select-Object -First 6)
+    for ($i = 0; $i -lt $shown.Count; $i++) {
+        $color = switch ($shown[$i]) { 'waiting' { 'OrangeRed' } 'approval' { 'OrangeRed' } 'failed' { 'Red' } 'running' { 'Goldenrod' } 'stalled' { 'DarkOrange' } 'completed' { 'ForestGreen' } default { 'Gray' } }
+        $brush = New-Object Drawing.SolidBrush([Drawing.Color]::FromName($color))
+        if ($shown.Count -eq 1) { $x = 2; $y = 2; $diameter = 28 }
+        else { $x = 1 + ($i % 3) * 10; $y = 5 + [Math]::Floor($i / 3) * 12; $diameter = 9 }
+        $graphics.FillEllipse($brush, [int]$x, [int]$y, [int]$diameter, [int]$diameter)
+        $graphics.DrawEllipse([Drawing.Pens]::White, [int]$x, [int]$y, [int]$diameter, [int]$diameter)
+        $brush.Dispose()
+    }
+    $handle = $bitmap.GetHicon()
+    $newIcon = [Drawing.Icon]::FromHandle($handle).Clone()
+    [void][Tokcat.Native]::DestroyIcon($handle)
+    $tray.Icon = $newIcon
+    $form.Icon = $newIcon
+    if ($script:icon) { $script:icon.Dispose() }; $script:icon = $newIcon
+    $tray.Text = if ($Text.Length -gt 63) { $Text.Substring(0,63) } else { $Text }
+    $graphics.Dispose(); $bitmap.Dispose()
+}
+
+function Set-StatusStrip([bool]$Enabled, [bool]$Persist = $true) {
+    if ($Persist) {
+        try { Write-StatusStripPreference $script:stripPreferencePath $Enabled; $script:stripPreferenceError = $false }
+        catch { $script:stripPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存任务栏显示设置。', 'tokcat'); return }
+    }
+    $script:stripEnabled = $Enabled; $stripMenu.Checked = $Enabled
+    $stripButton.Text = if ($Enabled) { '隐藏任务栏' } else { '显示任务栏' }
+    Sync-DesktopPreferences
+    $taskbarWidget.SetEnabled($Enabled -and -not $SmokeTest)
+}
+
+function Format-NetworkRate($BytesPerSecond) {
+    if ($null -eq $BytesPerSecond) { return '—' }
+    if ($BytesPerSecond -ge 1048576) { return ('{0:N1} MiB/s' -f ($BytesPerSecond / 1048576)) }
+    return ('{0:N1} KiB/s' -f ($BytesPerSecond / 1024))
+}
+
+function Format-NetworkRateShort($BytesPerSecond) {
+    if ($null -eq $BytesPerSecond) { return '—' }
+    if ($BytesPerSecond -ge 1048576) { return ('{0:N1}M' -f ($BytesPerSecond / 1048576)) }
+    return ('{0:N1}K' -f ($BytesPerSecond / 1024))
+}
+
+function Show-AgentConversation($Session, [bool]$TestMode = $false) {
+    $path = Resolve-ConversationPath $Session $env:USERPROFILE
+    if (-not $path) { if ($TestMode) { $script:smokeError = 'Conversation path was not found.' } else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地对话记录。', 'tokcat') }; return }
+    $viewer = New-Object Windows.Forms.Form
+    $viewer.Text = 'tokcat · ' + [string]$Session.Title
+    $viewer.StartPosition = 'CenterParent'; $viewer.Size = New-Object Drawing.Size(800,600); $viewer.MinimumSize = New-Object Drawing.Size(500,300); $viewer.Font = $form.Font
+    [TokcatUi]::StyleWindow($viewer)
+    $textBox = New-Object Windows.Forms.TextBox
+    $textBox.Multiline = $true; $textBox.ReadOnly = $true; $textBox.ScrollBars = 'Vertical'; $textBox.WordWrap = $true; $textBox.Dock = 'Fill'
+    $textBox.BackColor = [TokcatUi]::Surface; $textBox.ForeColor = [TokcatUi]::Text; $textBox.BorderStyle = 'None'; $textBox.Font = New-Object Drawing.Font('Microsoft YaHei UI', 10)
+    $textBox.AccessibleName = '本地用户与助手对话'
+    $viewer.Padding = New-Object Windows.Forms.Padding(18)
+    $button = [TokcatUi]::Button('刷新对话', 'refresh', $false)
+    $button.Dock = 'Bottom'; $button.Height = 36
+    $viewer.Controls.Add($textBox); $viewer.Controls.Add($button)
+    $reader = ${function:Read-AgentConversation}
+    $load = {
+        try {
+            $snapshot = & $reader $Session $path
+            $builder = New-Object Text.StringBuilder
+            if ($snapshot.Truncated) { [void]$builder.AppendLine('[仅显示最近的部分对话]'); [void]$builder.AppendLine() }
+            foreach ($message in $snapshot.Messages) {
+                $role = if ($message.Role -eq 'user') { '用户' } else { '助手' }
+                [void]$builder.AppendLine('[' + $role + ']'); [void]$builder.AppendLine($message.Text); [void]$builder.AppendLine()
+            }
+            if ($builder.Length -eq 0) { [void]$builder.Append('尚无可显示的用户或助手文本。') }
+            $textBox.Text = $builder.ToString()
+        } catch { $textBox.Text = '无法读取对话：' + $_.Exception.Message }
+    }.GetNewClosure()
+    $button.Add_Click($load)
+    $viewer.Add_Shown($load)
+    if ($TestMode) {
+        $viewerTimer = New-Object Windows.Forms.Timer
+        $testOutcome = [pscustomobject]@{ Error=$null }
+        $viewerTimer.Interval = 500
+        $check = { $viewerTimer.Stop(); if (-not $textBox.Text.Contains('fixture conversation')) { $testOutcome.Error = 'Conversation viewer did not show fixture text.' }; $viewer.Close() }.GetNewClosure()
+        $viewerTimer.Add_Tick($check); $viewer.Add_Shown({ $viewerTimer.Start() }.GetNewClosure())
+    }
+    try { [void]$viewer.ShowDialog($form); if ($TestMode -and $testOutcome.Error) { $script:smokeError = $testOutcome.Error } } finally { if ($TestMode) { $viewerTimer.Dispose() }; $viewer.Dispose() }
+}
+
+function Update-SystemDisplay([bool]$Sample = $true) {
+    if ($Sample) { $script:latestMetrics = [TokcatSystemMetrics]::Sample() }
+    $metrics = $script:latestMetrics
+    $cpu = if ($script:taskbarMetrics.Cpu -and $null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } elseif ($script:taskbarMetrics.Cpu) { '—' } else { $null }
+    $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
+    $gpu = if ($script:taskbarMetrics.Gpu -and $null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } elseif ($script:taskbarMetrics.Gpu) { '—' } else { $null }
+    $memory = if ($script:taskbarMetrics.Memory -and $null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } elseif ($script:taskbarMetrics.Memory) { '—' } else { $null }
+    $speed = if ($script:agentReadError) { '读取失败' } else { "$($script:taskbarTokenSpeed) tok/s" }
+    $taskbarWidget.SetMetrics($script:taskbarDots, $speed, $script:taskbarQuota, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $cpu, $gpu, $memory)
+}
+
+function Save-CurrentReminders {
+    if (-not $script:reminderError) {
+        try { Sync-ReminderStore $script:latestSessions $script:unread $script:savedReminders ([datetimeoffset]::UtcNow); Write-ReminderStore $script:reminderPath $script:savedReminders } catch { $script:reminderError = $true }
+    }
+}
+
+function Update-AgentDots {
+    if (-not $script:bootstrapped -or $script:agentReadError) { return }
+    $now = [datetimeoffset]::UtcNow
+    $foreground = if ($SmokeTest) { '' } else { [TokcatForegroundAgent]::CurrentSource() }
+    $viewed = Update-ViewedReminders $script:latestSessions $script:unread $script:viewedReminders $foreground $now
+    if ($viewed.Changed) { Save-CurrentReminders }
+    $dots = Get-TaskbarDotPresentation $script:latestSessions $script:unread $viewed.FlashingSince $now (-not [TokcatForegroundAgent]::AnimationsEnabled)
+    $signature = ($dots.States -join ',') + '|' + ($dots.Dimmed -join ',')
+    if ($signature -ne $script:dotSignature) {
+        $script:dotSignature = $signature; $script:taskbarDots = $dots.States
+        Update-SystemDisplay $false
+        $taskbarWidget.SetDotDimming($dots.Dimmed)
+        Set-TrayIcon $dots.States $script:traySummary
+    }
+}
+
+function Update-Sessions($Snapshot = $null) {
+    if ($null -eq $Snapshot) {
+        try { [void](Request-AgentSnapshot $script:snapshotReader $CodexHome $env:USERPROFILE $env:APPDATA $env:LOCALAPPDATA) }
+        catch { $script:agentReadError = $true; $note.Text = '无法开始读取任务：' + $_.Exception.Message; if ($SmokeTest) { $script:smokeError = $_.Exception.Message } }
+        return
+    }
+    if ($script:scanning) { return }
+    $script:scanning = $true
+    try {
+        $workError = $Snapshot.WorkError; $buddyError = $Snapshot.BuddyError
+        $dshSessions = @($Snapshot.DshSessions)
+        try { Save-DshUsage $dshSessions $script:dshBaseline $script:dshUsagePath ([datetimeoffset]::Now); $script:dshUsageError = $false } catch { $script:dshUsageError = $true }
+        $sessions = @(Merge-WorkStatusSnapshot @($Snapshot.Sessions) $script:workStatusCache $Snapshot.WorkAvailable ([datetimeoffset]::UtcNow))
+        $quota = $Snapshot.Quota; $script:agentReadError = $false
+        Update-DotObservations $sessions $script:dotObservations ([datetimeoffset]::UtcNow)
+        if (-not $script:dotObservationError) { try { Write-DotObservations $script:dotObservationPath $script:dotObservations } catch { $script:dotObservationError = $true } }
+        $script:latestSessions = $sessions; $script:dotSignature = ''
+        $quotaText = Format-CodexQuota $quota ([datetimeoffset]::UtcNow)
+        $quotaLabel.Text = 'Codex 本地额度：' + $quotaText + $(if ($quota) { ' · 记录时间 ' + $quota.ObservedAt.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } else { ' · 等待记录' })
+        $rates = Get-OutputRates $sessions ([double][Diagnostics.Stopwatch]::GetTimestamp() / [Diagnostics.Stopwatch]::Frequency)
+        $metrics = $script:latestMetrics
+        $cpu = if ($null -ne $metrics.CpuPercent) { '{0:N0}%' -f $metrics.CpuPercent } else { '—' }
+        $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
+        $gpu = if ($null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } else { '—' }
+        $memory = if ($null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } else { '—' }
+        $networkDown = Format-NetworkRate $metrics.NetworkDown; $networkUp = Format-NetworkRate $metrics.NetworkUp
+        $counts = @{ running=0; waiting=0; approval=0; stalled=0; failed=0; completed=0; interrupted=0 }
+        $alerts = @(Get-NewSessionAlerts $sessions $script:seenStates $script:bootstrapped $script:launchedAt)
+        Restore-Reminders $sessions $script:seenStates $script:unread $script:savedReminders
+        Update-ReminderStates $sessions $script:seenStates $script:unread $script:bootstrapped $script:launchedAt
+        Save-CurrentReminders
+        foreach ($s in $sessions) {
+            $state = Get-SessionDisplayState $s ([datetimeoffset]::UtcNow)
+            if ($counts.ContainsKey($state)) { $counts[$state]++ }
+        }
+        $script:latestRates = $rates
+        Update-DesktopSessions
+        $form.SetTotals($counts.running, ($counts.waiting + $counts.approval), $counts.completed, ($counts.failed + $counts.stalled))
+        $script:bootstrapped = $true
+        $downShort = Format-NetworkRateShort $metrics.NetworkDown; $upShort = Format-NetworkRateShort $metrics.NetworkUp
+        $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort"
+        $script:traySummary = $summary
+        $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
+        $script:taskbarTokenSpeed = $tokenSpeed; $script:taskbarQuota = $quotaText
+        Update-AgentDots
+        Set-TrayIcon $script:taskbarDots $summary
+        Update-SystemDisplay $false
+        if ($notificationMenu.Checked -and $alerts.Count -gt 0 -and -not $SmokeTest) {
+            $detail = if ($alerts.Count -eq 1) {
+                $alert = $alerts[0]; $label = switch ($alert.State) { 'waiting' {'等待回答'} 'approval' {'等待授权'} 'failed' {'本轮失败'} default {'本轮结束'} }
+                $title = [string]$alert.Title; if ($title.Length -gt 80) { $title = $title.Substring(0,80) + '…' }; "$label · $title"
+            } else { "$($alerts.Count) 个任务状态发生变化，打开 tokcat 查看。" }
+            $tray.ShowBalloonTip(5000, 'tokcat', $detail, [Windows.Forms.ToolTipIcon]::Info)
+        }
+        $form.Text = "tokcat · 运行 $($counts.running) · 等待 $($counts.waiting + $counts.approval) · 无活动 $($counts.stalled)"
+        $note.Text = "CPU $cpu · GPU $gpu · 内存 $memory · 网络 ↓ $networkDown ↑ $networkUp`n最近 7 天共 $($sessions.Count) 项 · 双击查看对话" + $(if ($workError) { ' · Work 数据暂不可读' } else { '' }) + $(if ($buddyError) { ' · WorkBuddy 数据暂不可读' } else { '' }) + $(if ($script:dshUsageError) { ' · DeepSeek 用量保存不可用' } else { '' }) + $(if ($script:reminderError) { ' · 提醒保存不可用' } else { '' }) + $(if ($script:preferenceError -or $script:stripPreferenceError) { ' · 设置保存不可用' } else { '' })
+    } catch {
+        $note.Text = '刷新失败：' + $_.Exception.Message
+        if ($SmokeTest) { $script:smokeError = $_.Exception.Message }
+        $script:agentReadError = $true; $script:taskbarDots = @('unknown')
+        Set-TrayIcon @('unknown') 'tokcat: 读取失败，请打开窗口查看'
+        $taskbarWidget.SetContent(@('unknown'), 'tokcat 读取失败', '单击查看详情')
+    } finally { $script:scanning = $false }
+}
+
+$open.Add_Click({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
+$refresh.Add_Click({ Update-Sessions })
+$form.RefreshButton.Add_Click({ Update-Sessions })
+$form.Search.Add_TextChanged({ Update-DesktopSessions })
+$form.SourceFilter.Add_SelectedIndexChanged({ Update-DesktopSessions })
+$form.StateFilter.Add_SelectedIndexChanged({ Update-DesktopSessions })
+$list.Add_SelectedIndexChanged({ Set-DesktopSelection })
+$list.Add_KeyDown({ param($sender,$event) if ($event.KeyCode -eq 'Enter') { Open-SelectedConversation; $event.SuppressKeyPress = $true } })
+$list.Add_MouseDown({ param($sender,$event) if ($event.Button -eq 'Right') { $hit = $list.HitTest($event.Location); if ($hit.Item) { $list.SelectedItems.Clear(); $hit.Item.Selected = $true } } })
+$form.ConversationButton.Add_Click({ Open-SelectedConversation })
+$form.RecordButton.Add_Click({ $openRaw.PerformClick() })
+$form.ReadButton.Add_Click({ $markRead.PerformClick(); Set-DesktopSelection })
+$form.ProjectButton.Add_Click({
+    if ($list.SelectedItems.Count -eq 0) { return }
+    $project = [string]$list.SelectedItems[0].Tag.Project
+    try {
+        if (-not (Test-Path -LiteralPath $project -PathType Container)) { throw '项目文件夹已移动或不可用。' }
+        # Shell opening avoids interpreting the project path as a command or arguments.
+        Invoke-Item -LiteralPath $project -ErrorAction Stop
+    } catch { [void][Windows.Forms.MessageBox]::Show($form, '无法打开项目：' + $_.Exception.Message, 'tokcat') }
+})
+$usageMenu.Add_Click({ Show-UsageWindow $form $CodexHome })
+$usageButton.Add_Click({ Show-UsageWindow $form $CodexHome })
+$toggleStrip = { Set-StatusStrip (-not $script:stripEnabled) }
+$stripMenu.Add_Click($toggleStrip); $stripButton.Add_Click($toggleStrip)
+$showMain = { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }
+$taskbarWidget.Add_Clicked($showMain)
+$toggleMetric = {
+    param($sender,$event)
+    $value = [pscustomobject]@{ Cpu=$script:taskbarMetrics.Cpu; Gpu=$script:taskbarMetrics.Gpu; Memory=$script:taskbarMetrics.Memory }
+    $key = [string]$sender.Tag; $value.$key = -not $value.$key
+    try { Write-TaskbarMetricsPreference $script:metricsPreferencePath $value.Cpu $value.Gpu $value.Memory; $script:metricsPreferenceError = $false } catch { $script:metricsPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form,'无法保存任务栏指标设置。','tokcat'); return }
+    $script:taskbarMetrics = $value; $cpuMenu.Checked = $value.Cpu; $gpuMenu.Checked = $value.Gpu; $memoryMenu.Checked = $value.Memory
+    Sync-DesktopPreferences
+    if ($value.Gpu -and -not $script:gpuSampler -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
+    elseif (-not $value.Gpu -and $script:gpuSampler) { $script:gpuSampler.Stop(); $script:gpuSampler = $null }
+    Update-Sessions
+}
+$cpuMenu.Add_Click($toggleMetric); $gpuMenu.Add_Click($toggleMetric); $memoryMenu.Add_Click($toggleMetric)
+$quitButton.Add_Click({ $script:quitting = $true; $form.Close() })
+$notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') }; Sync-DesktopPreferences })
+$form.Cpu.Add_Click({ $cpuMenu.PerformClick(); Sync-DesktopPreferences })
+$form.Gpu.Add_Click({ $gpuMenu.PerformClick(); Sync-DesktopPreferences })
+$form.Memory.Add_Click({ $memoryMenu.PerformClick(); Sync-DesktopPreferences })
+$form.Notifications.Add_Click({ $notificationMenu.PerformClick(); Sync-DesktopPreferences })
+$form.Taskbar.Add_Click({ $stripMenu.PerformClick(); Sync-DesktopPreferences })
+Sync-DesktopPreferences
+$markRead.Add_Click({ if ($list.SelectedItems.Count -gt 0) { $script:unread.Remove($list.SelectedItems[0].Name); Save-CurrentReminders; Update-AgentDots; Set-DesktopSelection } })
+$openRaw.Add_Click({
+    if ($list.SelectedItems.Count -eq 0) { return }
+    try {
+        $item = $list.SelectedItems[0].Tag; $path = Resolve-ConversationPath $item $env:USERPROFILE
+        if ($path) { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $path + '"') }
+        else { [void][Windows.Forms.MessageBox]::Show($form, '尚未找到此会话的本地记录。', 'tokcat') }
+    } catch { [void][Windows.Forms.MessageBox]::Show($form, '无法打开原始记录：' + $_.Exception.Message, 'tokcat') }
+})
+$exit.Add_Click({ $script:quitting = $true; $form.Close() })
+$tray.Add_DoubleClick({ $form.Show(); $form.WindowState = 'Normal'; $form.Activate() })
+$list.Add_DoubleClick({ Open-SelectedConversation })
+$form.Add_FormClosing({ param($sender,$e) if (-not $script:quitting -and $e.CloseReason -eq 'UserClosing') { $e.Cancel = $true; $form.Hide() } })
+$timer = New-Object Windows.Forms.Timer
+$timer.Interval = 5000
+$timer.Add_Tick({ Update-Sessions })
+$metricsTimer = New-Object Windows.Forms.Timer; $metricsTimer.Interval = 1000
+$metricsTimer.Add_Tick({ try { Update-SystemDisplay } catch { $note.Text = '指标刷新失败：' + $_.Exception.Message } })
+$snapshotPoll = New-Object Windows.Forms.Timer; $snapshotPoll.Interval = 200
+$snapshotPoll.Add_Tick({
+    try { $snapshot = Receive-AgentSnapshot $script:snapshotReader; if ($null -ne $snapshot) { Update-Sessions $snapshot }; Update-AgentDots }
+    catch { $script:agentReadError = $true; $script:taskbarDots = @('unknown'); $note.Text = '任务读取失败：' + $_.Exception.Message; if ($SmokeTest) { $script:smokeError = $_.Exception.Message } }
+})
+$instanceTimer = New-Object Windows.Forms.Timer
+$instanceTimer.Interval = 500
+$instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }; if ($script:stripEnabled -and $taskbarWidget.Status -ne 'Embedded') { $quotaLabel.Text = '任务栏监控暂不可用：' + $(switch ($taskbarWidget.Status) { 'No free taskbar space' { '任务栏空间不足' } 'Waiting for taskbar layout' { '正在读取布局' } default { '等待任务栏恢复' } }) } })
+Set-TrayIcon @('unknown') 'tokcat: 正在读取 Codex 会话'
+$form.Add_Shown({ Update-SystemDisplay; Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $metricsTimer.Start(); $snapshotPoll.Start(); $instanceTimer.Start(); if (-not $SmokeTest) { $form.Hide() } })
+if ($SmokeTest) {
+    $smokeTimer = New-Object Windows.Forms.Timer
+    $smokeTimer.Interval = 1000
+    $script:smokeDeadline = [datetimeoffset]::UtcNow.AddSeconds(30)
+    $smokeTimer.Add_Tick({
+        if (-not $script:bootstrapped -and [datetimeoffset]::UtcNow -lt $script:smokeDeadline) { return }
+        $smokeTimer.Stop()
+        if ($metricsTimer.Interval -ne 1000 -or -not $metricsTimer.Enabled) { $script:smokeError = 'Lightweight metrics must refresh independently every second.' }
+        if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
+        $stripButton.PerformClick()
+        if ($taskbarWidget.Visible -or $stripMenu.Checked) { $script:smokeError = 'Taskbar widget did not hide.' }
+        $stripButton.PerformClick()
+        if (-not $stripMenu.Checked) { $script:smokeError = 'Taskbar widget was not enabled.' }
+        if ($cpuMenu.Checked -or $gpuMenu.Checked -or $memoryMenu.Checked) { $script:smokeError = 'Taskbar hardware metrics must be off by default.' }
+        $cpuMenu.PerformClick()
+        if (-not $cpuMenu.Checked -or -not (Read-TaskbarMetricsPreference $script:metricsPreferencePath).Cpu) { $script:smokeError = 'Taskbar metric toggle did not persist.' }
+        $cpuMenu.PerformClick()
+        if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
+        $form.Search.Text = 'no-matching-task-fixture-83c12'
+        if ($list.Items.Count -ne 0) { $script:smokeError = 'Search did not filter the visible task list.' }
+        $form.Search.Clear()
+        $form.SourceFilter.SelectedItem = 'Kimi'
+        if (@($list.Items | Where-Object { $_.Tag.Source -ne 'Kimi' }).Count -ne 0) { $script:smokeError = 'Agent filter included another source.' }
+        $form.SourceFilter.SelectedIndex = 0
+        if ($form.Cpu.Checked -ne $cpuMenu.Checked -or $form.Notifications.Checked -ne $notificationMenu.Checked -or $form.Taskbar.Checked -ne $stripMenu.Checked) { $script:smokeError = 'Settings page and tray preferences were out of sync.' }
+        $form.ShowSettings($true); $form.ShowSettings($false)
+        $testRow = @($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' } | Select-Object -First 1)
+        if ($testRow.Count -gt 0) {
+            $testRow[0].Selected = $true; Update-DesktopSessions
+            if ($list.SelectedItems.Count -ne 1 -or -not $form.ConversationButton.Enabled) { $script:smokeError = 'Selection did not survive a task refresh.' }
+            Show-AgentConversation $testRow[0].Tag $true
+        }
+        $usageError = Show-UsageWindow $form $CodexHome $true
+        if ($usageError) { $script:smokeError = 'Usage window: ' + $usageError }
+        $proxyUsageError = Show-UsageWindow $form $CodexHome $true $true
+        if ($proxyUsageError) { $script:smokeError = 'Proxy usage window: ' + $proxyUsageError }
+        Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
+        $iconBitmap = $tray.Icon.ToBitmap()
+        $taskbarBitmap = $form.Icon.ToBitmap()
+        try {
+            if ($iconBitmap.GetPixel(5,9).ToArgb() -ne [Drawing.Color]::Goldenrod.ToArgb() -or $iconBitmap.GetPixel(15,9).ToArgb() -ne [Drawing.Color]::OrangeRed.ToArgb() -or $iconBitmap.GetPixel(25,9).ToArgb() -ne [Drawing.Color]::Red.ToArgb()) { $script:smokeError = 'Task state dots were not drawn in the tray icon.' }
+            if ($taskbarBitmap.GetPixel(5,9).ToArgb() -ne $iconBitmap.GetPixel(5,9).ToArgb() -or $taskbarBitmap.GetPixel(15,9).ToArgb() -ne $iconBitmap.GetPixel(15,9).ToArgb()) { $script:smokeError = 'Taskbar and tray icons did not match.' }
+        } finally { $iconBitmap.Dispose(); $taskbarBitmap.Dispose() }
+        $script:quitting = $true
+        $form.Close()
+    })
+    $form.Add_Shown({ $smokeTimer.Start() })
+}
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $metricsTimer.Stop(); $metricsTimer.Dispose(); $snapshotPoll.Stop(); $snapshotPoll.Dispose(); Close-AgentSnapshotReader $script:snapshotReader; $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }
