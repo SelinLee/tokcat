@@ -288,6 +288,16 @@ struct MenuBarContentView: View {
     private var actionBar: some View {
         HStack(spacing: 6) {
             Button {
+                model.applicationLauncher.show()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .frame(width: 28, height: 26)
+            }
+            .buttonStyle(.bordered)
+            .help("搜索并打开应用")
+            .accessibilityLabel("应用启动器")
+
+            Button {
                 model.updateSettings { $0.showDesktopPet.toggle() }
             } label: {
                 Image(systemName: model.settings.showDesktopPet ? "cat.fill" : "cat")

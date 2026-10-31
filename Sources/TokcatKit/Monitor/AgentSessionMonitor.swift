@@ -20,9 +20,12 @@ public final class AgentSessionMonitor {
     private var lastSavedTasks: [AgentTaskRecord] = []
     private let codexTitles: CodexSessionTitleReader
     private let recentReader: RecentAgentTaskReader
+    private let claudeOutputReader = ClaudeOutputReader()
     /// Sources that publish their own state instead of being inferred from logs.
     private let externalReaders: [(source: AgentSource, reader: ExternalTaskReader)]
     private var codexWorkLastAvailableAt: Date?
+    var claudeRegistryReader: ClaudeSessionRegistryReader?
+    private var claudeRegistryLastAvailableAt: Date?
     private static let cloudStatusReadGrace: TimeInterval = 120
 
     public init(codexDirectory: URL = CodexCLIAdapter.defaultSessionsDirectory,
@@ -33,11 +36,17 @@ public final class AgentSessionMonitor {
                 workBuddyProjects: URL = WorkBuddyTaskReader.defaultProjectsDirectory,
                 workBuddyAIProjects: URL = WorkBuddyTaskReader.aiProjectsDirectory,
                 deepSeekHarnessDirectories: [URL]? = DeepSeekHarnessTaskReader.defaultDirectories,
-                codexWorkDatabase: URL? = nil) {
+                codexWorkDatabase: URL? = nil,
+                claudeSessionsDirectory: URL? = ClaudeCodeAdapter.defaultProjectsDirectory.deletingLastPathComponent()
+                    .appendingPathComponent("sessions", isDirectory: true),
+                claudeProjectsDirectory: URL = ClaudeCodeAdapter.defaultProjectsDirectory) {
         self.codexDirectory = codexDirectory
         self.codexTitles = CodexSessionTitleReader(url: codexDirectory.deletingLastPathComponent().appendingPathComponent("session_index.jsonl"))
         self.supportDirectory = supportDirectory
         self.launchedAt = now
+        self.claudeRegistryReader = claudeSessionsDirectory.map {
+            ClaudeSessionRegistryReader(directory: $0, projectsDirectory: claudeProjectsDirectory)
+        }
         self.recentReader = RecentAgentTaskReader(roots: recentRoots)
         var externalReaders: [(source: AgentSource, reader: ExternalTaskReader)] = []
         // Derive from the same Codex root so custom directories and test fixtures
@@ -210,7 +219,9 @@ public final class AgentSessionMonitor {
                     next.observe(total: total, scope: "session", at: record.lastActivityAt, turnStart: nil)
                     rate = next
                 }
-                record.session.outputRate = rate ?? record.session.outputRate
+                // Transcript readers can reconstruct the full recent window,
+                // including new user-turn boundaries, on attach and restart.
+                record.session.outputRate = record.session.outputRate ?? rate
                 record.session.unread = old?.unread ?? false
                 if let old, !firstPoll, previousEnabled.contains(source),
                    record.lastActivityAt >= old.lastActivityAt, old.state != record.session.state {
@@ -223,8 +234,12 @@ public final class AgentSessionMonitor {
                 history.observeExternal(record)
             }
         }
+        if enabled.contains(.claudeCode) {
+            pollClaudeRegistry(now: now)
+        }
         sessions = sessions.filter { now.timeIntervalSince($0.value.lastActivityAt) < 7 * 86_400 }
         for record in recentReader.poll(enabled: enabled, now: now) { history.observeActivity(record) }
+        if enabled.contains(.claudeCode) { updateClaudeOutput() }
         if enabled.contains(.codexCLI) { history.updateTitles(codexTitles.read(), source: .codexCLI) }
         history.prune(now: now)
         firstPoll = false
@@ -237,14 +252,99 @@ public final class AgentSessionMonitor {
         }, tasks: history.snapshot(enabled: enabled))
     }
 
+    private func updateClaudeOutput() {
+        var paths: Set<String> = []
+        for (id, var session) in sessions where session.source == .claudeCode {
+            guard let path = history.records[AgentTaskRecord.key(for: session)]?.logPath else { continue }
+            paths.insert(path)
+            if let rate = claudeOutputReader.read(url: URL(fileURLWithPath: path), sessionID: session.sessionID,
+                since: session.startedAt, through: session.endedAt) {
+                session.outputRate = rate
+                sessions[id] = session
+                history.observe(session, event: nil)
+            }
+        }
+        claudeOutputReader.retain(paths: paths)
+    }
+
+    private func pollClaudeRegistry(now: Date) {
+        guard let registry = claudeRegistryReader else { return }
+        let registrations = registry.poll(now: now)
+        if registry.isAvailable { claudeRegistryLastAvailableAt = now }
+        else if now.timeIntervalSince(claudeRegistryLastAvailableAt ?? launchedAt) < Self.cloudStatusReadGrace { return }
+        let liveIDs = Set(registrations.map(\.sessionID))
+        history.removeSessions(source: .claudeCode, ids: registry.ignoredSessionIDs)
+        for (id, var session) in sessions where session.source == .claudeCode {
+            if registry.ignoredSessionIDs.contains(session.sessionID) {
+                sessions.removeValue(forKey: id)
+            } else if session.claudeRegistryStatusAt != nil && !liveIDs.contains(session.sessionID)
+                        && !session.state.isTerminal {
+                session.state = .unknown
+                session.phase = "Claude Code · 本机会话已离线，未记录本轮结束"
+                session.waitingSince = nil
+                history.observe(session, event: nil)
+                sessions.removeValue(forKey: id)
+            }
+        }
+        for registration in registrations {
+            let id = AgentSource.claudeCode.rawValue + ":" + registration.sessionID
+            let old = sessions[id]
+            var session = old ?? AgentSession(event: AgentSessionEvent(sessionID: registration.sessionID,
+                source: .claudeCode, timestamp: registration.statusAt, kind: .metadata,
+                projectPath: registration.projectPath), historical: true)
+            let revision = session.claudeRegistryStatusAt
+            let isNewer = revision == nil || registration.statusAt > revision!
+            if old == nil || (isNewer && registration.statusAt > session.lastActivityAt) {
+                if registration.status == "busy" {
+                    if session.state.isTerminal || session.state == .unknown {
+                        session.startedAt = nil
+                        session.endedAt = nil
+                        session.turnID = nil
+                        session.outputRate = nil
+                        session.accumulatedWait = 0
+                    }
+                    session.state = .running
+                    session.unread = false
+                    session.waitingSince = nil
+                    session.phase = "Claude Code · 本机会话正在运行"
+                } else if !session.state.isTerminal && !session.state.isWaiting {
+                    session.state = .unknown
+                    session.waitingSince = nil
+                    session.phase = registration.status == "idle"
+                        ? "Claude Code · 会话空闲，未记录本轮结束"
+                        : "Claude Code · 本机会话状态待确认"
+                }
+                if !session.state.isTerminal && !session.state.isWaiting {
+                    session.lastActivityAt = max(session.lastActivityAt, registration.statusAt)
+                }
+            }
+            session.projectPath = registration.projectPath ?? session.projectPath
+            session.claudeRegistryStatusAt = max(revision ?? registration.statusAt, registration.statusAt)
+            session.stateObservedAt = now
+            session.claudeRegistryBusyObservedAt = registration.status == "busy" ? now : nil
+            sessions[id] = session
+            history.observe(session, event: nil, logPath: registration.logPath)
+            history.updateClaudeMetadata(session: session, title: registration.title, modelName: registration.modelName)
+        }
+    }
+
     private func ingest(_ event: AgentSessionEvent, historical: Bool, replay: Bool,
                         alerts: inout [String: AgentSession], logPath: String? = nil) {
         let id = event.source.rawValue + ":" + event.sessionID
         let old = sessions[id]
         if old == nil && event.kind == .metadata { return }
-        if replay, let old, event.timestamp <= old.lastActivityAt { return }
+        let hookEvent = event.source == .claudeCode && event.kind != .metadata
+        let watermark = hookEvent ? old.flatMap {
+            $0.claudeHookActivityAt ?? ($0.claudeRegistryStatusAt == nil ? $0.lastActivityAt : nil)
+        } : old?.lastActivityAt
+        if replay, let watermark, event.timestamp <= watermark { return }
         var next = old ?? AgentSession(event: event, historical: historical)
-        if old != nil { next.apply(event, historical: historical) }
+        if old != nil {
+            // Registry revisions must not consume hooks written after inbox enumeration.
+            if hookEvent { next.lastActivityAt = min(next.lastActivityAt, event.timestamp) }
+            next.apply(event, historical: historical)
+        }
+        if hookEvent { next.claudeHookActivityAt = event.timestamp }
         sessions[id] = next
         history.observe(next, event: event, logPath: logPath ?? event.transcriptPath)
         if !historical, old?.state != next.state,

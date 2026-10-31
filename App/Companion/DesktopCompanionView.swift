@@ -79,13 +79,17 @@ final class DesktopCompanionView: NSView {
         if let cache = taskTitleCache, cache.titles == titles, cache.width == width { return cache.layouts }
         let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         let layouts = titles.map { title -> TaskTitleLayout in
-            let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
             let label = value.isEmpty ? "未命名任务" : value
             let text = label as NSString
             let typesetter = CTTypesetterCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: font]))
             var lines: [String] = []
             var start = 0
             while start < text.length {
+                if lines.count == 1 {
+                    lines.append(Self.truncatedTaskTitleLine(text.substring(from: start), width: width, font: font))
+                    break
+                }
                 var length = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
                 if length == 0 { length = CTTypesetterSuggestClusterBreak(typesetter, start, Double(width)) }
                 length = min(text.length - start, max(1, length))
@@ -99,6 +103,21 @@ final class DesktopCompanionView: NSView {
         taskTitleCache = (titles, width, layouts)
         return layouts
     }
+    private static func truncatedTaskTitleLine(_ value: String, width: CGFloat, font: NSFont) -> String {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        func fits(_ text: String) -> Bool { (text as NSString).size(withAttributes: attributes).width <= width }
+        guard !fits(value) else { return value }
+        // Search whole characters so emoji and combining marks stay intact.
+        let characters = Array(value)
+        var lower = 0, upper = characters.count
+        while lower < upper {
+            let middle = (lower + upper + 1) / 2
+            if fits(String(characters.prefix(middle)) + "…") { lower = middle }
+            else { upper = middle - 1 }
+        }
+        return String(characters.prefix(lower)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
     private var taskListHeight: CGFloat { taskTitleLayouts.reduce(0) { $0 + $1.height } }
     private var taskPageHeight: CGFloat { taskTitleLayouts.prefix(maximumVisibleTasks).reduce(0) { $0 + $1.height } }
     var taskListRect: NSRect {
@@ -108,8 +127,7 @@ final class DesktopCompanionView: NSView {
             guard height + row.height <= availableHeight else { break }
             height += row.height
         }
-        // Keep complete tasks visible where possible. A single very long title
-        // can still use the whole viewport and scroll to its speed line.
+        // Keep complete title/speed groups visible where possible.
         if height == 0 { height = min(taskPageHeight, availableHeight) }
         return NSRect(x: tickerRect.minX, y: characterRect.maxY + 7,
                       width: tickerRect.width, height: height)

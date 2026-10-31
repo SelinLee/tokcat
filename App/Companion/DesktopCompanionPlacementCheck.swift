@@ -140,26 +140,41 @@ enum DesktopCompanionPlacementCheck {
               let endEvent = NSEvent(cgEvent: endCG) else { throw failure("end scroll event unavailable") }
         view.scrollWheel(with: endEvent)
         guard view.visibleTaskIndices.count <= 5, view.visibleTaskIndices.last == 49 else { throw failure("last task is not reachable") }
-        let longTitle = "优化桌边挂件的任务名称自动换行并保持文字居中对齐👩🏽‍💻"
+        let longTitle = String(repeating: "优化桌边挂件的任务名称自动换行并保持文字居中对齐👩🏽‍💻", count: 2)
         let shortTitle = "短任务"
-        model.taskMonitor.update(sessions: Array(sessions.prefix(2)), tasks: [
-            AgentTaskRecord(session: sessions[0], title: longTitle),
-            AgentTaskRecord(session: sessions[1], title: shortTitle)
-        ], enabled: [.codexCLI])
+        let twoLineTitle = "任务名称最多显示两行但不需要省略号"
+        let titleCases = [longTitle, shortTitle, twoLineTitle,
+            "https://example.com/" + String(repeating: "long-task-title-without-spaces-", count: 5),
+            String(repeating: "👩🏽‍💻", count: 60)]
+        model.taskMonitor.update(sessions: Array(sessions.prefix(titleCases.count)), tasks: titleCases.enumerated().map {
+            AgentTaskRecord(session: sessions[$0.offset], title: $0.element)
+        }, enabled: [.codexCLI])
         for position in PetDockPosition.allCases {
             model.selectDesktopPetPosition(position)
-            guard view.taskTitleLines[0].count > 1,
-                  view.taskTitleLines[0].joined() == longTitle,
+            guard view.taskTitleLines.allSatisfy({ $0.count <= 2 }),
+                  view.taskTitleLines[0].count == 2,
+                  view.taskTitleLines[0].last?.hasSuffix("…") == true,
                   view.taskTitleLines[1] == [shortTitle],
+                  view.taskTitleLines[2].count == 2,
+                  view.taskTitleLines[2].joined() == twoLineTitle,
+                  view.taskTitleLines[3].last?.hasSuffix("…") == true,
+                  view.taskTitleLines[4].last?.hasSuffix("…") == true,
                   view.taskRowHeights[0] > view.taskRowHeights[1],
-                  abs(view.taskListRect.midX - view.tickerRect.midX) < 0.01 else { throw failure("wrapped task title/centering: \(position)") }
+                  abs(view.taskListRect.midX - view.tickerRect.midX) < 0.01 else { throw failure("wrapped task title/centering: \(position), \(view.taskTitleLines)") }
+            for (index, lines) in view.taskTitleLines.enumerated() {
+                let visible = lines.joined().replacingOccurrences(of: "…", with: "")
+                guard Array(titleCases[index]).starts(with: Array(visible)),
+                      lines.allSatisfy({ ($0 as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .semibold)]).width <= view.taskListRect.width - 7 }) else {
+                    throw failure("task title truncation width/characters: \(position)")
+                }
+            }
         }
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         guard store.load().desktopCompanionHeadDisplay == .taskAndSpeed else { throw failure("head style not persisted") }
         model.selectCompanionHeadDisplay(.activityTicker)
         view.apply(snapshot(.waitingForApproval))
         guard view.showsBubble else { throw failure("original ticker/waiting behavior did not restore") }
-        print("PASS head display modes, saved choice, five-task limit, wrapped titles, shared ticker center, scrolling to the last task, and bounded window sizes")
+        print("PASS head display modes, saved choice, five-task limit, two-line titles with tail ellipsis, shared ticker center, scrolling to the last task, and bounded window sizes")
         print("PASS placement, edge-constrained movement, click/wait bubbles above artwork, manual toki/biti, legacy migration")
     }
     private static func failure(_ text: String) -> NSError {

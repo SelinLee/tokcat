@@ -72,7 +72,7 @@ struct AgentSessionList: View {
             VStack(alignment: .leading, spacing: 10) {
                 if tasks.isEmpty {
                     Text("暂无进行中的任务").font(.subheadline.weight(.medium))
-                    Text("Codex、WorkBuddy、WorkBuddy AI 与 DeepSeek Harness 自动读取本地状态；Claude Code 可在设置 → Agent 中启用。")
+                    Text("Claude Code、Codex、WorkBuddy、WorkBuddy AI 与 DeepSeek Harness 自动读取本地状态；Claude 详细事件可在设置 → Agent 中启用 hooks。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(tasks) { session in
@@ -218,7 +218,7 @@ struct AgentMonitoringSettings: View {
             Text("Codex：读取本地任务事件及桌面 Work 会话状态。Work 状态随客户端同步更新；未提供的状态显示暂无更新。授权等待仅在数据源提供明确信号时显示。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Text("Claude Code 状态接入")
+                Text("Claude Code 详细事件（hooks）")
                 Spacer()
                 Button(installed ? "移除接入" : "启用接入") { model.configureClaudeMonitoring(enabled: !installed) }
             }
@@ -228,7 +228,7 @@ struct AgentMonitoringSettings: View {
             }
         } header: { Text("AI 任务状态") }
         footer: {
-            Text("Claude 接入会备份并合并本机设置，仅保存状态、项目路径和时间，不保存对话正文。移动 tokcat.app 后请重新启用接入。")
+            Text("新版 Claude Code 会话注册状态自动读取，无需 hooks。可选 hooks 补充授权等待、失败和本轮结束；启用后请重开 Claude 会话。接入会备份并合并本机设置，不保存对话正文；移动 tokcat.app 后请重新启用。")
         }
         .onChange(of: model.sessionMonitoringMessage) { _ in installed = ClaudeSessionHooks.isInstalled() }
     }

@@ -9,8 +9,8 @@ APP_NAME="tokcat"
 EXEC_NAME="TokcatApp"
 BUNDLE_ID="com.selinlee.tokcat"
 MIN_SYSTEM="13.0"
-VERSION="${TOKCAT_VERSION:-0.7.7}"
-BUILD_NUMBER="${TOKCAT_BUILD:-12}"
+VERSION="${TOKCAT_VERSION:-0.7.10}"
+BUILD_NUMBER="${TOKCAT_BUILD:-19}"
 
 DIST_DIR="$ROOT/dist"
 APP_DIR="$DIST_DIR/${APP_NAME}.app"
@@ -27,6 +27,9 @@ if [[ "${TOKCAT_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
 fi
 if [[ "${TOKCAT_SKIP_DSYM:-0}" == "1" ]]; then
   SWIFT_BUILD_ARGS+=(-debug-info-format none)
+fi
+if [[ "${TOKCAT_UNIVERSAL_BUILD:-0}" == "1" ]]; then
+  SWIFT_BUILD_ARGS+=(--arch arm64 --arch x86_64)
 fi
 if [[ -n "${TOKCAT_SWIFTPM_CACHE_PATH:-}" ]]; then
   SWIFT_BUILD_ARGS+=(--cache-path "$TOKCAT_SWIFTPM_CACHE_PATH")
@@ -171,6 +174,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>允许 tokcat 将你输入的命令发送到终端，或按你确认的自定义命令操作访达。</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
   <key>CFBundleIconFile</key>
@@ -183,7 +188,8 @@ echo "==> Ad-hoc codesign"
 # Sign nested resource bundles first, then the app.
 codesign --force --sign - "$RESOURCES_DIR/tokcat_TokcatApp.bundle"
 codesign --force --sign - "$MACOS_DIR/${EXEC_NAME}"
-codesign --force --deep --options runtime --sign - "$APP_DIR" || codesign --force --deep --sign - "$APP_DIR"
+codesign --force --deep --options runtime --entitlements "$ROOT/Resources/Tokcat.entitlements" --sign - "$APP_DIR" \
+  || codesign --force --deep --entitlements "$ROOT/Resources/Tokcat.entitlements" --sign - "$APP_DIR"
 
 echo "==> Verify bundle"
 if command -v spctl >/dev/null 2>&1; then

@@ -101,7 +101,7 @@ enum DesktopCompanionPreview {
                   !view.showsBubble else { throw CocoaError(.validationMissingMandatoryProperty) }
             area.addSubview(view)
             canvas.addSubview(area)
-            let label = NSTextField(labelWithString: "\(count) 个任务 · 最多5个 / 名称换行" + (view.taskListOverflows ? " · 可滚动" : ""))
+            let label = NSTextField(labelWithString: "\(count) 个任务 · 最多5个 / 标题最多两行" + (view.taskListOverflows ? " · 可滚动" : ""))
             label.font = .systemFont(ofSize: 12, weight: .medium)
             label.textColor = .darkGray
             label.frame = NSRect(x: 16 + column * 316, y: 600, width: 300, height: 22)

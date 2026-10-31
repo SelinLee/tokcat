@@ -5,7 +5,7 @@ The README separates live task states, recent activity, conversation reading, an
 | Source | Local records | Setup / limits |
 |---|---|---|
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl`, session index, `~/.codex/sqlite/codex-dev.db` Work catalog | Automatic. Rollout events supply per-turn state/history and billing. ChatGPT-backed Work tasks share the Codex toggle and read only catalog metadata. |
-| Claude Code | `~/.claude/projects/*/*.jsonl` and optional local hook events | Enable hooks in Settings → Agent, then restart Claude sessions. Existing settings are backed up and merged. Re-enable hooks after moving the app. |
+| Claude Code | `~/.claude/sessions/<pid>.json`, `~/.claude/projects/*/*.jsonl` and optional local hook events | Local registry state is automatic on clients that publish it. Optional hooks add detailed lifecycle events or support older clients: enable in Settings → Agent, then restart Claude sessions. Existing settings are backed up and merged. Re-enable hooks after moving the app. |
 | WorkBuddy | `~/.workbuddy` trace database and linked local conversation logs | Read-only database access. Explicit session state is retained while the database remains readable. |
 | WorkBuddy AI | `~/.workbuddy-ai` trace database and linked local conversation logs | Separate from WorkBuddy. Same session-state behavior. |
 | DeepSeek Harness | `~/.dsh/storages/session_projcache/sessions` | Covers `dsh web` and DSH Desktop. Open steps mean running; projected active questions mean waiting. Conversation text comes from the turn outline. Compressed transcripts are not read. |
@@ -14,6 +14,20 @@ The README separates live task states, recent activity, conversation reading, an
 | Cursor | Compatible JSONL usage records under `~/.cursor` / Cursor Application Support | Best effort, disabled by default. Does not parse full task state or conversations. |
 | Gemini CLI | Compatible JSONL usage records under `~/.gemini` | Best effort, disabled by default. Does not parse full task state or conversations. |
 | CC Switch | `~/.cc-switch/cc-switch.db` | Provider attribution, reported charges and multipliers; proxy events are deduplicated against native agent logs. No task lifecycle. |
+
+## Claude Code automatic state
+
+The local session registry supplies conversation identity, title, project and explicit `busy` / `idle` status. tokcat verifies the local process and its start time before accepting a registration, deduplicates by session ID, and hides internal delegated runs. `busy` means running even during long tools; polling it does not invent new activity or turn timing. `idle`, missing and unknown statuses remain unknown rather than claiming completion, failure or an authorization wait. Their menu dots expire after the normal uncertainty window; repeated polls and app restarts do not renew it.
+
+Registry revisions and hooks have separate replay watermarks. A registry poll cannot consume a delayed hook, and idle cannot resolve an explicit hook wait. An unchanged registry snapshot cannot overwrite a newer hook's wait, completion or failure. A newer busy revision resumes work; idle never clears an explicit end reminder. Hooks remain optional and retain the same installation/removal behavior. Hook-only clients without a registry continue to work. Removed registrations or dead/reused PIDs stop contributing live tasks while retaining history without inventing a completion; an unreadable registry has a two-minute grace period. Conversation links and model metadata come from the corresponding local transcript when available. No credentials, network calls or Claude settings changes are needed for automatic discovery.
+
+## Claude Code output speed
+
+Per-session `tok/s` reads assistant `message.usage.output_tokens` from the linked transcript, independently of the registry's state. A cached 2 MiB tail reconstructs the recent 60-second window on attach and restart. Response IDs deduplicate repeated text, thinking and parallel tool-call blocks; input/cache tokens are excluded and thinking tokens are not added again. Only genuine user messages reset the window, not tool results or metadata. Known hook start/end times bound the replay; output observations never resolve a wait or change lifecycle timestamps. Without a visible start, the first response establishes a baseline. Waiting shows zero when samples exist; missing usage remains unavailable. Logs report batches, so this is observed output throughput rather than instantaneous decoding speed. The separate global menu-bar token-rate preference is unchanged.
+
+## WorkBuddy output speed
+
+WorkBuddy and WorkBuddy AI read output usage from their linked `projects/*/<session-id>.jsonl` logs, including assistant replies and model-generated tool calls. A cached 2 MiB tail reconstructs the recent 60-second window on attach and restart. User messages reset the window; repeated streaming rows and parallel tool calls sharing a provider message ID count once. Input/cache tokens are excluded and reasoning tokens are not added again. Without a visible turn start, the first output establishes a baseline. Missing usage remains unavailable, and database state remains authoritative. Usage arrives in batches, so the speed updates when WorkBuddy writes each response's usage.
 
 ## DeepSeek Harness waiting prompts
 

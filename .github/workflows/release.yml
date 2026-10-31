@@ -1,0 +1,95 @@
+name: Publish macOS release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/releases/current.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        shell: python
+        run: |
+          import json, os, re
+          data = json.load(open('.github/releases/current.json'))
+          version, build = data['version'], data['build']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version)
+          assert re.fullmatch(r'\d+', build)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'version={version}\nbuild={build}\n')
+
+  build:
+    needs: metadata
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      TOKCAT_VERSION: ${{ needs.metadata.outputs.version }}
+      TOKCAT_BUILD: ${{ needs.metadata.outputs.build }}
+      TOKCAT_UNIVERSAL_BUILD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the runner Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Test
+        run: swift test
+      - name: Build and package both architectures
+        run: bash scripts/package_app.sh
+      - name: Verify application and packages
+        run: |
+          codesign --verify --deep --strict dist/tokcat.app
+          lipo -verify_arch arm64 x86_64 dist/tokcat.app/Contents/MacOS/TokcatApp
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/tokcat.app/Contents/Info.plist)" = "$TOKCAT_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' dist/tokcat.app/Contents/Info.plist)" = "$TOKCAT_BUILD"
+          (cd dist && shasum -a 256 -c "tokcat-$TOKCAT_VERSION-macos.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            dist/tokcat-${{ env.TOKCAT_VERSION }}-macos.dmg
+            dist/tokcat-${{ env.TOKCAT_VERSION }}-macos.zip
+            dist/tokcat-${{ env.TOKCAT_VERSION }}-macos.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: release-assets
+      - name: Verify download checksums
+        run: (cd release-assets && sha256sum -c "tokcat-$VERSION-macos.sha256")
+      - name: Publish the tested release
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" --json isDraft --jq .isDraft > draft-status.txt 2>/dev/null; then
+            test "$(cat draft-status.txt)" = true || { echo 'A published release already exists; refusing to replace it.'; exit 1; }
+            gh release upload "$tag" release-assets/* --clobber
+          else
+            gh release create "$tag" release-assets/* --draft --target "$GITHUB_SHA" \
+              --title "tokcat $VERSION · 快捷运行框、计算器与网站搜索" \
+              --notes-file ".github/releases/$tag.md"
+          fi
+          gh release edit "$tag" --draft=false --latest
