@@ -51,7 +51,9 @@ jobs:
       - name: Verify application and packages
         run: |
           codesign --verify --deep --strict dist/tokcat.app
-          lipo -verify_arch arm64 x86_64 dist/tokcat.app/Contents/MacOS/TokcatApp
+          architectures="$(lipo -archs dist/tokcat.app/Contents/MacOS/TokcatApp)"
+          [[ " $architectures " == *" arm64 "* ]]
+          [[ " $architectures " == *" x86_64 "* ]]
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/tokcat.app/Contents/Info.plist)" = "$TOKCAT_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' dist/tokcat.app/Contents/Info.plist)" = "$TOKCAT_BUILD"
           (cd dist && shasum -a 256 -c "tokcat-$TOKCAT_VERSION-macos.sha256")
