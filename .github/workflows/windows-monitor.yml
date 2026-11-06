@@ -6,6 +6,7 @@ on:
 jobs:
   parser:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Test Windows PowerShell parser

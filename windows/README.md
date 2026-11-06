@@ -6,6 +6,13 @@ Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Window
 
 ## Dashboard and shortcuts
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ui-dark.png" />
+  <img src="docs/ui-light.png" alt="Native Windows 10 controls with fixture tasks, shown in light and dark palettes." width="1180" />
+</picture>
+
+Native Windows 10 controls with fixture tasks, shown in light and dark palettes.
+
 The dashboard follows the Mac app's task/usage/settings navigation, warm light or dark surfaces, and consistent line icons. It reads the Windows app theme at launch and uses system colors in high-contrast mode. Task states have both text and distinct shapes.
 
 - Summary cards count all tasks from the last seven days. Search and filters only affect the list; tasks awaiting input or authorization appear first, followed by failures, inactivity and running tasks.

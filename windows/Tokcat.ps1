@@ -401,6 +401,8 @@ if ($SmokeTest) {
         $smokeTimer.Stop()
         if ($metricsTimer.Interval -ne 1000 -or -not $metricsTimer.Enabled) { $script:smokeError = 'Lightweight metrics must refresh independently every second.' }
         if (-not $form.Visible -or -not $form.IsHandleCreated -or -not $list.IsHandleCreated -or -not $form.ShowInTaskbar -or -not $tray.Visible -or $null -eq $tray.Icon -or $null -eq $form.Icon) { $script:smokeError = 'Window, taskbar, or tray was not initialized.' }
+        # The taskbar toggle now lives on Settings; hidden WinForms buttons do not PerformClick.
+        $form.ShowSettings($true)
         $stripButton.PerformClick()
         if ($taskbarWidget.Visible -or $stripMenu.Checked) { $script:smokeError = 'Taskbar widget did not hide.' }
         $stripButton.PerformClick()
@@ -409,6 +411,7 @@ if ($SmokeTest) {
         $cpuMenu.PerformClick()
         if (-not $cpuMenu.Checked -or -not (Read-TaskbarMetricsPreference $script:metricsPreferencePath).Cpu) { $script:smokeError = 'Taskbar metric toggle did not persist.' }
         $cpuMenu.PerformClick()
+        $form.ShowSettings($false)
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $form.Search.Text = 'no-matching-task-fixture-83c12'
         if ($list.Items.Count -ne 0) { $script:smokeError = 'Search did not filter the visible task list.' }

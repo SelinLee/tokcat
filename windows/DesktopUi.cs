@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -83,9 +84,13 @@ public static class TokcatUi
         list.AccessibleName = "任务或用量明细";
         // The image list also provides comfortable row spacing at the current DPI.
         ImageList images = new ImageList { ImageSize = new Size(20, 28), ColorDepth = ColorDepth.Depth32Bit };
+        // ImageList defers reading source bitmaps until its native handle exists.
+        // Keep them alive for the control's lifetime, including handle recreation.
+        List<Bitmap> imageSources = new List<Bitmap>();
         foreach (string state in new[] { "running", "waiting", "approval", "completed", "failed", "stalled", "interrupted", "unknown" })
         {
-            using (Bitmap bitmap = new Bitmap(20, 28))
+            Bitmap bitmap = new Bitmap(20, 28);
+            imageSources.Add(bitmap);
             using (Graphics graphics = Graphics.FromImage(bitmap))
             using (Bitmap glyph = Icon(state, StateColor(state), 18))
             {
@@ -93,7 +98,10 @@ public static class TokcatUi
             }
         }
         list.SmallImageList = images;
-        list.Disposed += delegate { images.Dispose(); };
+        list.Disposed += delegate {
+            images.Dispose();
+            foreach (Bitmap bitmap in imageSources) bitmap.Dispose();
+        };
         list.OwnerDraw = true;
         list.DrawColumnHeader += delegate(object sender, DrawListViewColumnHeaderEventArgs e) {
             using (SolidBrush brush = new SolidBrush(Background)) e.Graphics.FillRectangle(brush, e.Bounds);
