@@ -15,6 +15,7 @@ public sealed class TokcatLauncherWindow : Form
     public readonly ListBox Results = new ListBox();
     public readonly Label Hint = new Label();
     public event EventHandler Submitted;
+    public event EventHandler ContainingFolderRequested;
     public event EventHandler HistoryOlder;
     public event EventHandler HistoryNewer;
     public event EventHandler PositionChanged;
@@ -49,9 +50,10 @@ public sealed class TokcatLauncherWindow : Form
             ReleaseCapture(); SendMessage(Handle, 0x00A1, new IntPtr(2), IntPtr.Zero);
         };
         Query.BorderStyle = BorderStyle.None;
+        Query.MaxLength = 8192;
         Query.Font = new Font("Microsoft YaHei UI", 18);
         Query.BackColor = palette[1]; Query.ForeColor = palette[2];
-        Query.AccessibleName = "输入应用、算式、网站或命令";
+        Query.AccessibleName = "搜索应用、文件、算式、网站或命令";
         Query.SetBounds(54, 15, 562, 32); Query.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
         input.Controls.Add(Query); input.Controls.Add(icon);
         Hint.Dock = DockStyle.Bottom; Hint.Height = 32; Hint.Padding = new Padding(12, 6, 0, 0);
@@ -75,6 +77,10 @@ public sealed class TokcatLauncherWindow : Form
     void QueryKeyDown(object sender, KeyEventArgs e)
     {
         if (e.KeyCode == Keys.Escape) Hide();
+        else if (e.KeyCode == Keys.Enter && e.Control)
+        {
+            if (ContainingFolderRequested != null) ContainingFolderRequested(this, EventArgs.Empty);
+        }
         else if (e.KeyCode == Keys.Enter) Submit();
         else if (e.KeyCode == Keys.Up && (Query.TextLength == 0 || BrowsingHistory))
         {
@@ -104,14 +110,21 @@ public sealed class TokcatLauncherWindow : Form
             TextRenderer.DrawText(e.Graphics, result.Detail, detailFont, new Rectangle(14, e.Bounds.Top + 28, e.Bounds.Width - 28, 18), Hint.ForeColor, flags);
     }
 
+    string displayedQuery;
     public void SetResults(IEnumerable<TokcatLauncherResult> results, string hint)
     {
+        var selected = Results.SelectedItem as TokcatLauncherResult;
+        string selectedKey = displayedQuery == Query.Text && selected != null ? selected.Key : null;
+        displayedQuery = Query.Text;
         Results.BeginUpdate();
         try
         {
             Results.Items.Clear();
             foreach (var result in results) Results.Items.Add(result);
             if (Results.Items.Count > 0) Results.SelectedIndex = 0;
+            if (selectedKey != null)
+                for (int i = 0; i < Results.Items.Count; i++)
+                    if (string.Equals(((TokcatLauncherResult)Results.Items[i]).Key, selectedKey, StringComparison.OrdinalIgnoreCase)) { Results.SelectedIndex = i; break; }
         }
         finally { Results.EndUpdate(); }
         Hint.Text = hint;
@@ -135,7 +148,8 @@ public sealed class TokcatLauncherWindow : Form
 
 public sealed class TokcatLauncherResult
 {
-    public string Title, Detail, Kind, Value;
+    public string Title, Detail, Kind, Value, Key, Input;
+    public double Score;
     public TokcatLauncherApp App;
     public override string ToString() { return Title + " " + Detail; }
 }
@@ -172,12 +186,17 @@ public sealed class TokcatLauncherController : IDisposable
     readonly bool enableHotKey;
     readonly TokcatLauncherHotKey hotKey;
     readonly System.Windows.Forms.Timer savePosition;
+    readonly System.Windows.Forms.Timer fileDebounce = new System.Windows.Forms.Timer { Interval = 180 };
+    readonly TokcatEverythingSearch fileSearch;
+    TokcatEverythingFile[] fileResults = new TokcatEverythingFile[0];
+    string pendingFileQuery, completedFileQuery, fileError;
     TokcatLauncherSettings settings;
     TokcatLauncherIndex index = new TokcatLauncherIndex(new TokcatLauncherApp[0]);
     DateTime lastScan = DateTime.MinValue;
     bool scanning, recalling, configurationValid = true;
     volatile bool disposed;
     int historyCursor = -1;
+    string catalogError;
     public readonly TokcatLauncherWindow Window;
     public event EventHandler OpenSettings;
     public event EventHandler StatusChanged;
@@ -189,6 +208,15 @@ public sealed class TokcatLauncherController : IDisposable
         try { settings = TokcatLauncherSettings.Load(path); }
         catch (Exception error) { settings = new TokcatLauncherSettings(); configurationValid = false; Status = "设置读取失败 · " + error.Message; }
         Window = new TokcatLauncherWindow(palette);
+        fileSearch = new TokcatEverythingSearch();
+        Window.VisibleChanged += delegate { if (!Window.Visible && !disposed) ClearFileQuery(); };
+        fileSearch.Completed += delegate(object sender, TokcatEverythingReply reply)
+        {
+            if (reply.Query != Window.Query.Text.Trim()) return;
+            completedFileQuery = reply.Query; fileResults = reply.Files; fileError = reply.Error;
+            UpdateResults();
+        };
+        fileDebounce.Tick += delegate { fileDebounce.Stop(); if (!string.IsNullOrEmpty(pendingFileQuery)) fileSearch.Query(pendingFileQuery); };
         hotKey = new TokcatLauncherHotKey();
         hotKey.Pressed += delegate { if (Window.Visible) Window.Hide(); else Show(); };
         Window.Query.TextChanged += delegate
@@ -197,6 +225,7 @@ public sealed class TokcatLauncherController : IDisposable
             UpdateResults();
         };
         Window.Submitted += delegate { SubmitSelection(); };
+        Window.ContainingFolderRequested += delegate { OpenContainingFolder(); };
         Window.HistoryOlder += delegate { Recall(true); };
         Window.HistoryNewer += delegate { Recall(false); };
         savePosition = new System.Windows.Forms.Timer { Interval = 400 };
@@ -211,6 +240,8 @@ public sealed class TokcatLauncherController : IDisposable
 
     public string ShortcutText { get { return FormatShortcut(settings.Modifiers, settings.Key); } }
     public bool Enabled { get { return settings.Enabled; } }
+    public bool IsIndexing { get { return scanning; } }
+    public int IndexedApplicationCount { get { return index.Count; } }
     public static string FormatShortcut(int modifiers, int key)
     {
         string name = key == 32 ? "Space" : ((Keys)key).ToString();
@@ -267,7 +298,7 @@ public sealed class TokcatLauncherController : IDisposable
                     if (disposed) return;
                     scanning = false; lastScan = DateTime.UtcNow;
                     if (next != null) index = next;
-                    if (error != null) { Status = "应用列表读取失败 · " + error; Changed(); }
+                    catalogError = error == null ? null : "应用列表读取失败 · " + error;
                     UpdateResults();
                 });
             }
@@ -285,53 +316,68 @@ public sealed class TokcatLauncherController : IDisposable
         try
         {
             Window.BrowsingHistory = next >= 0;
-            Window.Query.Text = next < 0 ? "" : settings.History[next].Text;
+            string text = next < 0 ? "" : settings.History[next].Text;
+            if (Window.Query.Text == text) UpdateResults();
+            else Window.Query.Text = text;
             Window.Query.SelectionStart = Window.Query.TextLength;
         }
         finally { recalling = false; }
     }
 
+    void ClearFileQuery()
+    {
+        fileDebounce.Stop(); fileSearch.Cancel();
+        pendingFileQuery = null; completedFileQuery = null; fileError = null;
+        fileResults = new TokcatEverythingFile[0];
+    }
+
     void UpdateResults()
     {
+        if (disposed || !Window.Visible) return;
         string text = Window.Query.Text.Trim();
-        var results = new List<TokcatLauncherResult>();
-        string hint = "应用 · 算式 · 网站 · > 命令    ↑ 历史    Esc 收起";
-        if (text.Length == 0) { Window.SetResults(results, hint); return; }
-        var command = settings.Commands.FirstOrDefault(c => c.Enabled && string.Equals(c.Keyword, text, StringComparison.OrdinalIgnoreCase));
-        Uri website = TokcatLauncherResolver.Website(text, settings.Websites);
-        if (text == "setup") results.Add(new TokcatLauncherResult { Title = "打开 tokcat 设置", Kind = "settings", Detail = "回车打开设置" });
-        else if (text.StartsWith(">"))
+        string hint = "已索引 " + index.Count + " 个应用 · ↑ 历史 · Enter 执行 · Ctrl+Enter 文件位置";
+        if (text.Length == 0)
         {
-            string script = text.Substring(1).Trim();
-            if (script.Length > 0) results.Add(new TokcatLauncherResult { Title = "在 PowerShell 中执行", Detail = script, Kind = "terminal", Value = script });
+            ClearFileQuery();
+            if (scanning) hint = "正在读取应用列表…";
+            else if (catalogError != null) hint = catalogError;
+            Window.SetResults(TokcatLauncherRanking.History(settings), hint);
+            return;
         }
-        else if (command != null) results.Add(new TokcatLauncherResult { Title = string.IsNullOrWhiteSpace(command.Name) ? command.Keyword : command.Name, Detail = command.Value, Kind = "terminal", Value = command.Value });
-        else if (website != null) results.Add(new TokcatLauncherResult { Title = "打开网站", Detail = website.AbsoluteUri, Kind = "website", Value = website.AbsoluteUri });
-        else
+        if (pendingFileQuery != text)
+        {
+            ClearFileQuery(); pendingFileQuery = text; fileDebounce.Start();
+        }
+        bool filesReady = completedFileQuery == text;
+        if (!filesReady) hint += " · 文件搜索中…";
+        else if (fileError != null) hint = fileError;
+        else hint += " · Everything";
+        var recalled = historyCursor >= 0 && historyCursor < settings.History.Count ? settings.History[historyCursor] : null;
+        var results = TokcatLauncherRanking.Build(text, settings, index.SearchMatches(text, 200),
+            filesReady ? fileResults : new TokcatEverythingFile[0], filesReady && !scanning, recalled);
+        if (results.Length == 0)
         {
             var calculation = TokcatLauncherCalculator.Evaluate(text);
-            if (calculation != null)
-            {
-                if (calculation.Result != null) results.Add(new TokcatLauncherResult { Title = calculation.Result, Detail = "回车复制结果", Kind = "calculation", Value = calculation.Result });
-                else hint = calculation.Error;
-            }
-            else
-            {
-                var apps = index.Search(text).ToList();
-                if (historyCursor >= 0)
-                {
-                    var remembered = settings.History[historyCursor].Application;
-                    if (remembered != null)
-                    {
-                        apps.RemoveAll(a => a.Target == remembered.Target);
-                        apps.Insert(0, remembered);
-                    }
-                }
-                foreach (var app in apps.Take(7)) results.Add(new TokcatLauncherResult { Title = app.Name, Detail = "打开应用", Kind = "application", App = app });
-                if (results.Count == 0) hint = scanning ? "正在读取应用列表…" : "没有找到应用，试试应用名称、拼音或首字母。";
-            }
+            if (calculation != null && calculation.Error != null) hint = calculation.Error;
+            else if (catalogError != null) hint = catalogError;
         }
         Window.SetResults(results, hint);
+    }
+
+    void OpenContainingFolder()
+    {
+        var result = Window.Results.SelectedItem as TokcatLauncherResult;
+        if (result == null) return;
+        if (result.Kind != "file") { SubmitSelection(); return; }
+        try
+        {
+            if (result.Value.IndexOf('"') >= 0) throw new InvalidDataException("文件位置无效。");
+            Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + result.Value + "\"") { UseShellExecute = true });
+            string input = Window.Query.Text.Trim();
+            settings.Remember(input.Length == 0 ? result.Input : input, null, result.Kind, result.Value, result.Key);
+            Save(); Window.Hide();
+        }
+        catch (Exception error) { Window.Hint.Text = "无法打开位置 · " + error.Message; }
     }
 
     public void SubmitSelection()
@@ -339,6 +385,14 @@ public sealed class TokcatLauncherController : IDisposable
         var result = Window.Results.SelectedItem as TokcatLauncherResult;
         if (result == null) return;
         string input = Window.Query.Text.Trim();
+        if (result.Kind == "fill")
+        {
+            Window.Query.Text = result.Value;
+            Window.Query.SelectionStart = Window.Query.TextLength;
+            Window.Query.Focus();
+            return;
+        }
+        if (input.Length == 0) input = result.Input ?? result.Title;
         Window.Hide();
         try
         {
@@ -358,6 +412,10 @@ public sealed class TokcatLauncherController : IDisposable
                     break;
                 case "calculation": Clipboard.SetText(result.Value); break;
                 case "website": Process.Start(new ProcessStartInfo(result.Value) { UseShellExecute = true }); break;
+                case "file":
+                    if (!File.Exists(result.Value) && !Directory.Exists(result.Value)) throw new FileNotFoundException("文件已移动或删除，请重新搜索。");
+                    Process.Start(new ProcessStartInfo(result.Value) { UseShellExecute = true });
+                    break;
                 case "terminal":
                     string executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
                     string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(result.Value));
@@ -365,7 +423,7 @@ public sealed class TokcatLauncherController : IDisposable
                     break;
                 case "settings": if (OpenSettings != null) OpenSettings(this, EventArgs.Empty); break;
             }
-            settings.Remember(input, result.App); Save();
+            settings.Remember(input, result.App, result.Kind, result.Value, result.Key); Save();
         }
         catch (Exception error)
         {
@@ -404,6 +462,7 @@ public sealed class TokcatLauncherController : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        fileDebounce.Stop(); fileDebounce.Dispose(); fileSearch.Dispose();
         savePosition.Stop(); savePosition.Dispose();
         Save(); hotKey.Dispose(); Window.Dispose();
     }
@@ -438,9 +497,9 @@ public sealed class TokcatLauncherSettingsWindow : Form
             modifiers = (e.Alt ? 1 : 0) | (e.Control ? 2 : 0) | (e.Shift ? 4 : 0); key = (int)e.KeyCode;
             shortcut.Text = TokcatLauncherController.FormatShortcut(modifiers, key);
         };
-        var hint = new Label { Text = "Enter 打开应用或复制计算结果\n输入 > 后跟终端命令，setup 打开监控设置\n空白时按 ↑ 调出最近 50 条输入，↑ / ↓ 切换\n拖动搜索图标可移动启动框，位置自动保存", Location = new Point(24, 168), Size = new Size(650, 120) };
-        var clear = new Button { Text = "清空输入历史", Location = new Point(24, 310), Size = new Size(160, 32) };
-        clear.Click += delegate { settings.History.Clear(); clear.Text = "保存后清空历史"; };
+        var hint = new Label { Text = "应用、文件、算式、网站和命令统一匹配，常用项优先\n运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n输入 > 后跟终端命令，setup 打开监控设置\n空白显示历史，按 ↑ 调出最近 50 条输入\n拖动搜索图标可移动启动框，位置自动保存", Location = new Point(24, 168), Size = new Size(650, 130) };
+        var clear = new Button { Text = "清空历史与使用权重", Location = new Point(24, 310), Size = new Size(200, 32) };
+        clear.Click += delegate { settings.History.Clear(); settings.Usage.Clear(); clear.Text = "保存后清空历史与权重"; };
         general.Controls.AddRange(new Control[] { enabled, caption, shortcut, hint, clear });
         tabs.TabPages.Add(general);
         tabs.TabPages.Add(BuildEntries("命令", commands, settings.Commands, "PowerShell 命令"));
