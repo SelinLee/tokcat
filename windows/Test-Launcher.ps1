@@ -200,6 +200,8 @@ try {
         Assert-Launcher (-not $controller.IsIndexing) 'The background application index must finish.'
         $controller.Show(); [Windows.Forms.Application]::DoEvents()
         Assert-Launcher ($controller.Window.Visible -and $controller.Window.Results.Items.Count -eq 0) 'Opening the launcher starts with an empty input.'
+        $createParams=$controller.Window.GetType().GetProperty('CreateParams',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($controller.Window)
+        Assert-Launcher (($createParams.ExStyle -band 0x02000000) -ne 0) 'The launcher composites its child controls in one paint.'
         Assert-Launcher (-not $controller.Window.Hint.Visible -and $controller.Window.Hint.Height -eq 0) 'The launcher footer stays hidden without reserving vertical space.'
         $emptyLauncherHeight=$controller.Window.ClientSize.Height
         $catalog=[TokcatLauncherCatalog]::Scan()
@@ -293,6 +295,51 @@ try {
         $saved=[TokcatLauncherSettings]::Load($uiPath)
         Assert-Launcher ($saved.History.Count -eq 1 -and $saved.Usage[0].Count -eq 2) 'Choosing history increments usage without duplicating the same input.'
     } finally { $controller.Dispose() }
+
+    $positionPath=Join-Path $testRoot 'position.json'
+    $positionController=[TokcatLauncherController]::new($positionPath,$palette,$false)
+    $resizeEnd=[Windows.Forms.Form].GetMethod('OnResizeEnd',[Reflection.BindingFlags]'Instance,NonPublic')
+    try {
+        $positionController.Show()
+        $bounds=[Windows.Forms.Screen]::FromControl($positionController.Window).WorkingArea
+        $anchor=[TokcatLauncherWindow]::Constrain([Drawing.Point]::new($bounds.Left+40,$bounds.Top+40),$positionController.Window.Size)
+        $positionController.Window.Location=$anchor
+        [void]$resizeEnd.Invoke($positionController.Window,[object[]]@([EventArgs]::Empty))
+        $savedPosition=[TokcatLauncherSettings]::Load($positionPath)
+        Assert-Launcher ($savedPosition.X -eq $anchor.X -and $savedPosition.Y -eq $anchor.Y) 'Finishing a drag saves the position immediately.'
+        $positionController.Window.Hide(); $positionController.Show()
+        Assert-Launcher ($positionController.Window.Location -eq $anchor) 'Reopening restores the previous drag position.'
+        $bottomAnchor=[Drawing.Point]::new($anchor.X,$bounds.Bottom-$positionController.Window.Height)
+        $positionController.Window.Location=$bottomAnchor
+        [void]$resizeEnd.Invoke($positionController.Window,[object[]]@([EventArgs]::Empty))
+        $rows=[TokcatLauncherResult[]]@(1..7 | ForEach-Object { [TokcatLauncherResult]@{Title=('result '+$_);Kind='fill';Key=('result:'+$_)} })
+        $positionController.Window.SetResults($rows,'fixture')
+        Assert-Launcher ($positionController.Window.Top -lt $bottomAnchor.Y) 'Expanded results stay within the working area.'
+        $savedPosition=[TokcatLauncherSettings]::Load($positionPath)
+        Assert-Launcher ($savedPosition.X -eq $bottomAnchor.X -and $savedPosition.Y -eq $bottomAnchor.Y) 'Automatic result layout preserves the saved drag anchor.'
+        $positionController.Window.Hide(); $positionController.Show()
+        Assert-Launcher ($positionController.Window.Location -eq $bottomAnchor) 'Reopening after a result resize returns to the saved anchor.'
+    } finally { $positionController.Dispose() }
+    $restarted=[TokcatLauncherController]::new($positionPath,$palette,$false)
+    try {
+        $restarted.Show()
+        Assert-Launcher ($restarted.Window.Location -eq $bottomAnchor) 'A new launcher instance restores the persisted position.'
+    } finally { $restarted.Dispose() }
+
+    $startup=[TokcatLauncherController]::new($uiPath,$palette,$false)
+    $shown=@{Rows=-1;InputReady=$false;IconReady=$false}
+    $startup.Window.add_Shown({
+        $shown.Rows=$startup.Window.Results.Items.Count
+        $shown.InputReady=$startup.Window.Query.IsHandleCreated
+        $inputPanel=@($startup.Window.Controls | Where-Object { $_ -is [Windows.Forms.Panel] })[0]
+        $searchIcon=@($inputPanel.Controls | Where-Object { $_ -is [Windows.Forms.Label] })[0]
+        $shown.IconReady=$searchIcon.IsHandleCreated -and $searchIcon.Visible
+    }.GetNewClosure())
+    try {
+        $startup.Show()
+        [Windows.Forms.Application]::DoEvents()
+        Assert-Launcher ($shown.Rows -gt 0 -and $shown.InputReady -and $shown.IconReady) 'The first shown frame has its history, input and magnifier prepared together.'
+    } finally { $startup.Dispose() }
 
     # Exercise native registration and disposal without taking the user's shortcut.
     $hotkeyPath=Join-Path $testRoot 'hotkey.json'; $hotkeySettings=New-Object TokcatLauncherSettings

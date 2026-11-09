@@ -18,7 +18,7 @@ Install and run [Everything](https://www.voidtools.com/) in your Windows session
 
 Type expressions such as `sqrt(9)+2^3` for a live result and press Enter to copy it. Enter `baidu query`, `google query`, `bing query`, `github`, or an HTTP(S) URL to open a website. Prefix a PowerShell command with `>` to execute it in a terminal. `setup` opens monitoring settings.
 
-An empty input shows frequent and recent history. Press Up to recall the last 50 inputs. Successful selections save a use count and timestamp that boost future matching results, including after restart. Drag the search icon to move the panel. Its position persists. Escape or changing applications dismisses it. Launcher settings include editable command and website keywords, with `{query}` placeholders for searches, and an option to clear history and usage weights. Configuration, history and usage are stored in `%LOCALAPPDATA%\Tokcat\launcher.json`. Existing history is migrated automatically.
+An empty input shows frequent and recent history. Press Up to recall the last 50 inputs. Successful selections save a use count and timestamp that boost future matching results, including after restart. Drag the search icon or the blank area around the input to move the panel. Releasing the mouse saves the position immediately for future opens and restarts. Escape or changing applications dismisses it. Launcher settings include editable command and website keywords, with `{query}` placeholders for searches, and an option to clear history and usage weights. Configuration, history and usage are stored in `%LOCALAPPDATA%\Tokcat\launcher.json`. Existing history is migrated automatically.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/ui-dark.png" />
