@@ -6,6 +6,14 @@ Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Window
 
 ## Dashboard and shortcuts
 
+### Quick launcher
+
+Press **Alt + Space**, or choose **快速启动** in the sidebar or tray menu. **Settings → 启动器设置** lets you record another shortcut or disable the global hotkey. The settings page reports shortcut conflicts.
+
+Search applications by English/Chinese names, pinyin or initials, then select with the arrow keys and press Enter. The background index reads Start menu and desktop shortcuts and Windows applications. Pinyin matching uses the system ICU library when available. Type expressions such as `sqrt(9)+2^3` for a live result and press Enter to copy it. Enter `baidu query`, `google query`, `bing query`, `github`, or an HTTP(S) URL to open a website. Prefix a PowerShell command with `>` to execute it in a terminal. `setup` opens monitoring settings.
+
+Press Up in an empty input to browse the last 50 inputs. Drag the search icon to move the panel; its position persists. Escape or changing applications dismisses it. Launcher settings include editable command and website keywords, with `{query}` placeholders for searches, and a clear-history option. Configuration and history are stored in `%LOCALAPPDATA%\Tokcat\launcher.json`.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/ui-dark.png" />
   <img src="docs/ui-light.png" alt="Native Windows 10 controls with fixture tasks, shown in light and dark palettes." width="1180" />
