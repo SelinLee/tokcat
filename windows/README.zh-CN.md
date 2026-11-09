@@ -21,6 +21,8 @@
 
 成功执行所选结果后，会保存选择次数与最近使用时间，匹配程度相近时常用项逐渐靠前，重启后继续生效。启动器设置的「命令」和「网站」页可添加、修改、停用或删除关键词。搜索网址使用 `{query}` 表示搜索内容。设置、最近 50 条历史与使用权重保存在 `%LOCALAPPDATA%\Tokcat\launcher.json`，旧版历史自动迁移，可在通用页一起清空历史与权重。
 
+运行 Everything 后，可用 `powershell.exe -NoProfile -STA -File .\windows\Test-Launcher.ps1 -RequireEverything -EverythingTestPath 'D:\indexed\example.txt'` 验证实机通信与启动框文件结果。测试路径需要是 Everything 已索引的现有文件，默认使用仓库内的 `windows\Tokcat.ps1`。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/ui-dark.png" />
   <img src="docs/ui-light.png" alt="Windows 10 原生控件配图，使用示例任务，展示浅色／深色配色。" width="1180" />

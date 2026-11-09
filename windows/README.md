@@ -85,4 +85,6 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\windows\Tokcat.ps
 
 Run parser checks with `powershell.exe -NoProfile -File .\windows\Test-Monitor.ps1`.
 
+With Everything running, verify live IPC and file results in the launcher with `powershell.exe -NoProfile -STA -File .\windows\Test-Launcher.ps1 -RequireEverything -EverythingTestPath 'D:\indexed\example.txt'`. Choose an existing file included in your Everything index. The default test path is `windows\Tokcat.ps1` in this checkout.
+
 Build a redistributable ZIP with `powershell.exe -NoProfile -File .\windows\Package.ps1`. It creates a new archive under `dist/`; extract it and run `tokcat-windows\Tokcat.cmd`. Windows CI publishes the ZIP as a workflow artifact.

@@ -1,4 +1,7 @@
-﻿param([switch]$RequireEverything)
+﻿param(
+    [switch]$RequireEverything,
+    [string]$EverythingTestPath = (Join-Path $PSScriptRoot 'Tokcat.ps1')
+)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Load-Launcher.ps1')
 function Assert-Launcher($Condition,[string]$Message) { if (-not $Condition) { throw $Message } }
@@ -140,12 +143,12 @@ try {
         Assert-Launcher ($reply.Value.Error -and $reply.Value.Files.Count -eq 0) 'Invalid IPC queries report a controlled error.'
         $reply.Value=$null
         if ([TokcatEverythingSearch]::IsRunning) {
-            $provider.Query('"'+(Join-Path $PSScriptRoot 'Tokcat.ps1')+'"')
+            $provider.Query('"'+$EverythingTestPath+'"')
             $deadline=[datetimeoffset]::UtcNow.AddSeconds(6)
             while ($null -eq $reply.Value -and [datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 10 }
             Assert-Launcher ($null -ne $reply.Value -and -not $reply.Value.Error) ('Live Everything query failed '+$reply.Value.Error)
             if ($RequireEverything) {
-                Assert-Launcher (@($reply.Value.Files | Where-Object Name -eq 'Tokcat.ps1').Count -gt 0) 'Live IPC finds the repository launcher entry point.'
+                Assert-Launcher (@($reply.Value.Files | Where-Object FullPath -eq $EverythingTestPath).Count -gt 0) 'Live IPC finds the specified indexed test file.'
             }
             $reply.Value=$null; $provider.Query('tokcat'); $provider.Cancel()
             $deadline=[datetimeoffset]::UtcNow.AddMilliseconds(300)
@@ -191,6 +194,15 @@ try {
             $sample=$catalog[0].Name
             $controller.Window.Query.Text=$sample
             Assert-Launcher ($controller.Window.Results.Items.Count -gt 0) 'Typing an indexed application name must show a result in the real launcher window.'
+        }
+        if ($RequireEverything) {
+            $controller.Window.Query.Text='"'+$EverythingTestPath+'"'
+            $deadline=[datetimeoffset]::UtcNow.AddSeconds(6)
+            do {
+                [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 10
+                $matchedFiles=@($controller.Window.Results.Items | Where-Object { $_.Kind -eq 'file' -and $_.Value -eq $EverythingTestPath })
+            } while ($matchedFiles.Count -eq 0 -and [datetimeoffset]::UtcNow -lt $deadline)
+            Assert-Launcher ($matchedFiles.Count -eq 1) 'Typing an indexed file path publishes a file result through the real launcher window.'
         }
         $controller.Window.Query.Text='sqrt(9)+2^3'
         $row=$controller.Window.Results.Items[0]
