@@ -21,6 +21,7 @@ public sealed class TokcatLauncherWindow : Form
     public event EventHandler PositionChanged;
     readonly Panel input = new Panel();
     readonly Color selection;
+    readonly TokcatLauncherIcons icons = new TokcatLauncherIcons();
     bool adjusting;
 
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
@@ -63,6 +64,11 @@ public sealed class TokcatLauncherWindow : Form
         Results.DrawMode = DrawMode.OwnerDrawFixed; Results.ItemHeight = 48;
         Results.AccessibleName = "快速启动搜索结果";
         Results.DrawItem += DrawResult;
+        icons.Changed += delegate
+        {
+            try { if (IsHandleCreated && !IsDisposed) BeginInvoke((Action)delegate { if (!IsDisposed) Results.Invalidate(); }); }
+            catch (InvalidOperationException) { }
+        };
         Results.DoubleClick += delegate { Submit(); };
         Controls.Add(Results); Controls.Add(Hint); Controls.Add(input);
         KeyDown += QueryKeyDown;
@@ -72,6 +78,8 @@ public sealed class TokcatLauncherWindow : Form
             if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
         };
         Move += delegate { if (Visible && !adjusting && PositionChanged != null) PositionChanged(this, EventArgs.Empty); };
+        // Background catalog results need a UI dispatch target before the launcher is first shown.
+        CreateHandle();
     }
 
     void QueryKeyDown(object sender, KeyEventArgs e)
@@ -104,10 +112,20 @@ public sealed class TokcatLauncherWindow : Form
         if (e.Index < 0) return;
         var result = (TokcatLauncherResult)Results.Items[e.Index];
         using (var brush = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? selection : Results.BackColor)) e.Graphics.FillRectangle(brush, e.Bounds);
+        float scale = e.Bounds.Height / 48f;
+        int padding = (int)Math.Round(14 * scale);
+        int textLeft = e.Bounds.Left + padding;
+        if (result.Kind == "application" && result.App != null)
+        {
+            int size = (int)Math.Round(32 * scale);
+            icons.Draw(e.Graphics, result.App, new Rectangle(textLeft, e.Bounds.Top + (e.Bounds.Height - size) / 2, size, size));
+            textLeft += size + (int)Math.Round(12 * scale);
+        }
+        int textWidth = Math.Max(0, e.Bounds.Right - textLeft - padding);
         var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
-        TextRenderer.DrawText(e.Graphics, result.Title, Font, new Rectangle(14, e.Bounds.Top + 4, e.Bounds.Width - 28, 24), ForeColor, flags);
+        TextRenderer.DrawText(e.Graphics, result.Title, Font, new Rectangle(textLeft, e.Bounds.Top + (int)(4 * scale), textWidth, (int)(24 * scale)), ForeColor, flags);
         using (var detailFont = new Font(Font.FontFamily, 9))
-            TextRenderer.DrawText(e.Graphics, result.Detail, detailFont, new Rectangle(14, e.Bounds.Top + 28, e.Bounds.Width - 28, 18), Hint.ForeColor, flags);
+            TextRenderer.DrawText(e.Graphics, result.Detail, detailFont, new Rectangle(textLeft, e.Bounds.Top + (int)(28 * scale), textWidth, (int)(18 * scale)), Hint.ForeColor, flags);
     }
 
     string displayedQuery;
@@ -120,7 +138,11 @@ public sealed class TokcatLauncherWindow : Form
         try
         {
             Results.Items.Clear();
-            foreach (var result in results) Results.Items.Add(result);
+            foreach (var result in results)
+            {
+                Results.Items.Add(result);
+                if (result.Kind == "application") icons.Request(result.App);
+            }
             if (Results.Items.Count > 0) Results.SelectedIndex = 0;
             if (selectedKey != null)
                 for (int i = 0; i < Results.Items.Count; i++)
@@ -144,6 +166,12 @@ public sealed class TokcatLauncherWindow : Form
         return new Point(Math.Max(bounds.Left, Math.Min(location.X, bounds.Right - size.Width)),
             Math.Max(bounds.Top, Math.Min(location.Y, bounds.Bottom - size.Height)));
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) icons.Dispose();
+        base.Dispose(disposing);
+    }
 }
 
 public sealed class TokcatLauncherResult
@@ -152,6 +180,161 @@ public sealed class TokcatLauncherResult
     public double Score;
     public TokcatLauncherApp App;
     public override string ToString() { return Title + " " + Detail; }
+}
+
+public sealed class TokcatLauncherIcons : IDisposable
+{
+    sealed class Entry
+    {
+        public string Key;
+        public Icon Icon;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ShellFileInfo
+    {
+        public IntPtr Icon;
+        public int IconIndex;
+        public uint Attributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern int SHParseDisplayName(string name, IntPtr context, out IntPtr item, uint attributes, out uint foundAttributes);
+    [DllImport("shell32.dll", EntryPoint = "SHGetFileInfoW", CharSet = CharSet.Unicode)]
+    static extern IntPtr SHGetFileInfo(IntPtr item, uint attributes, out ShellFileInfo info, uint size, uint flags);
+    [DllImport("comctl32.dll")] static extern IntPtr ImageList_GetIcon(IntPtr images, int index, uint flags);
+    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
+    [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr reserved, uint flags);
+    [DllImport("ole32.dll")] static extern void CoUninitialize();
+
+    readonly object gate = new object();
+    readonly Dictionary<string, Entry> cache = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+    readonly Queue<string> order = new Queue<string>();
+    Queue<Entry> pending = new Queue<Entry>();
+    readonly AutoResetEvent available = new AutoResetEvent(false);
+    bool disposed;
+    public event EventHandler Changed;
+
+    public TokcatLauncherIcons()
+    {
+        var worker = new Thread(LoadPending);
+        worker.IsBackground = true;
+        worker.SetApartmentState(ApartmentState.STA);
+        worker.Start();
+    }
+
+    static string ShellTarget(TokcatLauncherApp app)
+    {
+        return app.Packaged ? @"shell:AppsFolder\" + app.Target : app.Target;
+    }
+
+    public void Request(TokcatLauncherApp app)
+    {
+        if (app == null || string.IsNullOrWhiteSpace(app.Target)) return;
+        string target = ShellTarget(app);
+        lock (gate)
+        {
+            if (disposed || cache.ContainsKey(target)) return;
+            if (cache.Count >= 128)
+            {
+                string oldest = order.Dequeue();
+                if (cache[oldest].Icon != null) cache[oldest].Icon.Dispose();
+                cache.Remove(oldest);
+                pending = new Queue<Entry>(pending.Where(entry => cache.ContainsKey(entry.Key)));
+            }
+            var next = new Entry { Key = target };
+            cache.Add(target, next); order.Enqueue(target); pending.Enqueue(next);
+            available.Set();
+        }
+    }
+
+    public bool Draw(Graphics graphics, TokcatLauncherApp app, Rectangle bounds)
+    {
+        Request(app);
+        lock (gate)
+        {
+            if (disposed) return false;
+            Entry entry;
+            Icon icon = app != null && cache.TryGetValue(ShellTarget(app), out entry) ? entry.Icon : null;
+            graphics.DrawIcon(icon ?? SystemIcons.Application, bounds);
+            return icon != null;
+        }
+    }
+
+    void LoadPending()
+    {
+        int initialized = CoInitializeEx(IntPtr.Zero, 2);
+        try
+        {
+            while (true)
+            {
+                Entry next;
+                lock (gate)
+                {
+                    if (disposed) return;
+                    next = pending.Count == 0 ? null : pending.Dequeue();
+                }
+                if (next == null) { available.WaitOne(); continue; }
+                Icon icon = initialized >= 0 ? LoadIcon(next.Key) : null;
+                lock (gate)
+                {
+                    Entry current;
+                    if (disposed || !cache.TryGetValue(next.Key, out current) || current != next)
+                    {
+                        if (icon != null) icon.Dispose();
+                        continue;
+                    }
+                    next.Icon = icon;
+                }
+                var changed = Changed;
+                if (changed != null) changed(this, EventArgs.Empty);
+            }
+        }
+        finally
+        {
+            if (initialized >= 0) CoUninitialize();
+            available.Dispose();
+        }
+    }
+
+    static Icon LoadIcon(string target)
+    {
+        IntPtr item = IntPtr.Zero;
+        IntPtr icon = IntPtr.Zero;
+        var info = new ShellFileInfo();
+        try
+        {
+            uint attributes;
+            if (SHParseDisplayName(target, IntPtr.Zero, out item, 0, out attributes) < 0 || item == IntPtr.Zero) return null;
+            // Use the base shell image so shortcut icons retain custom artwork without arrow overlays.
+            IntPtr images = SHGetFileInfo(item, 0, out info, (uint)Marshal.SizeOf(typeof(ShellFileInfo)), 0x4000 | 0x8);
+            if (images == IntPtr.Zero) return null;
+            icon = ImageList_GetIcon(images, info.IconIndex, 1);
+            if (icon == IntPtr.Zero) return null;
+            return (Icon)Icon.FromHandle(icon).Clone();
+        }
+        catch (ExternalException) { return null; }
+        catch (ArgumentException) { return null; }
+        finally
+        {
+            if (icon != IntPtr.Zero) DestroyIcon(icon);
+            if (item != IntPtr.Zero) Marshal.FreeCoTaskMem(item);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (gate)
+        {
+            if (disposed) return;
+            disposed = true;
+            foreach (var entry in cache.Values) if (entry.Icon != null) entry.Icon.Dispose();
+            cache.Clear(); order.Clear(); pending.Clear();
+            available.Set();
+        }
+    }
 }
 
 sealed class TokcatLauncherHotKey : NativeWindow, IDisposable
@@ -186,13 +369,13 @@ public sealed class TokcatLauncherController : IDisposable
     readonly bool enableHotKey;
     readonly TokcatLauncherHotKey hotKey;
     readonly System.Windows.Forms.Timer savePosition;
+    readonly System.Windows.Forms.Timer catalogRefresh = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
     readonly System.Windows.Forms.Timer fileDebounce = new System.Windows.Forms.Timer { Interval = 180 };
     readonly TokcatEverythingSearch fileSearch;
     TokcatEverythingFile[] fileResults = new TokcatEverythingFile[0];
     string pendingFileQuery, completedFileQuery, fileError;
     TokcatLauncherSettings settings;
     TokcatLauncherIndex index = new TokcatLauncherIndex(new TokcatLauncherApp[0]);
-    DateTime lastScan = DateTime.MinValue;
     bool scanning, recalling, configurationValid = true;
     volatile bool disposed;
     int historyCursor = -1;
@@ -236,6 +419,9 @@ public sealed class TokcatLauncherController : IDisposable
             savePosition.Stop(); savePosition.Start();
         };
         Register();
+        catalogRefresh.Tick += delegate { RefreshCatalog(); };
+        catalogRefresh.Start();
+        RefreshCatalog();
     }
 
     public string ShortcutText { get { return FormatShortcut(settings.Modifiers, settings.Key); } }
@@ -276,12 +462,12 @@ public sealed class TokcatLauncherController : IDisposable
         Point initial = settings.X.HasValue && settings.Y.HasValue ? new Point(settings.X.Value, settings.Y.Value) : new Point(screen.Left + (screen.Width - Window.Width) / 2, screen.Top + screen.Height / 4);
         Window.Location = TokcatLauncherWindow.Constrain(initial, Window.Size);
         Window.Show(); Window.Activate(); Window.Query.Focus();
-        RefreshCatalog(); UpdateResults();
+        UpdateResults();
     }
 
     void RefreshCatalog()
     {
-        if (scanning || DateTime.UtcNow - lastScan < TimeSpan.FromSeconds(30)) return;
+        if (disposed || scanning) return;
         scanning = true;
         // AppsFolder automation is isolated on an STA worker, away from metric refreshes.
         var thread = new Thread(delegate()
@@ -296,7 +482,7 @@ public sealed class TokcatLauncherController : IDisposable
                 Window.BeginInvoke((Action)delegate
                 {
                     if (disposed) return;
-                    scanning = false; lastScan = DateTime.UtcNow;
+                    scanning = false;
                     if (next != null) index = next;
                     catalogError = error == null ? null : "应用列表读取失败 · " + error;
                     UpdateResults();
@@ -462,6 +648,7 @@ public sealed class TokcatLauncherController : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        catalogRefresh.Stop(); catalogRefresh.Dispose();
         fileDebounce.Stop(); fileDebounce.Dispose(); fileSearch.Dispose();
         savePosition.Stop(); savePosition.Dispose();
         Save(); hotKey.Dispose(); Window.Dispose();
