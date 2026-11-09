@@ -14,7 +14,7 @@ Applications, files, calculations, websites and command keywords share one ranke
 
 Application results and application history show their Windows icons. Icons load asynchronously and are cached. The application index builds in the background at program startup and refreshes automatically every three hours. Opening the launcher uses the current in-memory index, including while a refresh is in progress.
 
-Install and run [Everything](https://www.voidtools.com/) in your Windows session to include files and folders automatically. tokcat uses its Unicode IPC interface and supports Everything search syntax. Enter opens the selected file or folder, and Ctrl+Enter reveals its location in Explorer. The hint reports when Everything is unavailable or a query times out.
+Install and run [Everything](https://www.voidtools.com/) in your Windows session to include files and folders automatically. tokcat uses its Unicode IPC interface and supports Everything search syntax. Enter opens the selected file or folder, and Ctrl+Enter reveals its location in Explorer.
 
 Type expressions such as `sqrt(9)+2^3` for a live result and press Enter to copy it. Enter `baidu query`, `google query`, `bing query`, `github`, or an HTTP(S) URL to open a website. Prefix a PowerShell command with `>` to execute it in a terminal. `setup` opens monitoring settings.
 

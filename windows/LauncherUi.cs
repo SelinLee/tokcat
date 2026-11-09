@@ -40,7 +40,7 @@ public sealed class TokcatLauncherWindow : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Microsoft YaHei UI", 11);
         BackColor = palette[0]; ForeColor = palette[2]; selection = palette[4];
-        ClientSize = new Size(640, 94);
+        ClientSize = new Size(640, 62);
         Padding = new Padding(1);
         input.Dock = DockStyle.Top; input.Height = 60; input.BackColor = palette[1];
         var icon = new Label { Text = "⌕", Font = new Font("Segoe UI", 24), ForeColor = palette[3], TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Left, Width = 48 };
@@ -57,7 +57,7 @@ public sealed class TokcatLauncherWindow : Form
         Query.AccessibleName = "搜索应用、文件、算式、网站或命令";
         Query.SetBounds(54, 15, 562, 32); Query.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
         input.Controls.Add(Query); input.Controls.Add(icon);
-        Hint.Dock = DockStyle.Bottom; Hint.Height = 32; Hint.Padding = new Padding(12, 6, 0, 0);
+        Hint.Dock = DockStyle.Bottom; Hint.Height = 0; Hint.Visible = false;
         Hint.Font = new Font("Microsoft YaHei UI", 9); Hint.ForeColor = palette[3];
         Results.Dock = DockStyle.Fill; Results.BorderStyle = BorderStyle.None;
         Results.BackColor = palette[1]; Results.ForeColor = palette[2];
