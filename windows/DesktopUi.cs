@@ -165,6 +165,8 @@ public static class TokcatUi
                     for (int i = 0; i < 8; i++) { double a = i * Math.PI / 4; g.DrawLine(p, 12 + (float)Math.Cos(a) * 7, 12 + (float)Math.Sin(a) * 7, 12 + (float)Math.Cos(a) * 9, 12 + (float)Math.Sin(a) * 9); } break;
                 case "refresh":
                     g.DrawArc(p, 5, 5, 14, 14, 45, 290); g.DrawLines(p, new[] { new Point(19, 4), new Point(19, 10), new Point(13, 10) }); break;
+                case "launcher":
+                    g.DrawEllipse(p, 4, 3, 12, 12); g.DrawLine(p, 15, 15, 21, 21); break;
                 case "folder":
                     g.DrawPolygon(p, new[] { new Point(3, 7), new Point(9, 7), new Point(11, 9), new Point(21, 9), new Point(21, 19), new Point(3, 19) }); break;
                 case "conversation":
@@ -206,6 +208,9 @@ public sealed class TokcatMainWindow : Form
     public readonly ComboBox SourceFilter = new ComboBox();
     public readonly ComboBox StateFilter = new ComboBox();
     public readonly Button UsageButton = TokcatUi.Button("用量统计", "usage", false);
+    public readonly Button LauncherButton = TokcatUi.Button("快速启动", "launcher", false);
+    public readonly Button LauncherSettingsButton = TokcatUi.Button("启动器设置", "settings", false);
+    public readonly Label LauncherStatus = TokcatUi.Label("快速启动", 9, TokcatUi.Secondary);
     public readonly Button StripButton = TokcatUi.Button("隐藏任务栏", "taskbar", false);
     public readonly Button QuitButton = TokcatUi.Button("退出 tokcat", "exit", false);
     public readonly Button RefreshButton = TokcatUi.Button("立即刷新", "refresh", false);
@@ -237,9 +242,10 @@ public sealed class TokcatMainWindow : Form
         logo.Disposed += delegate { logo.Image.Dispose(); };
         Label tagline = TokcatUi.Label("多 Agent 状态监控", 8, TokcatUi.Secondary); tagline.SetBounds(18, 64, 150, 24);
         taskNav.SetBounds(12, 110, 148, 40); UsageButton.SetBounds(12, 158, 148, 40);
+        LauncherButton.SetBounds(12, 206, 148, 40);
         settingsNav.Dock = DockStyle.Bottom; settingsNav.Height = 40;
         QuitButton.Dock = DockStyle.Bottom; QuitButton.Height = 36;
-        rail.Controls.AddRange(new Control[] { brand, logo, tagline, taskNav, UsageButton, settingsNav, QuitButton });
+        rail.Controls.AddRange(new Control[] { brand, logo, tagline, taskNav, UsageButton, LauncherButton, settingsNav, QuitButton });
 
         Panel content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24, 18, 24, 12) };
         Panel header = new Panel { Dock = DockStyle.Top, Height = 72 };
@@ -315,6 +321,10 @@ public sealed class TokcatMainWindow : Form
         StripButton.Width = 160; stack.Controls.Add(StripButton);
         Label help = TokcatUi.Label("监控仅读取本地记录，无需 API 密钥。\n关闭主窗口后继续在任务栏运行；退出程序请使用左下角按钮。\n外观随启动时的 Windows 应用主题；GPU 仅在开启后采样。", 9, TokcatUi.Secondary);
         help.Size = new Size(600, 94); help.Margin = new Padding(0, 24, 0, 0); stack.Controls.Add(help);
+        Label launcherHeading = TokcatUi.Label("快速启动", 14, TokcatUi.Text);
+        launcherHeading.Size = new Size(600, 38); stack.Controls.Add(launcherHeading);
+        LauncherStatus.Size = new Size(600, 40); stack.Controls.Add(LauncherStatus);
+        LauncherSettingsButton.Width = 180; stack.Controls.Add(LauncherSettingsButton);
         settings.Controls.Add(stack);
     }
 

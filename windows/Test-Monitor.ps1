@@ -8,6 +8,8 @@ $sessions = Join-Path $root 'sessions'
 New-Item -ItemType Directory -Path $sessions | Out-Null
 function Assert-Equal($actual, $expected, $label) { if ($actual -ne $expected) { throw "$label : expected '$expected', got '$actual'" } }
 try {
+    & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Test-Launcher.ps1')
+    Assert-Equal $LASTEXITCODE 0 'quick launcher calculations, search, persistence and hotkey handling'
     & powershell.exe -NoProfile -STA -File (Join-Path $PSScriptRoot 'Test-DesktopUi.ps1')
     Assert-Equal $LASTEXITCODE 0 'native dashboard window and icon lifetime'
     & powershell.exe -NoProfile -File (Join-Path $PSScriptRoot 'Test-DesktopPresentation.ps1')
