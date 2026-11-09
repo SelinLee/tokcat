@@ -22,7 +22,6 @@ public sealed class TokcatLauncherWindow : Form
     readonly Panel input = new Panel();
     readonly Color selection;
     readonly TokcatLauncherIcons icons = new TokcatLauncherIcons();
-    bool adjusting;
 
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr handle, int message, IntPtr parameter, IntPtr data);
@@ -42,15 +41,14 @@ public sealed class TokcatLauncherWindow : Form
         BackColor = palette[0]; ForeColor = palette[2]; selection = palette[4];
         ClientSize = new Size(640, 62);
         Padding = new Padding(1);
-        input.Dock = DockStyle.Top; input.Height = 60; input.BackColor = palette[1];
-        var icon = new Label { Text = "⌕", Font = new Font("Segoe UI", 24), ForeColor = palette[3], TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Left, Width = 48 };
+        input.Dock = DockStyle.Top; input.Height = 60; input.BackColor = palette[1]; input.Cursor = Cursors.SizeAll;
+        input.AccessibleName = "拖动空白处以移动快速启动框";
+        input.MouseDown += BeginDrag;
+        var icon = new Label { Text = "⌕", Font = new Font("Segoe UI", 24), ForeColor = palette[3], TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Left, Width = 48, Cursor = Cursors.SizeAll };
         icon.AccessibleName = "拖动以移动快速启动框";
-        icon.MouseDown += delegate(object sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left) return;
-            ReleaseCapture(); SendMessage(Handle, 0x00A1, new IntPtr(2), IntPtr.Zero);
-        };
+        icon.MouseDown += BeginDrag;
         Query.BorderStyle = BorderStyle.None;
+        Query.Cursor = Cursors.IBeam;
         Query.MaxLength = 8192;
         Query.Font = new Font("Microsoft YaHei UI", 18);
         Query.BackColor = palette[1]; Query.ForeColor = palette[2];
@@ -77,9 +75,33 @@ public sealed class TokcatLauncherWindow : Form
         {
             if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
         };
-        Move += delegate { if (Visible && !adjusting && PositionChanged != null) PositionChanged(this, EventArgs.Empty); };
+        MouseDown += BeginDrag;
+        ResizeEnd += delegate
+        {
+            Location = Constrain(Location, Size);
+            if (PositionChanged != null) PositionChanged(this, EventArgs.Empty);
+        };
         // Background catalog results need a UI dispatch target before the launcher is first shown.
         CreateHandle();
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            parameters.ExStyle |= 0x02000000; // WS_EX_COMPOSITED paints the child controls together.
+            return parameters;
+        }
+    }
+
+    void BeginDrag(object sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        Point point = ((Control)sender).PointToScreen(e.Location);
+        int coordinates = (point.X & 0xFFFF) | ((point.Y & 0xFFFF) << 16);
+        ReleaseCapture();
+        SendMessage(Handle, 0x00A1, new IntPtr(2), new IntPtr(coordinates));
     }
 
     void QueryKeyDown(object sender, KeyEventArgs e)
@@ -151,13 +173,8 @@ public sealed class TokcatLauncherWindow : Form
         finally { Results.EndUpdate(); }
         Hint.Text = hint;
         int wantedHeight = input.Height + Hint.Height + Results.Items.Count * Results.ItemHeight + 2;
-        adjusting = true;
-        try
-        {
-            Height = Math.Min(wantedHeight, Screen.FromPoint(Location).WorkingArea.Height);
-            Location = Constrain(Location, Size);
-        }
-        finally { adjusting = false; }
+        Height = Math.Min(wantedHeight, Screen.FromPoint(Location).WorkingArea.Height);
+        Location = Constrain(Location, Size);
     }
 
     public static Point Constrain(Point location, Size size)
@@ -368,7 +385,6 @@ public sealed class TokcatLauncherController : IDisposable
     readonly Color[] palette;
     readonly bool enableHotKey;
     readonly TokcatLauncherHotKey hotKey;
-    readonly System.Windows.Forms.Timer savePosition;
     readonly System.Windows.Forms.Timer catalogRefresh = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
     readonly System.Windows.Forms.Timer fileDebounce = new System.Windows.Forms.Timer { Interval = 180 };
     readonly TokcatEverythingSearch fileSearch;
@@ -411,12 +427,10 @@ public sealed class TokcatLauncherController : IDisposable
         Window.ContainingFolderRequested += delegate { OpenContainingFolder(); };
         Window.HistoryOlder += delegate { Recall(true); };
         Window.HistoryNewer += delegate { Recall(false); };
-        savePosition = new System.Windows.Forms.Timer { Interval = 400 };
-        savePosition.Tick += delegate { savePosition.Stop(); Save(); };
         Window.PositionChanged += delegate
         {
             settings.X = Window.Left; settings.Y = Window.Top;
-            savePosition.Stop(); savePosition.Start();
+            Save();
         };
         Register();
         catalogRefresh.Tick += delegate { RefreshCatalog(); };
@@ -458,11 +472,12 @@ public sealed class TokcatLauncherController : IDisposable
         if (disposed) return;
         historyCursor = -1; Window.BrowsingHistory = false;
         Window.Query.Clear();
+        UpdateResults();
         Rectangle screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         Point initial = settings.X.HasValue && settings.Y.HasValue ? new Point(settings.X.Value, settings.Y.Value) : new Point(screen.Left + (screen.Width - Window.Width) / 2, screen.Top + screen.Height / 4);
         Window.Location = TokcatLauncherWindow.Constrain(initial, Window.Size);
+        Window.PerformLayout();
         Window.Show(); Window.Activate(); Window.Query.Focus();
-        UpdateResults();
     }
 
     void RefreshCatalog()
@@ -519,8 +534,9 @@ public sealed class TokcatLauncherController : IDisposable
 
     void UpdateResults()
     {
-        if (disposed || !Window.Visible) return;
+        if (disposed) return;
         string text = Window.Query.Text.Trim();
+        if (!Window.Visible && text.Length > 0) return;
         string hint = "已索引 " + index.Count + " 个应用 · ↑ 历史 · Enter 执行 · Ctrl+Enter 文件位置";
         if (text.Length == 0)
         {
@@ -650,7 +666,6 @@ public sealed class TokcatLauncherController : IDisposable
         disposed = true;
         catalogRefresh.Stop(); catalogRefresh.Dispose();
         fileDebounce.Stop(); fileDebounce.Dispose(); fileSearch.Dispose();
-        savePosition.Stop(); savePosition.Dispose();
         Save(); hotKey.Dispose(); Window.Dispose();
     }
 }
@@ -684,7 +699,7 @@ public sealed class TokcatLauncherSettingsWindow : Form
             modifiers = (e.Alt ? 1 : 0) | (e.Control ? 2 : 0) | (e.Shift ? 4 : 0); key = (int)e.KeyCode;
             shortcut.Text = TokcatLauncherController.FormatShortcut(modifiers, key);
         };
-        var hint = new Label { Text = "应用、文件、算式、网站和命令统一匹配，常用项优先\n运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n输入 > 后跟终端命令，setup 打开监控设置\n空白显示历史，按 ↑ 调出最近 50 条输入\n拖动搜索图标可移动启动框，位置自动保存", Location = new Point(24, 168), Size = new Size(650, 130) };
+        var hint = new Label { Text = "应用、文件、算式、网站和命令统一匹配，常用项优先\n运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n输入 > 后跟终端命令，setup 打开监控设置\n空白显示历史，按 ↑ 调出最近 50 条输入\n拖动放大镜或输入栏空白处，松开后立即保存位置", Location = new Point(24, 168), Size = new Size(650, 130) };
         var clear = new Button { Text = "清空历史与使用权重", Location = new Point(24, 310), Size = new Size(200, 32) };
         clear.Click += delegate { settings.History.Clear(); settings.Usage.Clear(); clear.Text = "保存后清空历史与权重"; };
         general.Controls.AddRange(new Control[] { enabled, caption, shortcut, hint, clear });
