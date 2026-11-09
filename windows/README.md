@@ -10,9 +10,13 @@ Double-click `Tokcat.cmd` on Windows 10 or 11. Windows PowerShell 5.1 and Window
 
 Press **Alt + Space**, or choose **快速启动** in the sidebar or tray menu. **Settings → 启动器设置** lets you record another shortcut or disable the global hotkey. The settings page reports shortcut conflicts.
 
-Search applications by English/Chinese names, pinyin or initials, then select with the arrow keys and press Enter. The background index reads Start menu and desktop shortcuts and Windows applications. Pinyin matching uses the system ICU library when available. Type expressions such as `sqrt(9)+2^3` for a live result and press Enter to copy it. Enter `baidu query`, `google query`, `bing query`, `github`, or an HTTP(S) URL to open a website. Prefix a PowerShell command with `>` to execute it in a terminal. `setup` opens monitoring settings.
+Applications, files, calculations, websites and command keywords share one ranked result list. Search applications by English/Chinese names, pinyin or initials, then select with the arrow keys and press Enter. The background index reads Start menu and desktop shortcuts and Windows applications. Pinyin matching uses the system ICU library when available. Application matches precede files. Exact calculation, URL and keyword matches receive additional priority. A web search is suggested when local sources find no match.
 
-Press Up in an empty input to browse the last 50 inputs. Drag the search icon to move the panel; its position persists. Escape or changing applications dismisses it. Launcher settings include editable command and website keywords, with `{query}` placeholders for searches, and a clear-history option. Configuration and history are stored in `%LOCALAPPDATA%\Tokcat\launcher.json`.
+Install and run [Everything](https://www.voidtools.com/) in your Windows session to include files and folders automatically. tokcat uses its Unicode IPC interface and supports Everything search syntax. Enter opens the selected file or folder, and Ctrl+Enter reveals its location in Explorer. The hint reports when Everything is unavailable or a query times out.
+
+Type expressions such as `sqrt(9)+2^3` for a live result and press Enter to copy it. Enter `baidu query`, `google query`, `bing query`, `github`, or an HTTP(S) URL to open a website. Prefix a PowerShell command with `>` to execute it in a terminal. `setup` opens monitoring settings.
+
+An empty input shows frequent and recent history. Press Up to recall the last 50 inputs. Successful selections save a use count and timestamp that boost future matching results, including after restart. Drag the search icon to move the panel. Its position persists. Escape or changing applications dismisses it. Launcher settings include editable command and website keywords, with `{query}` placeholders for searches, and an option to clear history and usage weights. Configuration, history and usage are stored in `%LOCALAPPDATA%\Tokcat\launcher.json`. Existing history is migrated automatically.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/ui-dark.png" />

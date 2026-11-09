@@ -14,6 +14,25 @@ public sealed class TokcatLauncherApp
     public string Target { get; set; }
     public bool Packaged { get; set; }
     public string Alias { get; set; }
+
+    [ScriptIgnore]
+    public string TargetAlias
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Target)) return "";
+            if (Packaged || Target.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return Target;
+            return Path.GetFileNameWithoutExtension(Target);
+        }
+    }
+
+    public static TokcatLauncherApp FromShellItem(string name, string target)
+    {
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(target)) return null;
+        // Shell parsing names can contain characters that are invalid in filesystem paths.
+        bool fileTarget = target.IndexOfAny(Path.GetInvalidPathChars()) < 0 && Path.IsPathRooted(target);
+        return new TokcatLauncherApp { Name = name, Target = target, Packaged = !fileTarget };
+    }
 }
 
 public sealed class TokcatLauncherShortcut
@@ -28,6 +47,22 @@ public sealed class TokcatLauncherHistory
 {
     public string Text { get; set; }
     public TokcatLauncherApp Application { get; set; }
+    public string Kind { get; set; }
+    public string Value { get; set; }
+    public string Key { get; set; }
+
+    [ScriptIgnore]
+    public string ActionKey
+    {
+        get { return Key ?? (Application == null ? "input:" + Text : "application:" + Application.Target); }
+    }
+}
+
+public sealed class TokcatLauncherUsage
+{
+    public string Key { get; set; }
+    public int Count { get; set; }
+    public long LastUsed { get; set; }
 }
 
 public sealed class TokcatLauncherSettings
@@ -41,6 +76,7 @@ public sealed class TokcatLauncherSettings
     public List<TokcatLauncherShortcut> Commands { get; set; }
     public List<TokcatLauncherShortcut> Websites { get; set; }
     public List<TokcatLauncherHistory> History { get; set; }
+    public List<TokcatLauncherUsage> Usage { get; set; }
 
     public TokcatLauncherSettings()
     {
@@ -57,6 +93,7 @@ public sealed class TokcatLauncherSettings
             Website("github", "GitHub", "https://github.com")
         };
         History = new List<TokcatLauncherHistory>();
+        Usage = new List<TokcatLauncherUsage>();
     }
 
     static TokcatLauncherShortcut Website(string keyword, string name, string value)
@@ -84,6 +121,11 @@ public sealed class TokcatLauncherSettings
             if (TokcatLauncherResolver.HttpUrl(website.Value.Replace("{query}", "test"), false) == null)
                 throw new InvalidDataException("网站地址需要以 http:// 或 https:// 开头。");
         History = History.Where(h => h != null && !string.IsNullOrWhiteSpace(h.Text) && h.Text.Length <= 8192).Take(50).ToList();
+        if (Usage == null) Usage = new List<TokcatLauncherUsage>();
+        Usage = Usage.Where(u => u != null && !string.IsNullOrWhiteSpace(u.Key) && u.Count > 0)
+            .GroupBy(u => u.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new TokcatLauncherUsage { Key = g.Key, Count = (int)Math.Min(1000000L, g.Sum(u => (long)u.Count)), LastUsed = g.Max(u => u.LastUsed) })
+            .OrderByDescending(u => u.LastUsed).Take(200).ToList();
     }
 
     static JavaScriptSerializer Serializer()
@@ -99,6 +141,10 @@ public sealed class TokcatLauncherSettings
         var raw = Serializer().DeserializeObject(text) as Dictionary<string, object>;
         if (raw == null || !raw.ContainsKey("Version")) throw new InvalidDataException("启动器设置格式无效。");
         var settings = Serializer().Deserialize<TokcatLauncherSettings>(text);
+        if (!raw.ContainsKey("Usage") && settings.History != null)
+            settings.Usage = settings.History.Where(h => h != null && !string.IsNullOrWhiteSpace(h.Text))
+                .GroupBy(h => h.ActionKey, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new TokcatLauncherUsage { Key = g.Key, Count = g.Count() }).ToList();
         settings.Validate();
         return settings;
     }
@@ -125,10 +171,27 @@ public sealed class TokcatLauncherSettings
 
     public void Remember(string text, TokcatLauncherApp app)
     {
-        History.RemoveAll(h => string.Equals(h.Text, text, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(h.Application == null ? null : h.Application.Target, app == null ? null : app.Target, StringComparison.OrdinalIgnoreCase));
-        History.Insert(0, new TokcatLauncherHistory { Text = text, Application = app });
+        Remember(text, app, app == null ? "fill" : "application", app == null ? text : app.Target,
+            app == null ? "input:" + text : "application:" + app.Target);
+    }
+
+    public void Remember(string text, TokcatLauncherApp app, string kind, string value, string key)
+    {
+        History.RemoveAll(h => string.Equals(h.Text, text, StringComparison.OrdinalIgnoreCase) && string.Equals(h.ActionKey, key, StringComparison.OrdinalIgnoreCase));
+        History.Insert(0, new TokcatLauncherHistory { Text = text, Application = app, Kind = kind, Value = value, Key = key });
         if (History.Count > 50) History.RemoveRange(50, History.Count - 50);
+        var usage = Usage.FirstOrDefault(u => string.Equals(u.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (usage == null) { usage = new TokcatLauncherUsage { Key = key }; Usage.Add(usage); }
+        usage.Count = Math.Min(1000000, usage.Count + 1);
+        usage.LastUsed = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
+
+    public double UsageBoost(string key)
+    {
+        var usage = Usage.FirstOrDefault(u => string.Equals(u.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (usage == null) return 0;
+        double age = Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - usage.LastUsed) / 86400.0);
+        return Math.Min(120, Math.Log(1.0 + usage.Count) * 25) + Math.Max(0.0, 20.0 - age);
     }
 }
 
@@ -155,7 +218,8 @@ public static class TokcatLauncherCalculator
         text = text.Normalize(NormalizationForm.FormKC).ToLowerInvariant().Replace("×", "*").Replace("÷", "/").Replace("−", "-").Replace("π", "pi");
         if (!explicitMode && !Regex.IsMatch(text, @"^(?:[\d.(+\-]|pi\b|e(?=\s*[+\-*/^%])|(?:sqrt|abs|round|floor|ceil|sin|cos|tan|log\d*|ln|exp|pow|min|max)\s*\()")) return null;
         if (text.Length > 1024) return new TokcatLauncherCalculation { Error = "算式过长，请缩短后再试。" };
-        if (!explicitMode && Regex.Matches(text, @"(?<![\d.])[a-z]+\d*").Cast<Match>().Any(m => m.Value != "pi" && m.Value != "e" && !Functions.Contains(m.Value))) return null;
+        string identifiers = Regex.Replace(text, @"(?:\d+(?:\.\d*)?|\.\d+)(?:e[+\-]?\d+)?", " ");
+        if (!explicitMode && Regex.Matches(identifiers, @"[\p{L}_][\p{L}\p{N}_]*").Cast<Match>().Any(m => m.Value != "pi" && m.Value != "e" && !Functions.Contains(m.Value))) return null;
         try
         {
             double value = new Parser(text).Parse();
@@ -340,16 +404,21 @@ public sealed class TokcatLauncherIndex
         {
             App = app,
             Terms = new[] { Normalize(app.Name), Normalize(Latin(app.Name)), Normalize(app.Alias),
-                Normalize(app.Packaged ? app.Target : Path.GetFileNameWithoutExtension(app.Target)) }.Distinct().ToArray()
+                Normalize(app.TargetAlias) }.Distinct().ToArray()
         }).ToArray();
     }
+    public int Count { get { return entries.Length; } }
     public TokcatLauncherApp[] Search(string text)
     {
+        return SearchMatches(text, 7).Select(m => m.Application).ToArray();
+    }
+    public TokcatLauncherMatch[] SearchMatches(string text, int limit)
+    {
         string query = Normalize(text).Replace(" ", "");
-        if (query.Length == 0) return new TokcatLauncherApp[0];
+        if (query.Length == 0) return new TokcatLauncherMatch[0];
         return entries.Select(e => new { Entry = e, Score = e.Terms.Min(t => Score(t, query)) })
             .Where(e => e.Score < 100).OrderBy(e => e.Score).ThenBy(e => e.Entry.App.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Take(7).Select(e => e.Entry.App).ToArray();
+            .Take(Math.Max(0, Math.Min(limit, 200))).Select(e => new TokcatLauncherMatch { Application = e.Entry.App, Score = e.Score }).ToArray();
     }
     static string Normalize(string text)
     {
@@ -399,6 +468,12 @@ public sealed class TokcatLauncherIndex
     }
 }
 
+public sealed class TokcatLauncherMatch
+{
+    public TokcatLauncherApp Application { get; set; }
+    public int Score { get; set; }
+}
+
 public static class TokcatLauncherCatalog
 {
     public static TokcatLauncherApp[] Scan()
@@ -423,13 +498,16 @@ public static class TokcatLauncherCatalog
                     {
                         string name = (string)item.GetType().InvokeMember("Name", System.Reflection.BindingFlags.GetProperty, null, item, null);
                         string target = (string)item.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, item, null);
-                        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(target))
+                        var app = TokcatLauncherApp.FromShellItem(name, target);
+                        if (app != null)
                         {
                             TokcatLauncherApp existing;
-                            if (apps.TryGetValue(name, out existing)) existing.Alias = Path.IsPathRooted(target) ? Path.GetFileNameWithoutExtension(target) : target;
-                            else apps[name] = new TokcatLauncherApp { Name = name, Target = target, Packaged = !Path.IsPathRooted(target) };
+                            if (apps.TryGetValue(name, out existing)) existing.Alias = app.TargetAlias;
+                            else apps[name] = app;
                         }
                     }
+                    catch (COMException) { }
+                    catch (System.Reflection.TargetInvocationException) { }
                     finally { if (item != null) Marshal.FinalReleaseComObject(item); }
                 }
             }
