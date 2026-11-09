@@ -200,6 +200,8 @@ try {
         Assert-Launcher (-not $controller.IsIndexing) 'The background application index must finish.'
         $controller.Show(); [Windows.Forms.Application]::DoEvents()
         Assert-Launcher ($controller.Window.Visible -and $controller.Window.Results.Items.Count -eq 0) 'Opening the launcher starts with an empty input.'
+        Assert-Launcher (-not $controller.Window.Hint.Visible -and $controller.Window.Hint.Height -eq 0) 'The launcher footer stays hidden without reserving vertical space.'
+        $emptyLauncherHeight=$controller.Window.ClientSize.Height
         $catalog=[TokcatLauncherCatalog]::Scan()
         $icons=[TokcatLauncherIcons]::new()
         $iconCanvas=[Drawing.Bitmap]::new(64,64)
@@ -279,6 +281,7 @@ try {
         $controller.Window.Results.SelectedIndex=1
         $controller.Window.SetResults([TokcatLauncherResult[]]@($secondRow,$firstRow),'fixture refresh')
         Assert-Launcher ($controller.Window.Results.SelectedItem.Key -eq 'second') 'Asynchronous results preserve the selected action.'
+        Assert-Launcher (-not $controller.Window.Hint.Visible -and $controller.Window.ClientSize.Height -eq $emptyLauncherHeight+2*$controller.Window.Results.ItemHeight) 'Result updates add only result rows without a footer gap.'
         $controller.Window.Query.Text='setup'
         $opened=@{Value=$false}; $controller.Add_OpenSettings({$opened.Value=$true}.GetNewClosure())
         $controller.SubmitSelection()
