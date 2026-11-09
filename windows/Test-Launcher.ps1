@@ -5,6 +5,14 @@
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Load-Launcher.ps1')
 function Assert-Launcher($Condition,[string]$Message) { if (-not $Condition) { throw $Message } }
+function Wait-LauncherIcon($Icons,$App,$Graphics) {
+    $deadline=[datetimeoffset]::UtcNow.AddSeconds(8)
+    do {
+        if($Icons.Draw($Graphics,$App,[Drawing.Rectangle]::new(0,0,32,32))) { return $true }
+        [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20
+    } while ([datetimeoffset]::UtcNow -lt $deadline)
+    return $false
+}
 $tempParent=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
 $testRoot=Join-Path $tempParent ('tokcat-launcher-test-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($testRoot)
@@ -183,12 +191,61 @@ try {
     $uiPath=Join-Path $testRoot 'ui.json'
     $controller=[TokcatLauncherController]::new($uiPath,$palette,$false)
     try {
-        $controller.Show(); [Windows.Forms.Application]::DoEvents()
-        Assert-Launcher ($controller.Window.Visible -and $controller.Window.Results.Items.Count -eq 0) 'Opening the launcher starts with an empty input.'
+        Assert-Launcher ($controller.IsIndexing -and -not $controller.Window.Visible) 'Application indexing begins in the background before the launcher is opened.'
+        $refreshField=$controller.GetType().GetField('catalogRefresh',[Reflection.BindingFlags]'Instance,NonPublic')
+        $refreshTimer=$refreshField.GetValue($controller)
+        Assert-Launcher ($refreshTimer.Enabled -and $refreshTimer.Interval -eq 10800000) 'The catalog refresh timer runs every three hours independently of opening the launcher.'
         $deadline=[datetimeoffset]::UtcNow.AddSeconds(30)
         while ($controller.IsIndexing -and [datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
         Assert-Launcher (-not $controller.IsIndexing) 'The background application index must finish.'
+        $controller.Show(); [Windows.Forms.Application]::DoEvents()
+        Assert-Launcher ($controller.Window.Visible -and $controller.Window.Results.Items.Count -eq 0) 'Opening the launcher starts with an empty input.'
         $catalog=[TokcatLauncherCatalog]::Scan()
+        $icons=[TokcatLauncherIcons]::new()
+        $iconCanvas=[Drawing.Bitmap]::new(64,64)
+        $iconGraphics=[Drawing.Graphics]::FromImage($iconCanvas)
+        try {
+            $iconExecutable=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $iconApp=[TokcatLauncherApp]@{Name='Icon fixture';Target=$iconExecutable}
+            Assert-Launcher (Wait-LauncherIcon $icons $iconApp $iconGraphics) 'Desktop application icons load asynchronously through the Windows shell.'
+            $shortcutPath=Join-Path $testRoot 'icon fixture.lnk'
+            $shell=New-Object -ComObject WScript.Shell
+            $shortcut=$null
+            try {
+                $shortcut=$shell.CreateShortcut($shortcutPath)
+                $shortcut.TargetPath=$iconExecutable
+                $shortcut.IconLocation=(Join-Path $env:WINDIR 'System32\shell32.dll')+',44'
+                $shortcut.Save()
+            } finally {
+                if($shortcut) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+            }
+            $iconApp=[TokcatLauncherApp]@{Name='Shortcut fixture';Target=$shortcutPath}
+            Assert-Launcher (Wait-LauncherIcon $icons $iconApp $iconGraphics) 'Shortcuts resolve their configured icon.'
+            $packaged=@($catalog | Where-Object { $_.Packaged -and $_.Target -like '*!*' })
+            if($packaged.Count -gt 0) {
+                Assert-Launcher (Wait-LauncherIcon $icons $packaged[0] $iconGraphics) 'Packaged applications resolve icons from AppsFolder.'
+            }
+            $missing=[TokcatLauncherApp]@{Name='Missing';Target=(Join-Path $testRoot 'missing.exe')}
+            $iconGraphics.Clear([Drawing.Color]::Transparent)
+            Assert-Launcher (-not $icons.Draw($iconGraphics,$missing,[Drawing.Rectangle]::new(0,0,32,32))) 'Missing icons draw a fallback while loading.'
+            $painted=$false
+            foreach($x in 0..31) {
+                foreach($y in 0..31) { if($iconCanvas.GetPixel($x,$y).A -gt 0) { $painted=$true; break } }
+                if($painted) { break }
+            }
+            Assert-Launcher $painted 'The fallback icon is visible.'
+        } finally { $iconGraphics.Dispose(); $iconCanvas.Dispose(); $icons.Dispose() }
+        $controller.Window.Hide()
+        $previousCount=$controller.IndexedApplicationCount
+        $timerTick=$refreshTimer.GetType().GetMethod('OnTick',[Reflection.BindingFlags]'Instance,NonPublic')
+        [void]$timerTick.Invoke($refreshTimer,[object[]]@([EventArgs]::Empty))
+        Assert-Launcher ($controller.IsIndexing -and $controller.IndexedApplicationCount -eq $previousCount) 'Scheduled refresh preserves the existing index while scanning in the background.'
+        $deadline=[datetimeoffset]::UtcNow.AddSeconds(30)
+        while ($controller.IsIndexing -and [datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
+        Assert-Launcher (-not $controller.IsIndexing -and -not $controller.Window.Visible) 'Scheduled refresh finishes while the launcher remains closed.'
+        $controller.Show()
+        Assert-Launcher (-not $controller.IsIndexing) 'Reopening uses the existing index without triggering a new scan.'
         if ($catalog.Count -gt 0) {
             Assert-Launcher ($controller.IndexedApplicationCount -gt 0) 'The real launcher must publish its background application index.'
             $sample=$catalog[0].Name
