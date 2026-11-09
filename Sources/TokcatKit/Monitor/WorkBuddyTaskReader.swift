@@ -13,6 +13,7 @@ public final class WorkBuddyTaskReader: ExternalTaskReader {
     private let projectsDirectory: URL
     private var lastPoll = Date.distantPast
     private var cached: [AgentTaskRecord] = []
+    private let outputReader = WorkBuddyOutputReader()
     public private(set) var isAvailable = false
 
     public init(databaseURL: URL = defaultDatabaseURL, projectsDirectory: URL = defaultProjectsDirectory,
@@ -62,7 +63,16 @@ public final class WorkBuddyTaskReader: ExternalTaskReader {
             if let cwd = string(1) {
                 let folder = cwd.replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: CharacterSet(charactersIn: "-"))
                 let log = projectsDirectory.appendingPathComponent(folder).appendingPathComponent(id + ".jsonl")
-                if FileManager.default.fileExists(atPath: log.path) { record.logPath = log.path }
+                if FileManager.default.fileExists(atPath: log.path) {
+                    record.logPath = log.path
+                    record.session.outputRate = outputReader.read(url: log, sessionID: id)
+                    // Usage may land just after the database's activity update.
+                    // It is real activity, but does not change the reported state.
+                    if let outputAt = record.session.outputRate?.lastOutputAt {
+                        record.session.lastActivityAt = max(date, outputAt)
+                        if state.isTerminal { record.session.endedAt = max(date, outputAt) }
+                    }
+                }
             }
             record.timeline = [AgentTaskActivity(timestamp: date, label: session.phase!)]
             records.append(record)

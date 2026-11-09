@@ -9,6 +9,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case pricing
     case companion
     case general
+    case commands
+    case websites
 
     var id: String { rawValue }
 
@@ -20,6 +22,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .pricing: return "费率"
         case .companion: return "桌边挂件"
         case .general: return "通用"
+        case .commands: return "命令"
+        case .websites: return "网站"
         }
     }
 
@@ -31,6 +35,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .pricing: return "yensign.circle"
         case .companion: return "cat.fill"
         case .general: return "gearshape"
+        case .commands: return "terminal"
+        case .websites: return "globe"
         }
     }
 }
@@ -90,6 +96,10 @@ struct SettingsView: View {
                     companionTab
                 case .general:
                     generalTab
+                case .commands:
+                    LauncherCommandSettingsView(launcher: model.applicationLauncher)
+                case .websites:
+                    LauncherWebsiteSettingsView(launcher: model.applicationLauncher)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -411,6 +421,33 @@ struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section {
+                Toggle("启用应用启动器快捷键", isOn: binding(\.applicationLauncherEnabled))
+                HStack {
+                    Text("唤出快捷键")
+                    Spacer()
+                    LauncherShortcutRecorder(shortcut: settings.applicationLauncherShortcut,
+                        onChange: { shortcut in
+                            settings.applicationLauncherShortcut = shortcut
+                            model.updateSettings { $0.applicationLauncherShortcut = shortcut }
+                        },
+                        onRecordingChange: { model.applicationLauncher.setRecordingShortcut($0) })
+                        .frame(width: 180, height: 26)
+                        .disabled(!settings.applicationLauncherEnabled)
+                    Button("恢复默认") {
+                        settings.applicationLauncherShortcut = .controlSpace
+                        model.updateSettings { $0.applicationLauncherShortcut = .controlSpace }
+                    }
+                }
+                LauncherShortcutStatus(launcher: model.applicationLauncher)
+                LauncherHistorySettings(launcher: model.applicationLauncher)
+                Button("打开应用启动器") { model.applicationLauncher.show() }
+            } header: {
+                Text("应用启动器")
+            } footer: {
+                Text("默认 Control + 空格。输入应用名称后回车打开；输入算式实时显示结果，回车复制；以 > 开头时在终端执行。空白时按 ↑ 调出历史，再用 ↑ ↓ 切换；Esc 或点击外部收起。")
+            }
+
+            Section {
                 HStack {
                     Text("刷新间隔")
                     Spacer()
@@ -450,7 +487,7 @@ struct SettingsView: View {
                     model.resetSettings()
                 }
             } footer: {
-                Text("将菜单栏、监控、宠物与采样相关选项全部重置为推荐默认值。")
+                Text("将应用启动器、菜单栏、监控、宠物与采样相关选项全部重置为推荐默认值。")
             }
         }
         .formStyle(.grouped)
@@ -508,6 +545,30 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+}
+
+private struct LauncherShortcutStatus: View {
+    @ObservedObject var launcher: ApplicationLauncherController
+
+    var body: some View {
+        if let error = launcher.shortcutError {
+            Text(error).font(.caption).foregroundStyle(.orange)
+        }
+    }
+}
+
+private struct LauncherHistorySettings: View {
+    @ObservedObject var launcher: ApplicationLauncherController
+
+    var body: some View {
+        HStack {
+            Text("已记住 \(launcher.historyCount) 条启动记录")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("清空启动历史") { launcher.clearHistory() }
+                .disabled(launcher.historyCount == 0)
+        }
     }
 }
 

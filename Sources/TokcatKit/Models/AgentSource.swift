@@ -39,7 +39,7 @@ public enum AgentSource: String, Codable, CaseIterable, Sendable, Identifiable {
     public var detail: String {
         switch self {
         case .claudeCode:
-            return "读取 ~/.claude/projects/*/*.jsonl 本地会话日志。"
+            return "自动读取 ~/.claude/sessions 的本机会话状态及 projects 下的日志；可选 hooks 补充详细事件。"
         case .codexCLI:
             return "读取 Codex 本地日志与桌面客户端的 Work 会话状态缓存；用量来自本地 token_count 事件。"
         case .openClaw:

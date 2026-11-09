@@ -74,6 +74,10 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public var lastActivityAt: Date
     /// When a source explicitly reconfirmed its state, independently of message activity.
     public var stateObservedAt: Date?
+    /// Last registry revision, retained across restart to distinguish automatic and hook-only sessions.
+    public var claudeRegistryStatusAt: Date?
+    public var claudeHookActivityAt: Date?
+    public var claudeRegistryBusyObservedAt: Date?
     public var waitingSince: Date?
     public var accumulatedWait: TimeInterval = 0
     public var unread: Bool = false
@@ -87,9 +91,11 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public static let inactivityWarningThreshold: TimeInterval = 120
 
     public func displayState(at now: Date) -> AgentSessionState {
-        // A warning about missing progress, not a claim that the task failed.
-        // Reconfirming "running" is not activity, so a status poll cannot renew it.
-        state == .running && activitySilence(at: now) >= Self.inactivityWarningThreshold ? .stalled : state
+        // Explicit live registry state outranks transcript silence; a stale observation does not.
+        if source == .claudeCode, state == .running,
+           let observedAt = claudeRegistryBusyObservedAt,
+           now.timeIntervalSince(observedAt) < 5 { return .running }
+        return state == .running && activitySilence(at: now) >= Self.inactivityWarningThreshold ? .stalled : state
     }
 
     /// Unknown database states must not renew this deadline merely because they

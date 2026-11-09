@@ -33,9 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.attachCompanionWindow(petWindow)
 
         model.start()
+        model.applicationLauncher.onOpenSettings = { [weak self] in
+            guard let self else { return }
+            SettingsWindowController.show(model: self.model)
+        }
+        model.applicationLauncher.start(settings: model.$settings.eraseToAnyPublisher())
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.applicationLauncher.stop()
         model.stop()
     }
 }

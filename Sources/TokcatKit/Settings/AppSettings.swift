@@ -137,6 +137,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Floating desktop companion window.
     public var showDesktopPet: Bool
 
+    public var applicationLauncherEnabled: Bool
+    public var applicationLauncherShortcut: LauncherShortcut
+
 
     public var desktopPetDockPosition: PetDockPosition
     public var desktopCompanionAppearance: CompanionAppearance
@@ -210,6 +213,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents: Bool = true,
         showCodexUsageSummary: Bool = true,
         showDesktopPet: Bool = true,
+        applicationLauncherEnabled: Bool = true,
+        applicationLauncherShortcut: LauncherShortcut = .controlSpace,
         desktopPetDockPosition: PetDockPosition = .bottomRight,
         desktopCompanionAppearance: CompanionAppearance = .biti,
         desktopCompanionHeadDisplay: CompanionHeadDisplay = .activityTicker,
@@ -244,6 +249,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showRecentTokenEvents = showRecentTokenEvents
         self.showCodexUsageSummary = showCodexUsageSummary
         self.showDesktopPet = showDesktopPet
+        self.applicationLauncherEnabled = applicationLauncherEnabled
+        self.applicationLauncherShortcut = applicationLauncherShortcut
         self.desktopPetDockPosition = desktopPetDockPosition.fixedPosition
         self.desktopCompanionAppearance = desktopCompanionAppearance
         self.desktopCompanionHeadDisplay = desktopCompanionHeadDisplay
@@ -357,6 +364,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case compactAIMenuBar, notifyAgentEvents
+        case applicationLauncherEnabled, applicationLauncherShortcut
         case showCPU, showMemory, showNetwork, showThermal, showGPU
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCodexUsage
@@ -380,6 +388,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showRecentTokenEvents = try container.decodeIfPresent(Bool.self, forKey: .showRecentTokenEvents) ?? true
         showCodexUsageSummary = try container.decodeIfPresent(Bool.self, forKey: .showCodexUsageSummary) ?? true
         showDesktopPet = try container.decodeIfPresent(Bool.self, forKey: .showDesktopPet) ?? true
+        applicationLauncherEnabled = try container.decodeIfPresent(Bool.self, forKey: .applicationLauncherEnabled) ?? true
+        let shortcut = try? container.decode(LauncherShortcut.self, forKey: .applicationLauncherShortcut)
+        if let shortcut, shortcut.isValid { applicationLauncherShortcut = shortcut }
+        else { applicationLauncherShortcut = .controlSpace }
         desktopPetDockPosition = (try container.decodeIfPresent(PetDockPosition.self, forKey: .desktopPetDockPosition) ?? .bottomRight).fixedPosition
         desktopCompanionAppearance = try container.decodeIfPresent(CompanionAppearance.self, forKey: .desktopCompanionAppearance) ?? .biti
         desktopCompanionHeadDisplay = (try? container.decode(CompanionHeadDisplay.self, forKey: .desktopCompanionHeadDisplay)) ?? .activityTicker
@@ -470,6 +482,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showRecentTokenEvents, forKey: .showRecentTokenEvents)
         try container.encode(showCodexUsageSummary, forKey: .showCodexUsageSummary)
         try container.encode(showDesktopPet, forKey: .showDesktopPet)
+        try container.encode(applicationLauncherEnabled, forKey: .applicationLauncherEnabled)
+        try container.encode(applicationLauncherShortcut, forKey: .applicationLauncherShortcut)
         try container.encode(desktopPetDockPosition, forKey: .desktopPetDockPosition)
         try container.encode(desktopCompanionAppearance, forKey: .desktopCompanionAppearance)
         try container.encode(desktopCompanionHeadDisplay, forKey: .desktopCompanionHeadDisplay)

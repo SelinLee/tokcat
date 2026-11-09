@@ -246,7 +246,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             codexDirectory: root.appendingPathComponent("codex", isDirectory: true),
             supportDirectory: support, now: now, recentRoots: [],
             workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-            deepSeekHarnessDirectories: [sessionsDir]
+            deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil
         )
 
         let initial = monitor.poll(enabled: [.deepseekHarness], now: now)
@@ -291,7 +291,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             codexDirectory: root.appendingPathComponent("codex", isDirectory: true),
             supportDirectory: support, now: now, recentRoots: [],
             workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-            deepSeekHarnessDirectories: [sessionsDir]
+            deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil
         )
         let result = monitor.poll(enabled: [.deepseekHarness], now: now)
         XCTAssertTrue(result.tasks.isEmpty)
@@ -320,7 +320,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             codexDirectory: root.appendingPathComponent("codex", isDirectory: true),
             supportDirectory: support, now: now, recentRoots: [],
             workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-            deepSeekHarnessDirectories: [sessionsDir]
+            deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil
         )
         let tasks = monitor.poll(enabled: [.deepseekHarness, .claudeCode], now: now).tasks
         XCTAssertEqual(tasks.map(\.session.sessionID).sorted(), ["s", "session-kept"])
@@ -346,7 +346,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             codexDirectory: root.appendingPathComponent("codex", isDirectory: true),
             supportDirectory: root.appendingPathComponent("support", isDirectory: true),
             now: now, recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-            deepSeekHarnessDirectories: [sessionsDir]
+            deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil
         )
         XCTAssertTrue(monitor.poll(enabled: [.claudeCode], now: now).sessions.isEmpty)
         XCTAssertEqual(monitor.poll(enabled: [.deepseekHarness], now: now).sessions.count, 1)
@@ -358,7 +358,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
             AgentSessionMonitor(codexDirectory: root.appendingPathComponent("codex"),
                 supportDirectory: root.appendingPathComponent("support"), now: now,
                 recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-                deepSeekHarnessDirectories: [sessionsDir])
+                deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil)
         }
         try writeSession(id: "speed", openStep: true, outputTokens: 90_000, modifiedAt: now)
         try writeSession(id: "other", openStep: true, outputTokens: 50_000, modifiedAt: now)
@@ -403,7 +403,7 @@ final class DeepSeekHarnessTaskReaderTests: XCTestCase {
         let monitor = AgentSessionMonitor(codexDirectory: root.appendingPathComponent("codex"),
             supportDirectory: root.appendingPathComponent("support"), now: now,
             recentRoots: [], workBuddyDatabase: nil, workBuddyAIDatabase: nil,
-            deepSeekHarnessDirectories: [sessionsDir])
+            deepSeekHarnessDirectories: [sessionsDir], claudeSessionsDirectory: nil)
         try writeSession(id: "speed", openStep: true, outputTokens: 1000, modifiedAt: now)
         _ = monitor.poll(enabled: [.deepseekHarness], now: now)
         try writeSession(id: "speed", openStep: true, outputTokens: 1100, modifiedAt: now.addingTimeInterval(10))

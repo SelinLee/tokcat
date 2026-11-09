@@ -55,12 +55,21 @@ public struct AgentTaskHistory {
     public mutating func observe(_ session: AgentSession, event: AgentSessionEvent?, logPath: String? = nil) {
         if let incoming = event?.turnID, let current = session.turnID, incoming != current { return }
         let key = AgentTaskRecord.key(for: session)
+        let partialKey = session.id + ":partial"
+        if session.source == .claudeCode, event?.kind == .started, key != partialKey,
+           var partial = records[partialKey], partial.session.claudeRegistryStatusAt != nil,
+           partial.session.startedAt == nil, !partial.session.state.isTerminal {
+            records.removeValue(forKey: partialKey)
+            partial.id = key
+            partial.session = session
+            if records[key] == nil { records[key] = partial }
+        }
         var record = records[key] ?? AgentTaskRecord(session: session, logPath: logPath)
         // Metadata has its own replay watermark: it must not pretend to be
         // activity just to prevent an earlier tool call from being counted twice.
         if let event, let last = record.lastEventAt ?? record.timeline.last?.timestamp,
            event.timestamp < last { return }
-        guard session.lastActivityAt >= record.lastActivityAt else { return }
+        guard session.lastActivityAt >= record.lastActivityAt || (session.source == .claudeCode && event != nil) else { return }
         record.session = session
         if let logPath { record.logPath = logPath }
         if let event {
@@ -110,7 +119,7 @@ public struct AgentTaskHistory {
 
     /// Sources that publish their own state. A passive log scan must never replace
     /// their record with an activity-only one, even when the file it read is newer.
-    private static let externallyPublished: Set<AgentSource> = [.workBuddy, .workBuddyAI, .deepseekHarness]
+    private static let externallyPublished: Set<AgentSource> = [.claudeCode, .workBuddy, .workBuddyAI, .deepseekHarness]
 
     public mutating func observeExternal(_ incoming: AgentTaskRecord) {
         var record = incoming
@@ -125,6 +134,12 @@ public struct AgentTaskHistory {
         }
         records[record.id] = record
         records.removeValue(forKey: record.session.id + ":observed")
+    }
+
+    public mutating func updateClaudeMetadata(session: AgentSession, title: String?, modelName: String?) {
+        let key = AgentTaskRecord.key(for: session)
+        if let title { records[key]?.title = title }
+        if let modelName { records[key]?.modelName = modelName }
     }
 
     public mutating func updateTitles(_ titles: [String: String], source: AgentSource) {

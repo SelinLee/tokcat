@@ -8,6 +8,7 @@ import AppKit
 /// Codex quota is read from client-written logs only while its desktop app runs.
 @MainActor
 final class AppModel: ObservableObject {
+    let applicationLauncher = ApplicationLauncherController()
     @Published private(set) var recentEvents: [TokenEvent] = []
     @Published private(set) var totalCostUSD: Double = 0
     @Published private(set) var todayInputTokens: Int = 0
@@ -178,7 +179,10 @@ final class AppModel: ObservableObject {
         }
         pollSessions()
         let sessionTimer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollSessions() }
+            Task { @MainActor in
+                self?.pollSessions()
+                self?.reconcileCodexClientState()
+            }
         }
         RunLoop.main.add(sessionTimer, forMode: .common)
         self.sessionTimer = sessionTimer
@@ -413,6 +417,13 @@ final class AppModel: ObservableObject {
     private func updateCodexClientState() {
         isCodexClientRunning = Self.codexDesktopIsRunning
         rescheduleCodexUsageTimer()
+    }
+
+    /// Workspace notifications can be missed during client restarts. Recover
+    /// without waiting for another launch or requiring a Tokcat restart.
+    private func reconcileCodexClientState() {
+        guard Self.codexDesktopIsRunning != isCodexClientRunning else { return }
+        updateCodexClientState()
     }
 
     private func rescheduleCodexUsageTimer() {

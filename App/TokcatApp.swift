@@ -6,6 +6,17 @@ import AppKit
 struct TokcatLauncher {
     @MainActor static func main() {
         #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-application-launcher"),
+           CommandLine.arguments.count > index + 1 {
+            do { try ApplicationLauncherPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
+            catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
+            return
+        }
+        if CommandLine.arguments.contains("--preview-application-launcher-live")
+            || Bundle.main.object(forInfoDictionaryKey: "TokcatLauncherPreview") as? Bool == true {
+            ApplicationLauncherPreview.runLive()
+            return
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--preview-usage-dashboard"),
            CommandLine.arguments.count > index + 1 {
             do { try StatsDashboardPreview.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])) }
