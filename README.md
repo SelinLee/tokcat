@@ -16,6 +16,10 @@ Now with a quick launcher for apps, live calculations, terminal commands, and we
 
 </div>
 
+## Windows preview
+
+A Windows monitor for Codex, Codex Work, WorkBuddy, DeepSeek Harness, and Claude Code sessions is available in [`windows/`](windows/README.md), with activity-only records for OpenClaw and Kimi. It embeds metrics inside the Windows taskbar and also provides a notification-area icon. Claude monitoring is opt-in. It is an early, separate implementation and does not yet provide all macOS features or agent integrations.
+
 ## Quick launcher
 
 > **New in 0.7.10:** [Download the macOS release](https://github.com/SelinLee/tokcat/releases/latest).
