@@ -84,7 +84,10 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var radialWasFollowing = true
     private var radialReadingMomentum = false
 
-    var radialLayout: LauncherRadialLayout { LauncherRadialLayout(count: radialItems.count) }
+    var radialLayout: LauncherRadialLayout {
+        let items = radialItems
+        return LauncherRadialLayout(weights: items.map(\.weight), accessoryIndex: items.firstIndex { $0.id == "web-search" })
+    }
 
     init(historyStore: LauncherHistoryStore = LauncherHistoryStore(),
          positionStore: LauncherWindowPositionStore = LauncherWindowPositionStore(),
@@ -140,12 +143,20 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     var isCalculatorMode: Bool { calculation != nil }
     var translationInput: LauncherTranslationInput? { LauncherTranslationInput(query) }
     var isTranslationMode: Bool { translationInput != nil }
+    var dictionaryInput: LauncherTranslationInput? {
+        if let input = translationInput { return input }
+        guard skin == .radial, hasQuery, !isTerminalMode, !isSettingsMode,
+              customCommand == nil, webRequest == nil, !isCalculatorMode,
+              let input = LauncherTranslationInput("tran+" + query), input.isDictionaryCandidate else { return nil }
+        return input
+    }
     var showsDictionaryDefinition: Bool {
-        guard let input = translationInput, input == lastDictionaryInput else { return false }
+        guard let input = dictionaryInput, input == lastDictionaryInput else { return false }
         return dictionaryDefinition != nil && !prefersWebTranslation
     }
     var translationRequests: [LauncherWebRequest] {
-        guard let input = translationInput, !isLookingUpDictionary, !showsDictionaryDefinition else { return [] }
+        guard let input = translationInput ?? (prefersWebTranslation ? dictionaryInput : nil),
+              !isLookingUpDictionary, !showsDictionaryDefinition else { return [] }
         return translationSettings.rankedProviders(usage: usage).compactMap { $0.request(for: input.text) }
     }
     var translationContentHeight: CGFloat {
@@ -397,7 +408,6 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     private func updateResults() {
         if skin == .radial { cancelRadialAim(ignoreUntilRelease: true) }
-        updateTranslation()
         let recalledApplication = historyCursor.flatMap { cursor in
             history.entries.indices.contains(cursor) ? history.entries[cursor].application : nil
         }
@@ -416,12 +426,13 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         } else {
             suggestedSearch = nil
         }
+        updateTranslation()
         selectedIndex = 0
         resizePanel()
     }
 
     private func updateTranslation() {
-        let input = translationInput
+        let input = dictionaryInput
         guard input != lastDictionaryInput else { return }
         clearDictionaryLookup()
         lastDictionaryInput = input
@@ -432,10 +443,18 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         let work = DispatchWorkItem { [weak self] in
             let definition = lookup(input.text)
             DispatchQueue.main.async {
-                guard let self, self.dictionaryGeneration == generation, self.translationInput == input else { return }
+                guard let self, self.dictionaryGeneration == generation, self.dictionaryInput == input else { return }
+                let previousItems = self.radialItems
+                let selectedID = !self.radialIsFollowing && previousItems.indices.contains(self.selectedIndex)
+                    ? previousItems[self.selectedIndex].id : nil
                 self.dictionaryDefinition = definition
                 self.isLookingUpDictionary = false
-                self.selectedIndex = 0
+                let newItems = self.radialItems
+                if self.skin == .radial, previousItems.map(\.id) == newItems.map(\.id) {
+                    self.updateRadialDefinitionPanel()
+                    return
+                }
+                self.selectedIndex = selectedID.flatMap { id in newItems.firstIndex { $0.id == id } } ?? 0
                 self.resizePanel()
             }
         }
@@ -796,6 +815,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         }
         if let content = panel?.contentView { visit(content) }
         return ["pid": ProcessInfo.processInfo.processIdentifier, "effects": effects,
+                "slots": radialLayout.slots.map { ["index": $0.index, "ring": $0.ring, "start": $0.startAngle,
+                    "end": $0.endAngle, "radius": $0.radius, "x": $0.center.x, "y": $0.center.y] as [String: Any] },
                 "readingVisible": dictionaryPanel?.isVisible == true,
                 "readingFrame": ["x": readingFrame.minX, "y": readingFrame.minY,
                                  "width": readingFrame.width, "height": readingFrame.height],
@@ -1037,7 +1058,7 @@ extension ApplicationLauncherController {
         let reading = dictionaryPanel ?? LauncherDictionaryPanel()
         dictionaryPanel = reading
         let light = cyberBackdropIsLight ?? (panel.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) != .darkAqua)
-        reading.update(word: translationInput?.text ?? "词典释义", definition: definition,
+        reading.update(word: dictionaryInput?.text ?? "词典释义", definition: definition,
                        style: LauncherCyberStyle(lightBackdrop: light))
         let size = reading.preferredSize
         let visible = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame

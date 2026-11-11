@@ -7,7 +7,7 @@ import TokcatKit
 @MainActor
 enum LauncherRadialPreview {
     static let applications: [LauncherApplication] = [
-        .init(url: URL(fileURLWithPath: "/Applications/Google Chrome.app"), name: "Google Chrome", aliases: ["app", "web"]),
+        .init(url: URL(fileURLWithPath: "/Applications/Google Chrome.app"), name: "Google Chrome", aliases: ["app", "web", "apple"]),
         .init(url: URL(fileURLWithPath: "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app"), name: "Safari", aliases: ["app", "web"]),
         .init(url: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"), name: "终端", aliases: ["app"]),
         .init(url: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), name: "访达", aliases: ["app"]),
@@ -23,13 +23,19 @@ enum LauncherRadialPreview {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         var opened = 0
+        var openedURLs: [String] = []
+        let usageStore = LauncherUsageStore(defaults: defaults)
+        var usage = LauncherUsageHistory()
+        for _ in 0..<12 { usage.record(.application(applications[0].id)) }
+        usageStore.save(usage)
         let controller = ApplicationLauncherController(historyStore: LauncherHistoryStore(defaults: defaults),
             positionStore: LauncherWindowPositionStore(defaults: defaults), commandStore: LauncherCommandStore(defaults: defaults),
             webShortcutStore: LauncherWebShortcutStore(defaults: defaults), translationStore: LauncherTranslationStore(defaults: defaults),
-            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { word in
-                word + "\n" + String(repeating: "词典释义示例：保留完整说明，使用翻页键或鼠标滚动阅读。\n", count: 24)
+            usageStore: usageStore, dictionaryLookup: { word in
+                guard ["apple", "banana", "hello", "café"].contains(word) else { return nil }
+                return word + "\n" + String(repeating: "词典释义示例：保留完整说明，按住 Command 并双指滚动阅读。\n", count: 24)
             },
-            openURL: { _ in opened += 1; return true })
+            openURL: { url in opened += 1; openedURLs.append(url.absoluteString); return true })
         let settings = CurrentValueSubject<AppSettings, Never>(AppSettings(applicationLauncherEnabled: false, applicationLauncherSkin: .radial))
         controller.start(settings: settings.eraseToAnyPublisher())
         controller.configurePreview(applications: applications, query: "", skin: .radial)
@@ -52,6 +58,7 @@ enum LauncherRadialPreview {
             MainActor.assumeIsolated {
                 var state = controller.radialPreviewState
                 state["opened"] = opened
+                state["openedURLs"] = openedURLs
                 if let data = try? JSONSerialization.data(withJSONObject: state) { try? data.write(to: stateURL, options: .atomic) }
             }
         }
@@ -70,7 +77,9 @@ enum LauncherRadialPreview {
         let controller = ApplicationLauncherController(historyStore: LauncherHistoryStore(defaults: defaults),
             positionStore: LauncherWindowPositionStore(defaults: defaults), commandStore: LauncherCommandStore(defaults: defaults),
             webShortcutStore: LauncherWebShortcutStore(defaults: defaults), translationStore: LauncherTranslationStore(defaults: defaults),
-            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { word in "\(word)：词典释义预览" },
+            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { word in
+                ["apple", "banana"].contains(word) ? "\(word)：词典释义预览" : nil
+            },
             openURL: { opened.append($0); return true })
         verifyInteraction(controller, opened: { opened })
         verifyNativeInput(controller)
@@ -119,7 +128,11 @@ enum LauncherRadialPreview {
 
     private static func verifyInteraction(_ controller: ApplicationLauncherController, opened: () -> [URL]) {
         controller.configurePreview(applications: applications, query: "app", skin: .radial)
-        precondition(controller.radialItems.count == 7 && controller.radialLayout.ringCount == 2)
+        precondition(controller.radialItems.count == 8 && controller.radialLayout.ringCount == 2)
+        precondition(controller.radialItems.last?.id == "web-search")
+        let firstSpan = controller.radialLayout.slots[0].endAngle - controller.radialLayout.slots[0].startAngle
+        let secondSpan = controller.radialLayout.slots[1].endAngle - controller.radialLayout.slots[1].startAngle
+        precondition(firstSpan > secondSpan, "Result rank must influence angular size")
         precondition(controller.radialIsFollowing)
         controller.selectRadialHover(1)
         precondition(controller.selectedIndex == 0, "Natural mouse motion must not change selection")
@@ -155,39 +168,53 @@ enum LauncherRadialPreview {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         precondition(controller.showsDictionaryDefinition && controller.results.isEmpty)
-        precondition(controller.radialItems.map(\.id) == ["definition", "web-translations"])
+        precondition(controller.radialItems.map(\.id) == ["definition", "web-translations", "web-search"])
         controller.performRadialItem(at: 1)
         precondition(controller.translationRequests.count == 2 && !controller.showsDictionaryDefinition)
         let beforeTranslation = opened().count
         controller.performRadialItem(at: 0)
         precondition(opened().count == beforeTranslation + 1 && opened().last?.host == "translate.google.com")
         controller.configurePreview(applications: applications, query: "tran+How are you?", skin: .radial)
-        precondition(controller.radialItems.count == 2 && controller.results.isEmpty)
+        precondition(controller.radialItems.count == 3 && controller.results.isEmpty)
         controller.navigateRadial(.right)
         controller.performRadialItem(at: controller.selectedIndex)
         precondition(opened().last?.host == "www.bing.com")
+        let directApplications = applications + [.init(url: URL(fileURLWithPath: "/Applications/Apple Notes.app"), name: "Apple Notes")]
         for word in ["apple", "banana"] {
-            controller.configurePreview(applications: applications, query: "tran \(word)", skin: .radial)
+            controller.configurePreview(applications: directApplications, query: word, skin: .radial)
             precondition(!controller.showsDictionaryDefinition, "A new word must clear the previous definition immediately")
             let deadline = Date().addingTimeInterval(2)
             while controller.isLookingUpDictionary, Date() < deadline {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.02))
             }
             precondition(controller.showsDictionaryDefinition && controller.dictionaryDefinition?.hasPrefix(word) == true)
+            precondition(!controller.isTranslationMode && controller.radialItems.last?.id == "web-search")
+            if word == "apple" {
+                precondition(!controller.results.isEmpty && controller.radialItems.contains { $0.id.hasPrefix("app:") },
+                             "Automatic lookup must coexist with application matches")
+            }
         }
         controller.dismiss()
         precondition(controller.dictionaryDefinition == nil && !controller.showsDictionaryDefinition,
                      "Closing the launcher must clear its dictionary state")
-        for query in ["", "apple", "sqrt(9)+2^3"] {
+        for query in ["", "sqrt(9)+2^3", "> pwd"] {
             controller.configurePreview(applications: applications, query: query, skin: .radial)
             precondition(!controller.showsDictionaryDefinition && controller.dictionaryDefinition == nil,
-                         "Reopening or entering ordinary input must not revive an old definition")
+                         "Reopening or entering a different mode must not revive an old definition")
         }
         for (query, id) in [("sqrt(9)+2^3", "calculation"), ("> pwd", "terminal"), ("setup", "settings"), ("example.com", "web")] {
             controller.configurePreview(applications: applications, query: query, skin: .radial)
             precondition(controller.radialItems.first?.id == id && controller.results.isEmpty,
                          "The wheel must preserve the existing \(id) route")
         }
+        controller.configurePreview(applications: [], query: "", skin: .radial)
+        precondition(controller.radialItems.map(\.id) == ["web-search"], "Search is available before typing")
+        let beforeSearch = opened().count
+        controller.performRadialItem(at: 0)
+        precondition(opened().count == beforeSearch + 1 && opened().last?.host == "www.baidu.com")
+        controller.configurePreview(applications: [], query: "hello world", skin: .radial)
+        controller.performRadialItem(at: controller.radialItems.count - 1)
+        precondition(URLComponents(url: opened().last!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "wd" }?.value == "hello world")
         controller.configurePreview(applications: [], query: "", skin: .radial)
         precondition(controller.beginRadialAim(capturePointer: false), "Command activates optical effects before typing")
         precondition(controller.radialIsAiming && controller.radialAimIndex == nil)

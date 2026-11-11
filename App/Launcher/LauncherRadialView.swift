@@ -92,14 +92,14 @@ struct LauncherRadialView: View {
                     Image(systemName: item.symbol).resizable().scaledToFit().foregroundStyle(selected ? style.accent : style.pink)
                 }
             }
-            .frame(width: 18, height: 18)
+            .frame(width: item.id == "web-search" ? 14 : 18, height: item.id == "web-search" ? 14 : 18)
             .rotationEffect(.radians(slot.angle - .pi / 2))
             .position(x: layout.center.x + cos(slot.angle) * (slot.radius - 12),
                       y: layout.center.y + sin(slot.angle) * (slot.radius - 12))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             arcText(item.title, radius: slot.radius + 12, angle: slot.angle,
-                    span: slot.endAngle - slot.startAngle - 0.09, size: 13,
+                    span: slot.endAngle - slot.startAngle - 0.09, size: item.id == "web-search" ? 11 : 13,
                     color: selected ? style.primaryText : style.secondaryText)
         }
     }
@@ -186,9 +186,10 @@ private struct RadialFogShape: Shape {
                                  start: .pi * 1.06, end: .pi * 1.94).path(in: rect))
         if !layout.slots.isEmpty {
             for ring in 0..<layout.ringCount {
+                guard let angles = layout.occupiedAngles(in: ring) else { continue }
                 path.addPath(RadialSector(center: layout.center,
                     radius: LauncherRadialLayout.resultRadius + CGFloat(ring) * LauncherRadialLayout.ringSpacing,
-                    thickness: LauncherRadialLayout.resultThickness + 6, start: 0, end: .pi).path(in: rect))
+                    thickness: LauncherRadialLayout.resultThickness + 6, start: angles.lowerBound, end: angles.upperBound).path(in: rect))
             }
         }
         if centerRadius > 0 {
@@ -205,7 +206,13 @@ private struct LauncherRadialBlur: NSViewRepresentable {
     let style: LauncherCyberStyle
     let centerRadius: CGFloat
     private static var masks: [String: NSImage] = [:]
-    private var maskKey: String { "\(layout.slots.isEmpty ? 0 : layout.ringCount):\(Int(centerRadius))" }
+    private var maskKey: String {
+        let ranges = (0..<layout.ringCount).compactMap { ring -> String? in
+            guard let angles = layout.occupiedAngles(in: ring) else { return nil }
+            return "\(ring):\(Int(angles.lowerBound * 1000)):\(Int(angles.upperBound * 1000))"
+        }.joined(separator: ";")
+        return "\(ranges):\(Int(centerRadius))"
+    }
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let effect = RadialEffectView()
@@ -233,7 +240,7 @@ private struct LauncherRadialBlur: NSViewRepresentable {
             let space = CGColorSpaceCreateDeviceRGB()
             let white = CGColor(gray: 1, alpha: 1)
             let clear = CGColor(gray: 1, alpha: 0)
-            func ring(_ radius: CGFloat, _ halfWidth: CGFloat, upper: Bool) {
+            func ring(_ radius: CGFloat, _ halfWidth: CGFloat, angles: ClosedRange<CGFloat>) {
                 let outer = radius + halfWidth + LauncherRadialLayout.feather
                 let inner = max(0, radius - halfWidth - LauncherRadialLayout.feather)
                 guard let gradient = CGGradient(colorsSpace: space,
@@ -243,11 +250,16 @@ private struct LauncherRadialBlur: NSViewRepresentable {
                 context.drawRadialGradient(gradient, startCenter: layout.center, startRadius: 0,
                                            endCenter: layout.center, endRadius: outer, options: [])
                 context.setBlendMode(.destinationIn)
-                if let vertical = CGGradient(colorsSpace: space, colors: [clear, white] as CFArray, locations: [0, 1]) {
-                    context.drawLinearGradient(vertical,
-                        start: CGPoint(x: 0, y: layout.center.y + (upper ? 12 : -12)),
-                        end: CGPoint(x: 0, y: layout.center.y + (upper ? -8 : 8)),
+                func softenEdge(_ normal: CGPoint) {
+                    guard let edge = CGGradient(colorsSpace: space, colors: [clear, white] as CFArray, locations: [0, 1]) else { return }
+                    context.drawLinearGradient(edge,
+                        start: CGPoint(x: layout.center.x - normal.x * 12, y: layout.center.y - normal.y * 12),
+                        end: CGPoint(x: layout.center.x + normal.x * 8, y: layout.center.y + normal.y * 8),
                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                }
+                softenEdge(CGPoint(x: -sin(angles.lowerBound), y: cos(angles.lowerBound)))
+                if angles.upperBound - angles.lowerBound < .pi - 0.001 {
+                    softenEdge(CGPoint(x: sin(angles.upperBound), y: -cos(angles.upperBound)))
                 }
                 context.endTransparencyLayer()
                 context.setBlendMode(.normal)
@@ -255,11 +267,12 @@ private struct LauncherRadialBlur: NSViewRepresentable {
             context.saveGState()
             context.translateBy(x: 0, y: bounds.height)
             context.scaleBy(x: 1, y: -1)
-            ring(LauncherRadialLayout.inputRadius, LauncherRadialLayout.inputThickness / 2, upper: true)
+            ring(LauncherRadialLayout.inputRadius, LauncherRadialLayout.inputThickness / 2, angles: .pi...(.pi * 2))
             if !layout.slots.isEmpty {
                 for index in 0..<layout.ringCount {
+                    guard let angles = layout.occupiedAngles(in: index) else { continue }
                     ring(LauncherRadialLayout.resultRadius + CGFloat(index) * LauncherRadialLayout.ringSpacing,
-                         LauncherRadialLayout.resultThickness / 2, upper: false)
+                         LauncherRadialLayout.resultThickness / 2, angles: angles)
                 }
             }
             if centerRadius > 0, let gradient = CGGradient(colorsSpace: space,

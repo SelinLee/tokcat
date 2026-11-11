@@ -9,6 +9,7 @@ public struct LauncherRadialLayout: Sendable {
     public static let ringSpacing: CGFloat = 64
     public static let resultThickness: CGFloat = 48
     public static let feather: CGFloat = 20
+    public static let accessorySpan: CGFloat = .pi / 6
 
     public struct Slot: Equatable, Sendable {
         public let index: Int
@@ -37,25 +38,49 @@ public struct LauncherRadialLayout: Sendable {
     public var center: CGPoint { CGPoint(x: diameter / 2, y: topExtent) }
 
     public init(count: Int) {
+        self.init(weights: Array(repeating: 1, count: max(0, count)))
+    }
+
+    /// Primary choices share each arc by weight, with a minimum readable angle.
+    /// A small utility sector stays at the right end of the first arc.
+    public init(weights: [Double], accessoryIndex: Int? = nil) {
         var slots: [Slot] = []
-        var index = 0
+        let accessory = accessoryIndex.flatMap { weights.indices.contains($0) ? $0 : nil }
+        let primary = weights.indices.filter { $0 != accessory }
+        var offset = 0
         var ring = 0
-        while index < max(0, count) {
-            // Two broad sectors first; longer outer arcs can hold more choices.
-            let capacity = 2 + ring * 4
-            let size = min(capacity, count - index)
-            let step = CGFloat.pi / CGFloat(size)
-            for position in 0..<size {
-                let end = CGFloat.pi - CGFloat(position) * step
+        while offset < primary.count {
+            let capacity = 2 + ring * 6
+            let indices = Array(primary.dropFirst(offset).prefix(capacity))
+            let available = CGFloat.pi - (ring == 0 && accessory != nil ? Self.accessorySpan : 0)
+            let minimum = min(0.32, available / CGFloat(indices.count))
+            let flexible = max(0, available - minimum * CGFloat(indices.count))
+            let values = indices.map { weights[$0].isFinite ? min(8, max(0.1, weights[$0])) : 1 }
+            let total = values.reduce(0, +)
+            var end = CGFloat.pi
+            for (position, index) in indices.enumerated() {
+                let span = minimum + flexible * CGFloat(values[position] / total)
+                let start = position == indices.count - 1 ? CGFloat.pi - available : end - span
                 slots.append(Slot(index: index, ring: ring,
                     radius: Self.resultRadius + CGFloat(ring) * Self.ringSpacing,
-                    startAngle: end - step, endAngle: end))
-                index += 1
+                    startAngle: start, endAngle: end))
+                end = start
             }
+            offset += indices.count
             ring += 1
+        }
+        if let accessory {
+            slots.append(Slot(index: accessory, ring: 0, radius: Self.resultRadius,
+                              startAngle: 0, endAngle: Self.accessorySpan))
         }
         self.slots = slots
         ringCount = max(1, ring)
+    }
+
+    public func occupiedAngles(in ring: Int) -> ClosedRange<CGFloat>? {
+        let row = slots.filter { $0.ring == ring }
+        guard let start = row.map(\.startAngle).min(), let end = row.map(\.endAngle).max() else { return nil }
+        return start...end
     }
 
     public func hitTest(_ point: CGPoint, aiming: Bool = false) -> Int? {
