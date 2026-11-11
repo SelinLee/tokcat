@@ -29,6 +29,13 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     @Published private(set) var dictionaryDefinition: String?
     @Published private(set) var isLookingUpDictionary = false
     @Published private(set) var prefersWebTranslation = false
+    @Published private(set) var radialIsFollowing = true
+    @Published private(set) var radialIsAiming = false
+    @Published private(set) var radialAimVector = CGPoint.zero
+    @Published private(set) var radialAimIndex: Int?
+    @Published private(set) var radialScale: CGFloat = 1
+    @Published private(set) var radialInputSelection = NSRange(location: 0, length: 0)
+    @Published private(set) var radialMarkedRange = NSRange(location: NSNotFound, length: 0)
     var onOpenSettings: (() -> Void)?
 
     private let hotKey = LauncherHotKey()
@@ -65,6 +72,16 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var dictionaryWork: DispatchWorkItem?
     private var dictionaryGeneration = 0
     private var lastDictionaryInput: LauncherTranslationInput?
+    private var radialAnchor: CGPoint?
+    private var radialAim = LauncherRadialAim()
+    private let radialPointer = LauncherRadialPointer()
+    private var radialLocalMonitor: Any?
+    private var radialGlobalMonitor: Any?
+    private var radialEditorObserver: NSObjectProtocol?
+    private var radialIgnoreCommand = false
+    private var radialWasFollowing = true
+
+    var radialLayout: LauncherRadialLayout { LauncherRadialLayout(count: radialItems.count) }
 
     init(historyStore: LauncherHistoryStore = LauncherHistoryStore(),
          positionStore: LauncherWindowPositionStore = LauncherWindowPositionStore(),
@@ -90,6 +107,12 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         self.dictionaryLookup = dictionaryLookup
         self.openURL = openURL
         super.init()
+    }
+
+    deinit {
+        if let radialLocalMonitor { NSEvent.removeMonitor(radialLocalMonitor) }
+        if let radialGlobalMonitor { NSEvent.removeMonitor(radialGlobalMonitor) }
+        if let radialEditorObserver { NotificationCenter.default.removeObserver(radialEditorObserver) }
     }
 
     var hasQuery: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -137,7 +160,11 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     var backdropMargins: CGSize { skin == .cyber ? LauncherLayout.cyberBackdropMargins : .zero }
 
     var panelSize: CGSize {
-        CGSize(width: LauncherLayout.width + 2 * backdropMargins.width,
+        if skin == .radial {
+            let size = radialLayout.size
+            return CGSize(width: size.width * radialScale, height: size.height * radialScale)
+        }
+        return CGSize(width: LauncherLayout.width + 2 * backdropMargins.width,
                height: panelHeight + 2 * backdropMargins.height)
     }
 
@@ -156,9 +183,28 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     private func applySkin(_ skin: LauncherSkin) {
         guard self.skin != skin else { return }
+        let wasRadial = self.skin == .radial
+        stopRadialTracking()
         self.skin = skin
         panel?.hasShadow = skin == .classic
+        panel?.isMovableByWindowBackground = skin != .radial
+        if skin == .radial {
+            radialAnchor = NSEvent.mouseLocation
+            radialIsFollowing = true
+        } else if wasRadial {
+            let visible = panel?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+            panelAnchor = positionStore.load() ?? LauncherWindowPosition(
+                x: visible.midX - LauncherLayout.width / 2, top: visible.maxY - visible.height * 0.2)
+        }
         resizePanel()
+        if panel?.isVisible == true {
+            startRadialTracking()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let panel = self.panel, panel.isVisible else { return }
+                panel.contentView?.layoutSubtreeIfNeeded()
+                self.focusSearchField(in: panel)
+            }
+        }
         startBackdropSampling()
     }
 
@@ -206,6 +252,9 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     func show() {
+        stopRadialTracking()
+        radialAnchor = NSEvent.mouseLocation
+        radialIsFollowing = true
         presentationID += 1
         historyCursor = nil
         isBrowsingHistory = false
@@ -220,7 +269,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             window.isReleasedWhenClosed = false
             window.isFloatingPanel = true
             window.isMovable = true
-            window.isMovableByWindowBackground = true
+            window.isMovableByWindowBackground = skin != .radial
+            window.acceptsMouseMovedEvents = true
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window.isOpaque = false
@@ -236,15 +286,20 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })
             ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let anchor = positionStore.load() ?? LauncherWindowPosition(
-            x: visible.midX - LauncherLayout.width / 2, top: visible.maxY - visible.height * 0.2)
-        let frame = panelFrame(anchoredAt: anchor)
-        panelAnchor = contentAnchor(in: frame)
-        setPanelFrame(frame)
+        if skin == .radial {
+            setRadialFrame()
+        } else {
+            let anchor = positionStore.load() ?? LauncherWindowPosition(
+                x: visible.midX - LauncherLayout.width / 2, top: visible.maxY - visible.height * 0.2)
+            let frame = panelFrame(anchoredAt: anchor)
+            panelAnchor = contentAnchor(in: frame)
+            setPanelFrame(frame)
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.contentView?.layoutSubtreeIfNeeded()
         focusSearchField(in: panel)
+        startRadialTracking()
         startBackdropSampling()
         DispatchQueue.main.async { [weak self, weak panel] in
             guard let self, let panel, panel.isKeyWindow else { return }
@@ -256,20 +311,21 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         guard let searchField, panel.makeFirstResponder(searchField),
               let editor = searchField.currentEditor() as? NSTextView else { return }
         let isLight = cyberBackdropIsLight ?? (panel.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .darkAqua)
-        editor.insertionPointColor = skin == .cyber ? LauncherCyberStyle(lightBackdrop: isLight).caret : .textColor
+        editor.insertionPointColor = skin.usesCyberAppearance ? LauncherCyberStyle(lightBackdrop: isLight).caret : .textColor
         editor.shadow = searchField.shadow
     }
 
     private func startBackdropSampling() {
         stopBackdropSampling()
-        guard #available(macOS 14, *), skin == .cyber, let panel, panel.isVisible,
+        guard #available(macOS 14, *), skin.usesCyberAppearance, let panel, panel.isVisible,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
               CGPreflightScreenCaptureAccess() else { return }
 
         backdropTask = Task { [weak self, weak panel] in
             let sampler = LauncherBackdropSampler()
             while !Task.isCancelled, let panel, panel.isVisible {
-                if let brightness = try? await sampler.brightness(behind: panel), !Task.isCancelled {
+                let inputRect = self?.radialBackdropSampleRect(in: panel)
+                if let brightness = try? await sampler.brightness(behind: panel, inputRect: inputRect), !Task.isCancelled {
                     self?.updateCyberBackdrop(brightness: brightness)
                 }
                 try? await Task.sleep(nanoseconds: 450_000_000)
@@ -291,6 +347,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     func dismiss(restoreFocus: Bool = false) {
+        stopRadialTracking()
         stopBackdropSampling()
         dictionaryWork?.cancel()
         dictionaryGeneration += 1
@@ -305,6 +362,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     func windowDidResignKey(_ notification: Notification) { dismiss() }
 
     func windowDidMove(_ notification: Notification) {
+        guard skin != .radial else { return }
         guard !isAdjustingFrame, let window = notification.object as? NSWindow,
               window === panel, window.isVisible else { return }
         let anchor = contentAnchor(in: window.frame)
@@ -332,6 +390,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     private func updateResults() {
+        if skin == .radial { cancelRadialAim(ignoreUntilRelease: true) }
         updateTranslation()
         let recalledApplication = historyCursor.flatMap { cursor in
             history.entries.indices.contains(cursor) ? history.entries[cursor].application : nil
@@ -437,6 +496,12 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     private func resizePanel() {
         guard let panel, panel.isVisible else { return }
+        if skin == .radial {
+            // A changed query invalidates a pending release-to-select gesture.
+            cancelRadialAim(ignoreUntilRelease: true)
+            setRadialFrame()
+            return
+        }
         let anchor = panelAnchor ?? contentAnchor(in: panel.frame)
         setPanelFrame(panelFrame(anchoredAt: anchor))
         panel.invalidateShadow()
@@ -634,6 +699,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
             focusSearchField(in: panel)
+            startRadialTracking()
             startBackdropSampling()
         }
     }
@@ -642,7 +708,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         guard let field = notification.object as? NSTextField else { return }
         historyCursor = nil
         isBrowsingHistory = false
-        query = field.stringValue
+        query = skin == .radial ? (field.currentEditor()?.string ?? field.stringValue) : field.stringValue
+        updateRadialEditorState()
         launchError = nil
         updateResults()
     }
@@ -650,6 +717,24 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {
         // Let the input method consume Return/Escape/arrows while composing.
         guard !textView.hasMarkedText() else { return false }
+        if skin == .radial {
+            let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.command, .option, .shift]) ?? []
+            if modifiers.isEmpty, !radialItems.isEmpty {
+                let direction: LauncherRadialLayout.Direction?
+                switch command {
+                case #selector(NSResponder.moveLeft(_:)): direction = .left
+                case #selector(NSResponder.moveRight(_:)): direction = .right
+                case #selector(NSResponder.moveUp(_:)): direction = .up
+                case #selector(NSResponder.moveDown(_:)): direction = .down
+                default: direction = nil
+                }
+                if let direction { navigateRadial(direction); return true }
+            }
+            if command == #selector(NSResponder.insertNewline(_:)) {
+                performRadialItem(at: selectedIndex)
+                return true
+            }
+        }
         switch command {
         case #selector(NSResponder.moveDown(_:)):
             if isBrowsingHistory { recallHistory(older: false) }
@@ -683,13 +768,208 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     #if DEBUG
+    var radialPreviewState: [String: Any] {
+        let frame = panel?.frame ?? .zero
+        let editor = searchField?.currentEditor() as? NSTextView
+        var effects: [[String: Any]] = []
+        func visit(_ view: NSView) {
+            if let effect = view as? NSVisualEffectView {
+                let rect = effect.convert(effect.bounds, to: panel?.contentView)
+                effects.append(["x": rect.minX, "y": rect.minY, "width": rect.width, "height": rect.height,
+                                "maskWidth": effect.maskImage?.size.width ?? 0, "maskHeight": effect.maskImage?.size.height ?? 0])
+            }
+            for child in view.subviews { visit(child) }
+        }
+        if let content = panel?.contentView { visit(content) }
+        return ["pid": ProcessInfo.processInfo.processIdentifier, "effects": effects,
+                "visible": panel?.isVisible == true, "following": radialIsFollowing,
+                "aiming": radialIsAiming, "pointerLocked": radialPointer.isLocked,
+                "selected": selectedIndex, "aimIndex": radialAimIndex ?? -1,
+                "vectorX": radialAimVector.x, "vectorY": radialAimVector.y,
+                "query": query, "items": radialItems.count, "scale": radialScale,
+                "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height],
+                "editorExists": editor != nil, "editorText": editor?.string ?? "",
+                "inputSelection": radialInputSelection.location]
+    }
+
     func configurePreview(applications: [LauncherApplication], query: String, skin: LauncherSkin = .classic) {
+        scanGeneration += 1
+        lastScan = Date()
+        isIndexing = false
         applySkin(skin)
         index = ApplicationSearchIndex(applications: applications)
         self.query = query
+        radialInputSelection = NSRange(location: query.utf16.count, length: 0)
         updateResults()
     }
     #endif
+}
+
+extension ApplicationLauncherController {
+    private func setRadialFrame() {
+        guard let panel else { return }
+        let anchor = radialIsFollowing ? NSEvent.mouseLocation : (radialAnchor ?? NSEvent.mouseLocation)
+        let screen = NSScreen.screens.first { NSMouseInRect(anchor, $0.frame, false) } ?? panel.screen ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let layout = radialLayout
+        let scale = min(1, (visible.width - 24) / layout.size.width, (visible.height - 24) / layout.size.height)
+        if radialScale != scale { radialScale = scale }
+        let size = CGSize(width: layout.size.width * scale, height: layout.size.height * scale)
+        let origin = CGPoint(x: min(max(anchor.x - size.width / 2, visible.minX + 12), visible.maxX - size.width - 12),
+                             y: min(max(anchor.y - layout.bottomExtent * scale, visible.minY + 12), visible.maxY - size.height - 12))
+        setPanelFrame(CGRect(origin: origin, size: size))
+        radialAnchor = CGPoint(x: origin.x + layout.center.x * scale, y: origin.y + layout.bottomExtent * scale)
+    }
+
+    private func radialBackdropSampleRect(in panel: NSWindow) -> CGRect? {
+        guard skin == .radial else { return nil }
+        let center = radialLayout.center
+        return CGRect(x: panel.frame.minX + (center.x - 80) * radialScale,
+                      y: panel.frame.maxY - (center.y + LauncherRadialLayout.inputCenter.y + 10) * radialScale,
+                      width: 160 * radialScale, height: 20 * radialScale)
+    }
+
+    private func startRadialTracking() {
+        guard skin == .radial, panel?.isVisible == true, radialLocalMonitor == nil else { return }
+        radialIgnoreCommand = NSEvent.modifierFlags.contains(.command)
+        radialEditorObserver = NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification,
+            object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.updateRadialEditorState() } }
+        radialLocalMonitor = NSEvent.addLocalMonitorForEvents(matching:
+            [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .flagsChanged, .keyDown, .leftMouseDown]
+        ) { [weak self] event in
+            let consumed = MainActor.assumeIsolated {
+                guard let self else { return false }
+                return self.handleRadialEvent(event) == nil
+            }
+            return consumed ? nil : event
+        }
+        radialGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching:
+            [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        ) { [weak self] event in MainActor.assumeIsolated { self?.handleRadialMotion(event) } }
+    }
+
+    private func stopRadialTracking() {
+        cancelRadialAim(ignoreUntilRelease: false)
+        if let radialLocalMonitor { NSEvent.removeMonitor(radialLocalMonitor) }
+        if let radialGlobalMonitor { NSEvent.removeMonitor(radialGlobalMonitor) }
+        radialLocalMonitor = nil
+        radialGlobalMonitor = nil
+        if let radialEditorObserver { NotificationCenter.default.removeObserver(radialEditorObserver) }
+        radialEditorObserver = nil
+        radialIgnoreCommand = false
+    }
+
+    private func handleRadialEvent(_ event: NSEvent) -> NSEvent? {
+        guard skin == .radial, panel?.isVisible == true else { return event }
+        switch event.type {
+        case .flagsChanged:
+            let command = event.modifierFlags.contains(.command)
+            let other = !event.modifierFlags.intersection([.option, .control, .shift]).isEmpty
+            if !command {
+                if radialIsAiming { finishRadialAim(commit: true) }
+                radialIgnoreCommand = false
+            } else if other {
+                cancelRadialAim(ignoreUntilRelease: true)
+                radialIgnoreCommand = true
+            } else if !radialIgnoreCommand, !radialIsAiming {
+                _ = beginRadialAim()
+            }
+        case .keyDown:
+            if radialIsAiming {
+                if event.keyCode == 53 {
+                    cancelRadialAim(ignoreUntilRelease: true)
+                    dismiss(restoreFocus: true)
+                    return nil
+                }
+                if event.keyCode == 36 || event.keyCode == 76 {
+                    finishRadialAim(commit: true)
+                    return nil
+                }
+                // Cmd-C/V/A/Tab and text editing retain their native behavior.
+                cancelRadialAim(ignoreUntilRelease: true)
+            }
+        case .leftMouseDown:
+            if radialIsAiming { finishRadialAim(commit: true); return nil }
+        case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            handleRadialMotion(event)
+        default: break
+        }
+        return event
+    }
+
+    private func handleRadialMotion(_ event: NSEvent) {
+        guard skin == .radial, let panel, panel.isVisible else { return }
+        if radialIsAiming {
+            moveRadialAim(dx: event.deltaX * 1.6 / radialScale, dy: event.deltaY * 1.6 / radialScale)
+        } else if radialIsFollowing {
+            setRadialFrame()
+        } else if let anchor = radialAnchor {
+            let mouse = NSEvent.mouseLocation
+            let point = CGPoint(x: (mouse.x - anchor.x) / radialScale, y: (anchor.y - mouse.y) / radialScale)
+            if let index = radialLayout.hitTest(point) { selectRadialHover(index) }
+        }
+    }
+
+    @discardableResult
+    func beginRadialAim(capturePointer: Bool = true) -> Bool {
+        guard skin == .radial,
+              (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return false }
+        guard !capturePointer || radialPointer.lock() else {
+            launchError = "无法锁定鼠标，可使用方向键选择。"
+            return false
+        }
+        radialWasFollowing = radialIsFollowing
+        radialIsFollowing = false
+        radialAim.begin()
+        radialIsAiming = true
+        radialAimVector = .zero
+        radialAimIndex = nil
+        return true
+    }
+
+    func moveRadialAim(dx: CGFloat, dy: CGFloat) {
+        guard radialIsAiming else { return }
+        radialAim.move(dx: dx, dy: dy, limit: radialLayout.outerRadius + 16)
+        radialAimVector = radialAim.vector
+        radialAimIndex = radialAim.target(in: radialLayout)
+        if let index = radialAimIndex { selectedIndex = index }
+    }
+
+    func finishRadialAim(commit: Bool) {
+        guard radialIsAiming else { return }
+        if !commit { radialAim.cancel() }
+        let selected = radialAim.end(in: radialLayout)
+        radialPointer.unlock()
+        radialIsAiming = false
+        radialAimVector = .zero
+        radialAimIndex = nil
+        radialIsFollowing = radialWasFollowing
+        if let selected { performRadialItem(at: selected) }
+    }
+
+    private func cancelRadialAim(ignoreUntilRelease: Bool) {
+        let wasAiming = radialIsAiming
+        finishRadialAim(commit: false)
+        radialPointer.unlock()
+        if ignoreUntilRelease, wasAiming { radialIgnoreCommand = true }
+    }
+
+    func navigateRadial(_ direction: LauncherRadialLayout.Direction) {
+        cancelRadialAim(ignoreUntilRelease: true)
+        radialIsFollowing = false
+        if let index = radialLayout.neighbor(of: selectedIndex, direction: direction) { selectedIndex = index }
+    }
+
+    func selectRadialHover(_ index: Int) {
+        guard !radialIsFollowing, !radialIsAiming, radialItems.indices.contains(index) else { return }
+        if selectedIndex != index { selectedIndex = index }
+    }
+
+    func updateRadialEditorState() {
+        guard skin == .radial, let editor = searchField?.currentEditor() as? NSTextView else { return }
+        if radialInputSelection != editor.selectedRange() { radialInputSelection = editor.selectedRange() }
+        if radialMarkedRange != editor.markedRange() { radialMarkedRange = editor.markedRange() }
+    }
 }
 
 private final class LauncherPanel: NSPanel {

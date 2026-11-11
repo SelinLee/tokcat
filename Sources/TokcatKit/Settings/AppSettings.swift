@@ -93,11 +93,15 @@ public enum MenuBarIconStyle: String, Codable, CaseIterable, Sendable, Identifia
 public enum LauncherSkin: String, Codable, CaseIterable, Sendable {
     case classic
     case cyber
+    case radial
+
+    public var usesCyberAppearance: Bool { self != .classic }
 
     public var displayName: String {
         switch self {
         case .classic: return "经典"
         case .cyber: return "赛博悬浮"
+        case .radial: return "赛博轮盘"
         }
     }
 }

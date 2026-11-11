@@ -15,7 +15,15 @@ struct ApplicationLauncherView: View {
     private var accent: Color { isCyber ? cyberStyle.accent : MonitorTheme.accent }
     private var secondaryText: Color { isCyber ? cyberStyle.secondaryText : MonitorTheme.secondaryText }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if controller.skin == .radial {
+            LauncherRadialView(controller: controller)
+        } else {
+            linearContent
+        }
+    }
+
+    private var linearContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: isCyber ? "waveform" : "magnifyingglass")
@@ -392,7 +400,7 @@ private final class LauncherDragView: NSView {
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
 
-private struct LauncherSearchField: NSViewRepresentable {
+struct LauncherSearchField: NSViewRepresentable {
     static let cyberPlaceholder = "搜索应用或输入命令…"
     static let cyberPlaceholderFont = NSFont.systemFont(ofSize: 19, weight: .medium)
     static let cyberInputFont = NSFont.monospacedSystemFont(ofSize: LauncherLayout.inputFontSize, weight: .medium)
@@ -400,6 +408,7 @@ private struct LauncherSearchField: NSViewRepresentable {
     let controller: ApplicationLauncherController
     let query: String
     let cyberStyle: LauncherCyberStyle?
+    var compact = false
 
     final class Coordinator {
         var isStyled = false
@@ -413,6 +422,8 @@ private struct LauncherSearchField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
+        field.alphaValue = compact ? 0 : 1
+        field.alignment = compact ? .center : .left
         applySkin(to: field, coordinator: context.coordinator)
         field.setAccessibilityLabel("搜索应用名称")
         field.delegate = controller
@@ -442,8 +453,10 @@ private struct LauncherSearchField: NSViewRepresentable {
     }
 
     private func applySkin(to field: NSTextField, coordinator: Coordinator) {
+        let placeholderFont = compact ? NSFont.systemFont(ofSize: 14, weight: .medium) : Self.cyberPlaceholderFont
+        let inputFont = compact ? NSFont.monospacedSystemFont(ofSize: 19, weight: .medium) : Self.cyberInputFont
         let font = cyberStyle == nil ? NSFont.systemFont(ofSize: LauncherLayout.inputFontSize, weight: .regular)
-            : query.isEmpty ? Self.cyberPlaceholderFont : Self.cyberInputFont
+            : query.isEmpty ? placeholderFont : inputFont
         guard !coordinator.isStyled || coordinator.cyberStyle != cyberStyle || field.font != font else { return }
         coordinator.isStyled = true
         coordinator.cyberStyle = cyberStyle
@@ -452,9 +465,9 @@ private struct LauncherSearchField: NSViewRepresentable {
         if let cyberStyle {
             field.textColor = cyberStyle.inputText
             field.shadow = cyberStyle.textShadow
-            field.placeholderAttributedString = NSAttributedString(string: Self.cyberPlaceholder, attributes: [
+            field.placeholderAttributedString = NSAttributedString(string: compact ? "搜索应用或命令…" : Self.cyberPlaceholder, attributes: [
                 .foregroundColor: cyberStyle.placeholder,
-                .font: Self.cyberPlaceholderFont,
+                .font: placeholderFont,
             ])
         } else {
             field.textColor = .labelColor
