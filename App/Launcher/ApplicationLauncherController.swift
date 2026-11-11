@@ -78,6 +78,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var radialLocalMonitor: Any?
     private var radialGlobalMonitor: Any?
     private var radialEditorObserver: NSObjectProtocol?
+    private var dictionaryPanel: LauncherDictionaryPanel?
     private var radialIgnoreCommand = false
     private var radialWasFollowing = true
 
@@ -337,7 +338,10 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         // Two thresholds keep text from flipping repeatedly on midtone backdrops.
         let cutoff = cyberBackdropIsLight.map { $0 ? 0.16 : 0.23 } ?? 0.19
         let isLight = brightness >= cutoff
-        if cyberBackdropIsLight != isLight { cyberBackdropIsLight = isLight }
+        if cyberBackdropIsLight != isLight {
+            cyberBackdropIsLight = isLight
+            updateRadialDefinitionPanel()
+        }
     }
 
     private func stopBackdropSampling() {
@@ -770,6 +774,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     #if DEBUG
     var radialPreviewState: [String: Any] {
         let frame = panel?.frame ?? .zero
+        let readingFrame = dictionaryPanel?.frame ?? .zero
         let editor = searchField?.currentEditor() as? NSTextView
         var effects: [[String: Any]] = []
         func visit(_ view: NSView) {
@@ -782,6 +787,13 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         }
         if let content = panel?.contentView { visit(content) }
         return ["pid": ProcessInfo.processInfo.processIdentifier, "effects": effects,
+                "readingVisible": dictionaryPanel?.isVisible == true,
+                "readingFrame": ["x": readingFrame.minX, "y": readingFrame.minY,
+                                 "width": readingFrame.width, "height": readingFrame.height],
+                "readingScroll": dictionaryPanel?.previewScrollOffset ?? 0,
+                "readingTextLayout": dictionaryPanel?.previewTextLayout ?? [:],
+                "translationMode": isTranslationMode,
+                "itemIDs": radialItems.map(\.id), "itemTitles": radialItems.map(\.title),
                 "visible": panel?.isVisible == true, "following": radialIsFollowing,
                 "aiming": radialIsAiming, "pointerLocked": radialPointer.isLocked,
                 "selected": selectedIndex, "aimIndex": radialAimIndex ?? -1,
@@ -819,6 +831,7 @@ extension ApplicationLauncherController {
                              y: min(max(anchor.y - layout.bottomExtent * scale, visible.minY + 12), visible.maxY - size.height - 12))
         setPanelFrame(CGRect(origin: origin, size: size))
         radialAnchor = CGPoint(x: origin.x + layout.center.x * scale, y: origin.y + layout.bottomExtent * scale)
+        updateRadialDefinitionPanel()
     }
 
     private func radialBackdropSampleRect(in panel: NSWindow) -> CGRect? {
@@ -850,6 +863,7 @@ extension ApplicationLauncherController {
 
     private func stopRadialTracking() {
         cancelRadialAim(ignoreUntilRelease: false)
+        hideRadialDefinitionPanel()
         if let radialLocalMonitor { NSEvent.removeMonitor(radialLocalMonitor) }
         if let radialGlobalMonitor { NSEvent.removeMonitor(radialGlobalMonitor) }
         radialLocalMonitor = nil
@@ -875,12 +889,18 @@ extension ApplicationLauncherController {
                 _ = beginRadialAim()
             }
         case .keyDown:
+            if event.keyCode == 53, (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true {
+                cancelRadialAim(ignoreUntilRelease: true)
+                dismiss(restoreFocus: true)
+                return nil
+            }
+            if !radialIsAiming, showsDictionaryDefinition,
+               (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true,
+               event.keyCode == 116 || event.keyCode == 121 {
+                dictionaryPanel?.scrollPage(event.keyCode == 121 ? 1 : -1)
+                return nil
+            }
             if radialIsAiming {
-                if event.keyCode == 53 {
-                    cancelRadialAim(ignoreUntilRelease: true)
-                    dismiss(restoreFocus: true)
-                    return nil
-                }
                 if event.keyCode == 36 || event.keyCode == 76 {
                     finishRadialAim(commit: true)
                     return nil
@@ -969,6 +989,38 @@ extension ApplicationLauncherController {
         guard skin == .radial, let editor = searchField?.currentEditor() as? NSTextView else { return }
         if radialInputSelection != editor.selectedRange() { radialInputSelection = editor.selectedRange() }
         if radialMarkedRange != editor.markedRange() { radialMarkedRange = editor.markedRange() }
+    }
+
+    private func updateRadialDefinitionPanel() {
+        guard skin == .radial, let panel, panel.isVisible, showsDictionaryDefinition,
+              let definition = dictionaryDefinition else { hideRadialDefinitionPanel(); return }
+        let reading = dictionaryPanel ?? LauncherDictionaryPanel()
+        dictionaryPanel = reading
+        let light = cyberBackdropIsLight ?? (panel.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) != .darkAqua)
+        reading.update(word: translationInput?.text ?? "词典释义", definition: definition,
+                       style: LauncherCyberStyle(lightBackdrop: light))
+        let size = reading.preferredSize
+        let visible = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        var origin = CGPoint(x: panel.frame.maxX + 8, y: panel.frame.maxY - size.height)
+        if origin.x + size.width > visible.maxX - 12 {
+            origin.x = panel.frame.minX - size.width - 8
+            if origin.x < visible.minX + 12 {
+                origin.x = panel.frame.midX - size.width / 2
+                origin.y = panel.frame.minY - size.height - 8
+            }
+        }
+        origin.x = min(max(origin.x, visible.minX + 12), visible.maxX - size.width - 12)
+        origin.y = min(max(origin.y, visible.minY + 12), visible.maxY - size.height - 12)
+        if reading.parent !== panel { panel.addChildWindow(reading, ordered: .above) }
+        reading.level = panel.level
+        reading.setFrame(CGRect(origin: origin, size: size), display: true)
+        if !reading.isVisible { reading.orderFront(nil) }
+    }
+
+    private func hideRadialDefinitionPanel() {
+        guard let dictionaryPanel else { return }
+        dictionaryPanel.orderOut(nil)
+        dictionaryPanel.parent?.removeChildWindow(dictionaryPanel)
     }
 }
 

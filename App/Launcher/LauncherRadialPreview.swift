@@ -26,7 +26,9 @@ enum LauncherRadialPreview {
         let controller = ApplicationLauncherController(historyStore: LauncherHistoryStore(defaults: defaults),
             positionStore: LauncherWindowPositionStore(defaults: defaults), commandStore: LauncherCommandStore(defaults: defaults),
             webShortcutStore: LauncherWebShortcutStore(defaults: defaults), translationStore: LauncherTranslationStore(defaults: defaults),
-            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { _ in "这是一段中文词典释义。" },
+            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { word in
+                word + "\n" + String(repeating: "词典释义示例：保留完整说明，使用翻页键或鼠标滚动阅读。\n", count: 24)
+            },
             openURL: { _ in opened += 1; return true })
         let settings = CurrentValueSubject<AppSettings, Never>(AppSettings(applicationLauncherEnabled: false, applicationLauncherSkin: .radial))
         controller.start(settings: settings.eraseToAnyPublisher())
@@ -43,7 +45,9 @@ enum LauncherRadialPreview {
         menu.addItem(edit)
         NSApp.mainMenu = menu
         controller.show()
-        controller.configurePreview(applications: applications, query: "web", skin: .radial)
+        let queryIndex = CommandLine.arguments.firstIndex(of: "--preview-query")
+        let initialQuery = queryIndex.flatMap { CommandLine.arguments.indices.contains($0 + 1) ? CommandLine.arguments[$0 + 1] : nil } ?? "web"
+        controller.configurePreview(applications: applications, query: initialQuery, skin: .radial)
         let timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in
             MainActor.assumeIsolated {
                 var state = controller.radialPreviewState
@@ -92,7 +96,9 @@ enum LauncherRadialPreview {
                 if ["pressed", "aiming", "outer-aiming"].contains(state) {
                     precondition(controller.beginRadialAim(capturePointer: false))
                     if state == "aiming" { controller.moveRadialAim(dx: 90, dy: 90) }
-                    if state == "outer-aiming" { controller.moveRadialAim(dx: 0, dy: 326) }
+                    if state == "outer-aiming" {
+                        controller.moveRadialAim(dx: 0, dy: LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing)
+                    }
                 }
                 RunLoop.main.run(until: Date().addingTimeInterval(0.2))
                 host.layoutSubtreeIfNeeded()
@@ -113,7 +119,7 @@ enum LauncherRadialPreview {
 
     private static func verifyInteraction(_ controller: ApplicationLauncherController, opened: () -> [URL]) {
         controller.configurePreview(applications: applications, query: "app", skin: .radial)
-        precondition(controller.radialItems.count == 7 && controller.radialLayout.ringCount == 3)
+        precondition(controller.radialItems.count == 7 && controller.radialLayout.ringCount == 2)
         precondition(controller.radialIsFollowing)
         controller.selectRadialHover(1)
         precondition(controller.selectedIndex == 0, "Natural mouse motion must not change selection")
@@ -143,6 +149,28 @@ enum LauncherRadialPreview {
         controller.finishRadialAim(commit: true)
         controller.finishRadialAim(commit: true)
         precondition(opened().count == 1 && opened().first?.host == "example.com", "Release executes exactly the pointed result once")
+        controller.configurePreview(applications: applications, query: "tran apple", skin: .radial)
+        let deadline = Date().addingTimeInterval(2)
+        while controller.isLookingUpDictionary, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        precondition(controller.showsDictionaryDefinition && controller.results.isEmpty)
+        precondition(controller.radialItems.map(\.id) == ["definition", "web-translations"])
+        controller.performRadialItem(at: 1)
+        precondition(controller.translationRequests.count == 2 && !controller.showsDictionaryDefinition)
+        let beforeTranslation = opened().count
+        controller.performRadialItem(at: 0)
+        precondition(opened().count == beforeTranslation + 1 && opened().last?.host == "translate.google.com")
+        controller.configurePreview(applications: applications, query: "tran+How are you?", skin: .radial)
+        precondition(controller.radialItems.count == 2 && controller.results.isEmpty)
+        controller.navigateRadial(.right)
+        controller.performRadialItem(at: controller.selectedIndex)
+        precondition(opened().last?.host == "www.bing.com")
+        for (query, id) in [("sqrt(9)+2^3", "calculation"), ("> pwd", "terminal"), ("setup", "settings"), ("example.com", "web")] {
+            controller.configurePreview(applications: applications, query: query, skin: .radial)
+            precondition(controller.radialItems.first?.id == id && controller.results.isEmpty,
+                         "The wheel must preserve the existing \(id) route")
+        }
         controller.configurePreview(applications: [], query: "", skin: .radial)
         precondition(controller.beginRadialAim(capturePointer: false), "Command activates optical effects before typing")
         precondition(controller.radialIsAiming && controller.radialAimIndex == nil)
@@ -151,7 +179,7 @@ enum LauncherRadialPreview {
         // Start the render previews with ordinary following rather than keyboard lock.
         controller.configurePreview(applications: [], query: "", skin: .classic)
         controller.configurePreview(applications: [], query: "", skin: .radial)
-        print("Verified radial keyboard rings, hover gating, Command tap/cancel, changed-query cancellation and one-shot release execution (web opens intercepted)")
+        print("Verified radial keyboard/hover/Command gestures and dictionary, web translation, calculator, terminal, settings and URL routes (web opens intercepted)")
     }
 
     private static func verifyNativeInput(_ controller: ApplicationLauncherController) {

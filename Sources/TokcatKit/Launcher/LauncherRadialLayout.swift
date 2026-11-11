@@ -2,13 +2,13 @@ import Foundation
 
 /// Coordinates are relative to the wheel center, with positive Y pointing down.
 public struct LauncherRadialLayout: Sendable {
-    public static let inputCenter = CGPoint(x: 0, y: -86)
-    public static let inputRadius: CGFloat = 90
-    public static let inputThickness: CGFloat = 58
-    public static let resultRadius: CGFloat = 150
-    public static let ringSpacing: CGFloat = 88
-    public static let resultThickness: CGFloat = 72
-    public static let feather: CGFloat = 30
+    public static let inputCenter = CGPoint(x: 0, y: -74)
+    public static let inputRadius: CGFloat = 76
+    public static let inputThickness: CGFloat = 34
+    public static let resultRadius: CGFloat = 116
+    public static let ringSpacing: CGFloat = 64
+    public static let resultThickness: CGFloat = 48
+    public static let feather: CGFloat = 20
 
     public struct Slot: Equatable, Sendable {
         public let index: Int
@@ -27,7 +27,8 @@ public struct LauncherRadialLayout: Sendable {
     public let slots: [Slot]
     public let ringCount: Int
     public var outerRadius: CGFloat {
-        Self.resultRadius + CGFloat(ringCount - 1) * Self.ringSpacing + Self.resultThickness / 2
+        slots.isEmpty ? Self.inputRadius + Self.inputThickness / 2
+            : Self.resultRadius + CGFloat(ringCount - 1) * Self.ringSpacing + Self.resultThickness / 2
     }
     public var diameter: CGFloat { (outerRadius + Self.feather) * 2 }
     public var topExtent: CGFloat { Self.inputRadius + Self.inputThickness / 2 + Self.feather }
@@ -41,7 +42,7 @@ public struct LauncherRadialLayout: Sendable {
         var ring = 0
         while index < max(0, count) {
             // Two broad sectors first; longer outer arcs can hold more choices.
-            let capacity = 2 + ring * 2
+            let capacity = 2 + ring * 4
             let size = min(capacity, count - index)
             let step = CGFloat.pi / CGFloat(size)
             for position in 0..<size {

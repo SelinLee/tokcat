@@ -401,7 +401,8 @@ private final class LauncherDragView: NSView {
 }
 
 struct LauncherSearchField: NSViewRepresentable {
-    static let cyberPlaceholder = "搜索应用或输入命令…"
+    static let cyberPlaceholder = "输入内容…"
+    static let radialPlaceholder = cyberPlaceholder
     static let cyberPlaceholderFont = NSFont.systemFont(ofSize: 19, weight: .medium)
     static let cyberInputFont = NSFont.monospacedSystemFont(ofSize: LauncherLayout.inputFontSize, weight: .medium)
 
@@ -425,7 +426,7 @@ struct LauncherSearchField: NSViewRepresentable {
         field.alphaValue = compact ? 0 : 1
         field.alignment = compact ? .center : .left
         applySkin(to: field, coordinator: context.coordinator)
-        field.setAccessibilityLabel("搜索应用名称")
+        field.setAccessibilityLabel("输入应用、算式、命令、网址或翻译")
         field.delegate = controller
         controller.searchField = field
         return field
@@ -454,7 +455,7 @@ struct LauncherSearchField: NSViewRepresentable {
 
     private func applySkin(to field: NSTextField, coordinator: Coordinator) {
         let placeholderFont = compact ? NSFont.systemFont(ofSize: 14, weight: .medium) : Self.cyberPlaceholderFont
-        let inputFont = compact ? NSFont.monospacedSystemFont(ofSize: 19, weight: .medium) : Self.cyberInputFont
+        let inputFont = compact ? NSFont.monospacedSystemFont(ofSize: 18, weight: .medium) : Self.cyberInputFont
         let font = cyberStyle == nil ? NSFont.systemFont(ofSize: LauncherLayout.inputFontSize, weight: .regular)
             : query.isEmpty ? placeholderFont : inputFont
         guard !coordinator.isStyled || coordinator.cyberStyle != cyberStyle || field.font != font else { return }
@@ -465,14 +466,14 @@ struct LauncherSearchField: NSViewRepresentable {
         if let cyberStyle {
             field.textColor = cyberStyle.inputText
             field.shadow = cyberStyle.textShadow
-            field.placeholderAttributedString = NSAttributedString(string: compact ? "搜索应用或命令…" : Self.cyberPlaceholder, attributes: [
+            field.placeholderAttributedString = NSAttributedString(string: compact ? Self.radialPlaceholder : Self.cyberPlaceholder, attributes: [
                 .foregroundColor: cyberStyle.placeholder,
                 .font: placeholderFont,
             ])
         } else {
             field.textColor = .labelColor
             field.shadow = nil
-            field.placeholderString = "搜索应用…"
+            field.placeholderString = Self.cyberPlaceholder
         }
         if let editor = field.currentEditor() as? NSTextView {
             editor.font = field.font

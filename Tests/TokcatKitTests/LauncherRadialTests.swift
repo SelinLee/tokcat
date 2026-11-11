@@ -12,8 +12,8 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertLessThan(pair.slots[0].center.x, 0)
         XCTAssertGreaterThan(pair.slots[1].center.x, 0)
         let seven = LauncherRadialLayout(count: 7)
-        XCTAssertEqual(seven.slots.map(\.ring), [0, 0, 1, 1, 1, 1, 2])
-        XCTAssertEqual(seven.ringCount, 3)
+        XCTAssertEqual(seven.slots.map(\.ring), [0, 0, 1, 1, 1, 1, 1])
+        XCTAssertEqual(seven.ringCount, 2)
         XCTAssertGreaterThan(seven.diameter, pair.diameter)
         XCTAssertLessThan(seven.size.height, seven.size.width)
     }
@@ -23,21 +23,22 @@ final class LauncherRadialTests: XCTestCase {
         for slot in layout.slots { XCTAssertEqual(layout.hitTest(slot.center), slot.index) }
         XCTAssertNil(layout.hitTest(.zero))
         XCTAssertNil(layout.hitTest(LauncherRadialLayout.inputCenter))
-        XCTAssertNil(layout.hitTest(CGPoint(x: 0, y: 194)))
+        let gap = LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing / 2
+        XCTAssertNil(layout.hitTest(CGPoint(x: 0, y: gap)))
         XCTAssertNil(layout.hitTest(CGPoint(x: 900, y: 900)))
         XCTAssertNil(LauncherRadialLayout(count: 0).hitTest(CGPoint(x: 0, y: 150)))
     }
 
     func testDirectionalNavigationMovesAlongAndBetweenRings() {
-        let layout = LauncherRadialLayout(count: 7)
+        let layout = LauncherRadialLayout(count: 9)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 1)
         XCTAssertEqual(layout.neighbor(of: 1, direction: .left), 0)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .left), 0)
         XCTAssertEqual(layout.neighbor(of: 1, direction: .up), 1)
         let outer = layout.neighbor(of: 1, direction: .down)!
         XCTAssertEqual(layout.slots[outer].ring, 1)
-        XCTAssertEqual(layout.neighbor(of: outer, direction: .down), 6)
-        XCTAssertEqual(layout.neighbor(of: 6, direction: .down), 6)
+        XCTAssertEqual(layout.neighbor(of: outer, direction: .down), 8)
+        XCTAssertEqual(layout.neighbor(of: 8, direction: .down), 8)
         XCTAssertEqual(layout.neighbor(of: 999, direction: .down), 0)
     }
 
@@ -58,8 +59,8 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertEqual(aim.target(in: layout), 0)
         XCTAssertEqual(aim.end(in: layout), 0)
         XCTAssertNil(aim.end(in: layout), "A release cannot commit twice")
-        aim.begin(); aim.move(dx: 0, dy: 326, limit: 400)
-        XCTAssertEqual(aim.target(in: layout), 6)
+        aim.begin(); aim.move(dx: 0, dy: LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing, limit: 400)
+        XCTAssertEqual(aim.target(in: layout), 4)
         aim.cancel()
         XCTAssertNil(aim.end(in: layout))
         aim.begin(); aim.move(dx: 0, dy: -100, limit: 400)

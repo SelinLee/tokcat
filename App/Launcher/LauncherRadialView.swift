@@ -13,25 +13,21 @@ struct LauncherRadialView: View {
         LauncherCyberStyle(lightBackdrop: (reduceTransparency ? nil : controller.cyberBackdropIsLight) ?? (colorScheme == .light))
     }
     private var items: [LauncherRadialItem] { controller.radialItems }
+    private var centerBackdropRadius: CGFloat {
+        if controller.radialIsAiming || controller.launchError != nil || (controller.hasQuery && items.isEmpty) { return 34 }
+        return 0
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if reduceTransparency {
-                RadialFogShape(layout: layout).fill(MonitorTheme.panelFill)
+                RadialFogShape(layout: layout, centerRadius: centerBackdropRadius).fill(MonitorTheme.panelFill)
             } else {
-                LauncherRadialBlur(layout: layout, style: style)
+                LauncherRadialBlur(layout: layout, style: style, centerRadius: centerBackdropRadius)
                     .frame(width: layout.size.width, height: layout.size.height)
             }
 
             inputArc
-
-            if items.isEmpty {
-                RadialSector(center: layout.center, radius: LauncherRadialLayout.resultRadius,
-                             thickness: LauncherRadialLayout.resultThickness, start: 0.04, end: .pi - 0.04)
-                    .fill(style.pink.opacity(0.06)).blur(radius: 13)
-                arcText("匹配结果 / RESULTS", radius: LauncherRadialLayout.resultRadius, angle: .pi / 2,
-                        span: .pi * 0.8, size: 10, color: style.pink)
-            }
 
             ForEach(layout.slots, id: \.index) { slot in
                 if items.indices.contains(slot.index) { result(items[slot.index], slot: slot) }
@@ -57,25 +53,18 @@ struct LauncherRadialView: View {
         ZStack(alignment: .topLeading) {
             let arc = RadialSector(center: layout.center, radius: LauncherRadialLayout.inputRadius,
                                    thickness: LauncherRadialLayout.inputThickness, start: .pi * 1.10, end: .pi * 1.90)
-            arc.fill(style.accent.opacity(controller.radialIsAiming ? 0.18 : 0.09)).blur(radius: 10)
-            arcText("TOKCAT // INPUT", radius: 114, angle: .pi * 1.5, span: .pi * 0.8,
-                    size: 8, color: style.accent, upper: true)
+            arc.fill(style.accent.opacity(controller.radialIsAiming ? 0.12 : 0.05)).blur(radius: 7)
             LauncherSearchField(controller: controller, query: controller.query, cyberStyle: style, compact: true)
                 .frame(width: 166, height: 28)
                 .position(x: layout.center.x, y: layout.center.y + LauncherRadialLayout.inputCenter.y)
-            LauncherArcText(text: controller.query.isEmpty ? "搜索应用或命令…" : controller.query,
+            LauncherArcText(text: controller.query.isEmpty ? LauncherSearchField.radialPlaceholder : controller.query,
                             center: layout.center, radius: LauncherRadialLayout.inputRadius,
                             angle: .pi * 1.5, maxSpan: .pi * 0.76,
                             font: controller.query.isEmpty ? .systemFont(ofSize: 14, weight: .medium)
-                                : .monospacedSystemFont(ofSize: 19, weight: .medium),
+                                : .monospacedSystemFont(ofSize: 18, weight: .medium),
                             color: controller.query.isEmpty ? style.secondaryText : style.primaryText,
                             upper: true, caret: controller.query.isEmpty ? nil : controller.radialInputSelection.location,
                             selection: controller.radialInputSelection, marked: controller.radialMarkedRange)
-            Image(systemName: "waveform")
-                .font(.system(size: 17, weight: .semibold)).foregroundStyle(style.accent)
-                .rotationEffect(.degrees(-62))
-                .position(x: layout.center.x - 81, y: layout.center.y - 43)
-            arcText("ESC", radius: 92, angle: .pi * 1.85, span: 0.45, size: 9, color: style.accent, upper: true)
         }
     }
 
@@ -85,14 +74,14 @@ struct LauncherRadialView: View {
                                   thickness: LauncherRadialLayout.resultThickness,
                                   start: slot.startAngle + 0.022, end: slot.endAngle - 0.022)
         return ZStack(alignment: .topLeading) {
-            sector.fill(style.pink.opacity(selected ? 0.22 : controller.radialIsAiming ? 0.10 : 0.06))
-                .blur(radius: selected ? 10 : 14)
+            sector.fill(style.pink.opacity(selected ? 0.14 : controller.radialIsAiming ? 0.065 : 0.03))
+                .blur(radius: selected ? 7 : 9)
             // A broad arc remains one hit target even where its text is not drawn.
             sector.fill(Color.clear).contentShape(sector)
                 .onHover { if $0 { controller.selectRadialHover(slot.index) } }
                 .onTapGesture { controller.performRadialItem(at: slot.index) }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(item.title)
+                .accessibilityLabel("\(item.title)，\(item.detail)")
                 .accessibilityValue(selected ? "已选中" : "")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { controller.performRadialItem(at: slot.index) }
@@ -103,32 +92,24 @@ struct LauncherRadialView: View {
                     Image(systemName: item.symbol).resizable().scaledToFit().foregroundStyle(selected ? style.accent : style.pink)
                 }
             }
-            .frame(width: 23, height: 23)
+            .frame(width: 18, height: 18)
             .rotationEffect(.radians(slot.angle - .pi / 2))
-            .position(x: layout.center.x + cos(slot.angle) * (slot.radius - 19),
-                      y: layout.center.y + sin(slot.angle) * (slot.radius - 19))
+            .position(x: layout.center.x + cos(slot.angle) * (slot.radius - 12),
+                      y: layout.center.y + sin(slot.angle) * (slot.radius - 12))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            arcText(item.title, radius: slot.radius + 9, angle: slot.angle,
+            arcText(item.title, radius: slot.radius + 12, angle: slot.angle,
                     span: slot.endAngle - slot.startAngle - 0.09, size: 13,
                     color: selected ? style.primaryText : style.secondaryText)
-            arcText(item.detail, radius: slot.radius + 28, angle: slot.angle,
-                    span: slot.endAngle - slot.startAngle - 0.09, size: 9, color: style.secondaryText)
         }
     }
 
     @ViewBuilder private var centerContent: some View {
-        if controller.showsDictionaryDefinition, let definition = controller.dictionaryDefinition {
-            ScrollView {
-                Text(definition).font(.system(size: 11)).foregroundStyle(style.primaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(width: 154, height: 72)
-            .position(x: layout.center.x, y: layout.center.y + 3)
-        } else {
-            let lines = controller.radialStatus.split(separator: "\n", maxSplits: 1).map(String.init)
+        if controller.radialIsAiming || controller.launchError != nil || (controller.hasQuery && items.isEmpty) {
+            let lines = controller.radialIsAiming ? [items.isEmpty ? "松开返回" : "松开执行"]
+                : controller.radialStatus.split(separator: "\n", maxSplits: 1).map(String.init)
             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                arcText(line, radius: controller.radialIsAiming ? 38 + CGFloat(index) * 16 : 34 + CGFloat(index) * 16,
+                arcText(line, radius: 29 + CGFloat(index) * 14,
                         angle: .pi / 2, span: .pi * 0.92, size: 9,
                         color: controller.launchError == nil ? style.secondaryText : style.pink)
             }
@@ -154,14 +135,12 @@ struct LauncherRadialView: View {
 
     private var prismaticLens: some View {
         ZStack {
-            Circle().fill(RadialGradient(colors: [style.accent.opacity(0.18), .clear], center: .center, startRadius: 0, endRadius: 34))
-                .frame(width: 68, height: 68)
-            Circle().stroke(AngularGradient(colors: [.cyan, .blue, .purple, .pink, .orange, .mint, .cyan], center: .center), lineWidth: 1.2)
-                .frame(width: 34, height: 34).blur(radius: 0.45)
-            Circle().stroke(style.accent.opacity(0.65), style: StrokeStyle(lineWidth: 0.65, dash: [2, 5]))
-                .frame(width: 49, height: 49)
-            Circle().fill(style == .darkBackdrop ? Color.white : style.accent).frame(width: 4, height: 4)
-                .shadow(color: style.accent, radius: 5)
+            Circle().fill(RadialGradient(colors: [style.accent.opacity(0.13), .clear], center: .center, startRadius: 0, endRadius: 24))
+                .frame(width: 48, height: 48)
+            Circle().stroke(AngularGradient(colors: [.cyan, .blue, .purple, .pink, .orange, .mint, .cyan], center: .center), lineWidth: 0.9)
+                .frame(width: 24, height: 24).blur(radius: 0.35)
+            Circle().fill(style == .darkBackdrop ? Color.white : style.accent).frame(width: 3, height: 3)
+                .shadow(color: style.accent, radius: 3)
         }
         .opacity(controller.radialIsAiming ? 1 : 0)
         .scaleEffect(controller.radialIsAiming ? 1 : 0.45)
@@ -198,21 +177,34 @@ struct RadialSector: Shape {
 
 private struct RadialFogShape: Shape {
     let layout: LauncherRadialLayout
+    let centerRadius: CGFloat
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let r = LauncherRadialLayout.inputRadius + LauncherRadialLayout.inputThickness / 2 + 8
-        path.addEllipse(in: CGRect(x: layout.center.x - r, y: layout.center.y - r, width: r * 2, height: r * 2))
-        path.addPath(RadialSector(center: layout.center, radius: layout.outerRadius / 2,
-                                 thickness: layout.outerRadius, start: 0, end: .pi).path(in: rect))
+        path.addPath(RadialSector(center: layout.center, radius: LauncherRadialLayout.inputRadius,
+                                 thickness: LauncherRadialLayout.inputThickness + 6,
+                                 start: .pi * 1.06, end: .pi * 1.94).path(in: rect))
+        if !layout.slots.isEmpty {
+            for ring in 0..<layout.ringCount {
+                path.addPath(RadialSector(center: layout.center,
+                    radius: LauncherRadialLayout.resultRadius + CGFloat(ring) * LauncherRadialLayout.ringSpacing,
+                    thickness: LauncherRadialLayout.resultThickness + 6, start: 0, end: .pi).path(in: rect))
+            }
+        }
+        if centerRadius > 0 {
+            path.addEllipse(in: CGRect(x: layout.center.x - centerRadius, y: layout.center.y - centerRadius,
+                                      width: centerRadius * 2, height: centerRadius * 2))
+        }
         return path
     }
 }
 
-/// Same material as Cyber Floating, with one continuous feathered circular mask.
+/// Continuous blur along each arc, leaving the unused center open.
 private struct LauncherRadialBlur: NSViewRepresentable {
     let layout: LauncherRadialLayout
     let style: LauncherCyberStyle
-    private static var masks: [Int: NSImage] = [:]
+    let centerRadius: CGFloat
+    private static var masks: [String: NSImage] = [:]
+    private var maskKey: String { "\(layout.slots.isEmpty ? 0 : layout.ringCount):\(Int(centerRadius))" }
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let effect = RadialEffectView()
@@ -226,12 +218,13 @@ private struct LauncherRadialBlur: NSViewRepresentable {
     func updateNSView(_ effect: NSVisualEffectView, context: Context) {
         let name: NSAppearance.Name = style == .lightBackdrop ? .aqua : .darkAqua
         if effect.appearance?.name != name { effect.appearance = NSAppearance(named: name) }
-        if Self.masks[layout.ringCount] == nil { Self.masks[layout.ringCount] = makeMask() }
-        if effect.maskImage !== Self.masks[layout.ringCount] { effect.maskImage = Self.masks[layout.ringCount] }
+        if Self.masks[maskKey] == nil { Self.masks[maskKey] = makeMask() }
+        if effect.maskImage !== Self.masks[maskKey] { effect.maskImage = Self.masks[maskKey] }
     }
 
     private func makeMask() -> NSImage? {
         let layout = layout
+        let centerRadius = centerRadius
         // A drawing representation lets AppKit rasterize the mask at the display's
         // backing scale. A one-times bitmap is misregistered by the effect view.
         let mask = NSImage(size: layout.size, flipped: false) { bounds in
@@ -239,25 +232,40 @@ private struct LauncherRadialBlur: NSViewRepresentable {
             let space = CGColorSpaceCreateDeviceRGB()
             let white = CGColor(gray: 1, alpha: 1)
             let clear = CGColor(gray: 1, alpha: 0)
-            func radial(_ solid: CGFloat, _ outer: CGFloat) {
-                guard let gradient = CGGradient(colorsSpace: space, colors: [white, white, clear] as CFArray,
-                                                locations: [0, solid / outer, 1]) else { return }
+            func ring(_ radius: CGFloat, _ halfWidth: CGFloat, upper: Bool) {
+                let outer = radius + halfWidth + LauncherRadialLayout.feather
+                let inner = max(0, radius - halfWidth - LauncherRadialLayout.feather)
+                guard let gradient = CGGradient(colorsSpace: space,
+                    colors: [clear, clear, white, white, clear] as CFArray,
+                    locations: [0, inner / outer, (radius - halfWidth) / outer, (radius + halfWidth) / outer, 1]) else { return }
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
                 context.drawRadialGradient(gradient, startCenter: layout.center, startRadius: 0,
                                            endCenter: layout.center, endRadius: outer, options: [])
+                context.setBlendMode(.destinationIn)
+                if let vertical = CGGradient(colorsSpace: space, colors: [clear, white] as CFArray, locations: [0, 1]) {
+                    context.drawLinearGradient(vertical,
+                        start: CGPoint(x: 0, y: layout.center.y + (upper ? 12 : -12)),
+                        end: CGPoint(x: 0, y: layout.center.y + (upper ? -8 : 8)),
+                        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                }
+                context.endTransparencyLayer()
+                context.setBlendMode(.normal)
             }
             context.saveGState()
             context.translateBy(x: 0, y: bounds.height)
             context.scaleBy(x: 1, y: -1)
-            radial(LauncherRadialLayout.inputRadius + LauncherRadialLayout.inputThickness / 2 + 4, layout.topExtent)
-            context.beginTransparencyLayer(auxiliaryInfo: nil)
-            radial(layout.outerRadius + 4, layout.bottomExtent)
-            context.setBlendMode(.destinationIn)
-            if let gradient = CGGradient(colorsSpace: space, colors: [clear, white] as CFArray, locations: [0, 1]) {
-                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: layout.center.y - 22),
-                                           end: CGPoint(x: 0, y: layout.center.y + 4),
-                                           options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+            ring(LauncherRadialLayout.inputRadius, LauncherRadialLayout.inputThickness / 2, upper: true)
+            if !layout.slots.isEmpty {
+                for index in 0..<layout.ringCount {
+                    ring(LauncherRadialLayout.resultRadius + CGFloat(index) * LauncherRadialLayout.ringSpacing,
+                         LauncherRadialLayout.resultThickness / 2, upper: false)
+                }
             }
-            context.endTransparencyLayer()
+            if centerRadius > 0, let gradient = CGGradient(colorsSpace: space,
+                colors: [white, white, clear] as CFArray, locations: [0, 0.7, 1]) {
+                context.drawRadialGradient(gradient, startCenter: layout.center, startRadius: 0,
+                    endCenter: layout.center, endRadius: centerRadius + 12, options: [])
+            }
             context.restoreGState()
             return true
         }
@@ -287,7 +295,7 @@ private struct LauncherPrismaticRay: View {
                                      .init(red: 0.15, green: 0.94, blue: 0.94), .init(red: 0.52, green: 1, blue: 0.70),
                                      .init(red: 1, green: 0.85, blue: 0.38), .init(red: 1, green: 0.40, blue: 0.52),
                                      .init(red: 0.95, green: 0.34, blue: 0.84)]
-            let spread = min(7, distance * 0.026)
+            let spread = min(4.5, distance * 0.023)
             for (index, color) in spectrum.enumerated() {
                 let offset = (CGFloat(index) - 3) / 3 * spread
                 var path = Path()
@@ -295,8 +303,8 @@ private struct LauncherPrismaticRay: View {
                 path.addQuadCurve(to: CGPoint(x: end.x + normal.x * offset, y: end.y + normal.y * offset),
                                   control: CGPoint(x: origin.x + vector.x * 0.62, y: origin.y + vector.y * 0.62))
                 context.drawLayer { glow in
-                    glow.addFilter(.blur(radius: 2.5))
-                    glow.stroke(path, with: .color(color.opacity(style == .lightBackdrop ? 0.55 : 0.7)), lineWidth: 2.5)
+                    glow.addFilter(.blur(radius: 1.6))
+                    glow.stroke(path, with: .color(color.opacity(style == .lightBackdrop ? 0.5 : 0.65)), lineWidth: 1.8)
                 }
                 context.stroke(path, with: .linearGradient(Gradient(colors: [color.opacity(0.05), color.opacity(0.85)]),
                                                          startPoint: origin, endPoint: end), lineWidth: 0.8)
