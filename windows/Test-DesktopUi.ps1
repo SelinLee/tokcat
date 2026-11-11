@@ -18,6 +18,10 @@ foreach($iteration in 1..2){
         if(-not $window.StripButton.Visible -or $window.Sessions.Visible){throw 'The settings page did not expose its taskbar toggle.'}
         $window.ShowSettings($false)
         if(-not $window.Sessions.Visible -or $window.StripButton.Visible){throw 'The task page did not restore the task list.'}
+        $window.LauncherButton.PerformClick()
+        if(-not $window.LauncherSettingsHost.Visible -or $window.Sessions.Visible -or $window.RefreshButton.Visible){throw 'The launcher navigation did not expose its settings page.'}
+        $window.ShowSettings($false)
+        if($window.LauncherSettingsHost.Visible -or -not $window.Sessions.Visible){throw 'Returning from launcher settings did not restore tasks.'}
     }finally{$window.Close();$window.Dispose()}
 }
 Write-Output 'Native desktop window and icon lifetime checks passed.'

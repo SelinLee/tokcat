@@ -73,6 +73,12 @@ public sealed class TokcatLauncherSettings
     public int Key { get; set; }
     public int? X { get; set; }
     public int? Y { get; set; }
+    public string Skin { get; set; }
+    public bool AutoTextColor { get; set; }
+    public string PreferredSearchKeyword { get; set; }
+    public string DefaultTranslationId { get; set; }
+    public string DictionaryPath { get; set; }
+    public List<TokcatLauncherTranslationProvider> Translations { get; set; }
     public List<TokcatLauncherShortcut> Commands { get; set; }
     public List<TokcatLauncherShortcut> Websites { get; set; }
     public List<TokcatLauncherHistory> History { get; set; }
@@ -84,6 +90,9 @@ public sealed class TokcatLauncherSettings
         Enabled = true;
         Modifiers = 1;
         Key = 32;
+        Skin = "classic";
+        Translations = TokcatLauncherTranslationProvider.Defaults();
+        DefaultTranslationId = Translations[0].Id;
         Commands = new List<TokcatLauncherShortcut>();
         Websites = new List<TokcatLauncherShortcut>
         {
@@ -108,7 +117,12 @@ public sealed class TokcatLauncherSettings
             throw new InvalidDataException("快捷键需要包含 Ctrl 或 Alt，以及一个普通按键。");
         if (Commands == null || Websites == null || History == null || Commands.Count + Websites.Count > 200)
             throw new InvalidDataException("启动器设置内容无效。");
-        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "setup" };
+        if (Skin != "classic" && Skin != "cyber") throw new InvalidDataException("请选择有效的启动器皮肤。");
+        if (Translations == null || Translations.Count > 100 || Translations.Any(p => p == null) ||
+            Translations.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != Translations.Count)
+            throw new InvalidDataException("翻译方式配置无效或重复。");
+        foreach (var provider in Translations) provider.Validate();
+        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "setup", "tran" };
         foreach (var entry in Commands.Concat(Websites))
         {
             if (entry == null || !Regex.IsMatch(entry.Keyword ?? "", @"^[\p{L}\p{N}_-]{1,40}$") ||
@@ -125,7 +139,27 @@ public sealed class TokcatLauncherSettings
         Usage = Usage.Where(u => u != null && !string.IsNullOrWhiteSpace(u.Key) && u.Count > 0)
             .GroupBy(u => u.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g => new TokcatLauncherUsage { Key = g.Key, Count = (int)Math.Min(1000000L, g.Sum(u => (long)u.Count)), LastUsed = g.Max(u => u.LastUsed) })
-            .OrderByDescending(u => u.LastUsed).Take(200).ToList();
+            .OrderByDescending(u => u.LastUsed).Take(2000).ToList();
+    }
+
+    [ScriptIgnore]
+    public TokcatLauncherShortcut DefaultSearch
+    {
+        get
+        {
+            var engines = Websites.Where(w => w.Enabled && w.Value.Contains("{query}") &&
+                TokcatLauncherResolver.HttpUrl(w.Value.Replace("{query}", "test"), false) != null).ToArray();
+            return engines.FirstOrDefault(w => string.Equals(w.Keyword, PreferredSearchKeyword, StringComparison.OrdinalIgnoreCase)) ??
+                engines.FirstOrDefault(w => string.Equals(w.Keyword, "baidu", StringComparison.OrdinalIgnoreCase)) ?? engines.FirstOrDefault();
+        }
+    }
+
+    public TokcatLauncherTranslationProvider[] RankedTranslations()
+    {
+        var available = Translations.Where(p => p.Enabled).ToArray();
+        var preferred = available.FirstOrDefault(p => p.Id == DefaultTranslationId) ?? available.FirstOrDefault();
+        return available.OrderByDescending(p => p == preferred).ThenByDescending(p => Usage.Where(u => u.Key == "translation:" + p.Id).Select(u => u.Count).FirstOrDefault())
+            .ThenByDescending(p => Usage.Where(u => u.Key == "translation:" + p.Id).Select(u => u.LastUsed).FirstOrDefault()).ToArray();
     }
 
     static JavaScriptSerializer Serializer()

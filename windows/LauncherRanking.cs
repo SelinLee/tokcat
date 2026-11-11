@@ -12,6 +12,8 @@ public static class TokcatLauncherRanking
     {
         string text = (input ?? "").Trim();
         if (text.Length == 0) return History(settings);
+        var translation = TokcatLauncherTranslationInput.Parse(text);
+        if (translation != null) return settings.RankedTranslations().Select(p => p.Request(translation.Text)).Where(r => r != null).Take(5).ToArray();
         var results = new List<TokcatLauncherResult>();
         var appTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var match in applications)
@@ -20,7 +22,8 @@ public static class TokcatLauncherRanking
             results.Add(new TokcatLauncherResult
             {
                 Title = match.Application.Name, Detail = "应用", Kind = "application", App = match.Application,
-                Value = match.Application.Target, Key = "application:" + match.Application.Target, Score = 1200 - match.Score * 3
+                Value = match.Application.Target, Key = "application:" + match.Application.Target, Score = 1200 - match.Score * 3,
+                ExactApplication = match.Score == 0
             });
         }
         foreach (var file in files)
@@ -89,14 +92,13 @@ public static class TokcatLauncherRanking
         }
         if (results.Count == 0 && sourcesSettled && calculation == null && !text.StartsWith(">") && !text.StartsWith("="))
         {
-            var engine = settings.Websites.FirstOrDefault(w => w.Enabled && w.Value.Contains("{query}"));
-            string template = engine == null ? "https://www.bing.com/search?q={query}" : engine.Value;
-            results.Add(new TokcatLauncherResult
+            var engine = settings.DefaultSearch;
+            if (engine != null) results.Add(new TokcatLauncherResult
             {
                 Title = "搜索网页 · " + text,
-                Detail = (engine == null ? "Bing" : engine.Name) + " · 回车在浏览器搜索",
-                Kind = "website", Value = template.Replace("{query}", Uri.EscapeDataString(text)),
-                Key = "search:" + template.Replace("{query}", Uri.EscapeDataString(text)), Score = 100
+                Detail = engine.Name + " · 回车在浏览器搜索",
+                Kind = "website", Value = engine.Value.Replace("{query}", Uri.EscapeDataString(text)),
+                Key = "search:" + engine.Value.Replace("{query}", Uri.EscapeDataString(text)), Score = 100
             });
         }
         foreach (var result in results)
@@ -105,7 +107,9 @@ public static class TokcatLauncherRanking
             if (recalled != null && string.Equals(result.Key, recalled.ActionKey, StringComparison.OrdinalIgnoreCase)) result.Score += 300;
         }
         return results.GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(r => r.Score).First())
-            .OrderByDescending(r => r.Score).ThenBy(r => r.Title, StringComparer.CurrentCultureIgnoreCase).Take(7).ToArray();
+            .OrderByDescending(r => r.ExactApplication ? r.Score + 150 : r.Score)
+            .ThenByDescending(r => settings.Usage.Where(u => string.Equals(u.Key, r.Key, StringComparison.OrdinalIgnoreCase)).Select(u => u.LastUsed).FirstOrDefault())
+            .ThenBy(r => r.Title, StringComparer.CurrentCultureIgnoreCase).Take(7).ToArray();
     }
 
     static int KeywordScore(string text, TokcatLauncherShortcut entry)
@@ -144,8 +148,8 @@ public static class TokcatLauncherRanking
         {
             Title = entry.Application == null ? entry.Text : entry.Application.Name,
             Detail = "历史记录 · " + entry.Text, App = entry.Application,
-            Kind = entry.Kind ?? (entry.Application == null ? "fill" : "application"),
-            Value = entry.Value ?? (entry.Application == null ? entry.Text : entry.Application.Target), Key = entry.ActionKey, Input = entry.Text
+            Kind = entry.Kind == "translation" ? "fill" : entry.Kind ?? (entry.Application == null ? "fill" : "application"),
+            Value = entry.Kind == "translation" ? entry.Text : entry.Value ?? (entry.Application == null ? entry.Text : entry.Application.Target), Key = entry.ActionKey, Input = entry.Text
         };
     }
 }
