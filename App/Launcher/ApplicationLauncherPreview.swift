@@ -47,6 +47,13 @@ enum ApplicationLauncherPreview {
                 window.contentView = hosting
                 window.display()
                 hosting.layoutSubtreeIfNeeded()
+                guard let field = controller.searchField else { preconditionFailure("Search field was not created") }
+                precondition(window.makeFirstResponder(field))
+                hosting.layoutSubtreeIfNeeded()
+                let fieldRect = field.convert(field.bounds, to: hosting)
+                let inputCenterY = hosting.isFlipped ? controller.backdropMargins.height + LauncherLayout.inputHeight / 2
+                    : hosting.bounds.height - controller.backdropMargins.height - LauncherLayout.inputHeight / 2
+                precondition(abs(fieldRect.midY - inputCenterY) <= 0.5, "Search text must be centered with the input icon")
                 guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { continue }
                 hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
                 let state: String
@@ -389,7 +396,22 @@ enum ApplicationLauncherPreview {
                 }
             }
         }
-        print("History, focused input, live skin changes, action precedence and fallback search verified (web opens intercepted)")
+        preferences.applicationLauncherSkin = .cyber
+        settings.send(preferences)
+        for text in ["", "中", "", "Chrome", ""] {
+            type(text)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            hosting.layoutSubtreeIfNeeded()
+            precondition(controller.searchField === field && field.currentEditor() === editor)
+            precondition(editor.font == field.font && editor.string == text)
+            if text.isEmpty {
+                let placeholderFont = field.placeholderAttributedString?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+                precondition(field.font == placeholderFont, "Focused placeholder and caret must share the same font metrics")
+            } else {
+                precondition(field.font?.pointSize == LauncherLayout.inputFontSize)
+            }
+        }
+        print("History, centered focused input, live skin changes, action precedence and fallback search verified (web opens intercepted)")
     }
 
     /// Exercises the real panel/hotkey with isolated settings and no monitoring.

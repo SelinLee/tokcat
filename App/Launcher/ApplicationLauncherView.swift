@@ -420,6 +420,11 @@ private struct LauncherSearchField: NSViewRepresentable {
         return field
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView field: NSTextField, context: Context) -> CGSize? {
+        // Keep the native text's natural line height centered in the fixed icon row.
+        CGSize(width: proposal.width ?? field.fittingSize.width, height: field.fittingSize.height)
+    }
+
     func updateNSView(_ field: NSTextField, context: Context) {
         let editor = field.currentEditor() as? NSTextView
         guard editor?.hasMarkedText() != true else { return }
@@ -437,11 +442,14 @@ private struct LauncherSearchField: NSViewRepresentable {
     }
 
     private func applySkin(to field: NSTextField, coordinator: Coordinator) {
-        guard !coordinator.isStyled || coordinator.cyberStyle != cyberStyle else { return }
+        let font = cyberStyle == nil ? NSFont.systemFont(ofSize: LauncherLayout.inputFontSize, weight: .regular)
+            : query.isEmpty ? Self.cyberPlaceholderFont : Self.cyberInputFont
+        guard !coordinator.isStyled || coordinator.cyberStyle != cyberStyle || field.font != font else { return }
         coordinator.isStyled = true
         coordinator.cyberStyle = cyberStyle
+        // The empty field editor must use the placeholder's metrics as well.
+        field.font = font
         if let cyberStyle {
-            field.font = Self.cyberInputFont
             field.textColor = cyberStyle.inputText
             field.shadow = cyberStyle.textShadow
             field.placeholderAttributedString = NSAttributedString(string: Self.cyberPlaceholder, attributes: [
@@ -449,7 +457,6 @@ private struct LauncherSearchField: NSViewRepresentable {
                 .font: Self.cyberPlaceholderFont,
             ])
         } else {
-            field.font = .systemFont(ofSize: LauncherLayout.inputFontSize, weight: .regular)
             field.textColor = .labelColor
             field.shadow = nil
             field.placeholderString = "搜索应用…"
