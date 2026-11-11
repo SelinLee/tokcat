@@ -36,6 +36,7 @@ final class AppSettingsTests: XCTestCase {
         settings.menuBarShowCatIcon = false
         settings.menuBarCatIconScale = 0.75
         settings.menuBarIconStyle = .lineCPU
+        settings.applicationLauncherSkin = .cyber
         settings.showDesktopPet = false
         settings.pollIntervalSeconds = 7
         settings.menuBarRefreshIntervalSeconds = 2.5
@@ -48,6 +49,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(loaded.showsAnyMenuBarMetric)
         XCTAssertFalse(loaded.menuBarShowCatIcon)
         XCTAssertEqual(loaded.menuBarIconStyle, .lineCPU)
+        XCTAssertEqual(loaded.applicationLauncherSkin, .cyber)
         XCTAssertFalse(loaded.showDesktopPet)
         XCTAssertEqual(loaded.menuBarCatIconPointSize, AppSettings.catIconBasePointSize * (0.5 + 0.75), accuracy: 0.001)
     }
@@ -202,6 +204,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(loaded.menuBarShowNetwork)
         XCTAssertFalse(loaded.menuBarShowThermal)
         // New fields get defaults when absent.
+        XCTAssertEqual(loaded.applicationLauncherSkin, .classic)
         XCTAssertTrue(loaded.menuBarShowCatIcon)
         XCTAssertEqual(loaded.menuBarCatIconScale, AppSettings.defaultCatIconScale)
         XCTAssertEqual(loaded.menuBarIconStyle, .rainTokcat)

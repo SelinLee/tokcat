@@ -33,7 +33,7 @@ struct LauncherCommandSettingsView: View {
                             if let index = commands.firstIndex(where: { $0.id == command.id }) { commands[index].enabled = enabled }
                             error = launcher.saveCustomCommands(commands)
                         })).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                    }.padding(.vertical, 7)
+                    }.padding(.vertical, 4)
                 }
             }
             .listStyle(.inset)
@@ -64,6 +64,22 @@ struct LauncherWebsiteSettingsView: View {
                 Button { editing = LauncherWebShortcut() } label: { Label("添加网站", systemImage: "plus") }
                     .buttonStyle(.bordered)
             }.padding(16)
+            HStack {
+                Picker("无匹配时搜索", selection: Binding(
+                    get: { launcher.defaultSearchEngine?.id },
+                    set: { if let id = $0 { launcher.setDefaultSearchEngine(id) } }
+                )) {
+                    if launcher.searchEngines.isEmpty { Text("无可用引擎").tag(nil as UUID?) }
+                    ForEach(launcher.searchEngines) { engine in
+                        Text(engine.displayName).tag(Optional(engine.id))
+                    }
+                }
+                .disabled(launcher.searchEngines.isEmpty)
+                .fixedSize()
+                Text("未找到结果时，按回车搜索输入内容。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16).padding(.bottom, 10)
             if let error { Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 16).padding(.bottom, 10) }
             Divider()
             List {
@@ -78,7 +94,7 @@ struct LauncherWebsiteSettingsView: View {
                             if let index = websites.firstIndex(where: { $0.id == website.id }) { websites[index].enabled = enabled }
                             error = launcher.saveWebShortcuts(websites)
                         })).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                    }.padding(.vertical, 7)
+                    }.padding(.vertical, 4)
                 }
             }
             .listStyle(.inset)
@@ -107,7 +123,7 @@ private struct LauncherSettingsListRow: View {
                 .background(MonitorTheme.frameStroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
             Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity, minHeight: 34)
+        .frame(maxWidth: .infinity, minHeight: 28)
         .contentShape(Rectangle())
     }
 }
@@ -118,6 +134,13 @@ struct LauncherCommandEditor: View {
     @State private var draft: LauncherCustomCommand
     @State private var error: String?
     private var isNew: Bool { !launcher.customCommands.contains { $0.id == draft.id } }
+    private var editorHeight: CGFloat {
+        switch draft.action {
+        case .terminal: return 450
+        case .emptyTrash: return 320
+        case .quitApplications: return 360
+        }
+    }
 
     init(launcher: ApplicationLauncherController, command: LauncherCustomCommand) {
         self.launcher = launcher
@@ -126,7 +149,7 @@ struct LauncherCommandEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isNew ? "添加命令" : "编辑命令").font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            Text(isNew ? "添加命令" : "编辑命令").font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(16)
             Divider()
             Form {
                 TextField("关键词", text: $draft.keyword)
@@ -164,9 +187,9 @@ struct LauncherCommandEditor: View {
                     error = launcher.saveCustomCommands(commands)
                     if error == nil { dismiss() }
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-            }.buttonStyle(.bordered).padding(16)
+            }.buttonStyle(.bordered).padding(12)
         }
-        .frame(width: 600, height: draft.action == .terminal ? 540 : 450)
+        .frame(width: 560, height: editorHeight)
         .background(MonitorTheme.windowBackground)
         .onChange(of: draft) { _ in error = nil }
     }
@@ -186,12 +209,12 @@ struct LauncherWebsiteEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isNew ? "添加网站" : "编辑网站").font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            Text(isNew ? "添加网站" : "编辑网站").font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(16)
             Divider()
             Form {
                 TextField("关键词", text: $draft.keyword)
                 TextField("显示名称", text: $draft.name)
-                TextField("网址或搜索地址", text: $draft.urlTemplate)
+                TextField("网址或搜索地址", text: $draft.urlTemplate, axis: .vertical).lineLimit(1...2)
                 Text(verbatim: "搜索地址用 {query} 表示内容，例如 https://www.baidu.com/s?wd={query}；不含该标记时直接打开网站。")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("启用", isOn: $draft.enabled)
@@ -214,9 +237,9 @@ struct LauncherWebsiteEditor: View {
                     error = launcher.saveWebShortcuts(websites)
                     if error == nil { dismiss() }
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-            }.buttonStyle(.bordered).padding(16)
+            }.buttonStyle(.bordered).padding(12)
         }
-        .frame(width: 600, height: 400)
+        .frame(width: 560, height: 320)
         .background(MonitorTheme.windowBackground)
         .onChange(of: draft) { _ in error = nil }
     }

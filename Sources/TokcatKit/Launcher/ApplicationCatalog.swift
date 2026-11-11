@@ -119,12 +119,16 @@ public struct ApplicationSearchIndex: Sendable {
         }
     }
 
-    public func search(_ query: String, limit: Int = 7) -> [LauncherApplication] {
+    public func search(_ input: String, limit: Int = 7, usage: LauncherUsageHistory = LauncherUsageHistory()) -> [LauncherApplication] {
         guard limit > 0 else { return [] }
-        let query = Self.normalize(query)
+        let query = Self.normalize(input)
+        let literal = query.isEmpty ? input.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let compactQuery = query.replacingOccurrences(of: " ", with: "")
         let matches: [(LauncherApplication, Int)] = entries.compactMap { entry in
-            if query.isEmpty { return (entry.application, 0) }
+            if query.isEmpty {
+                guard literal.isEmpty || entry.application.name == literal || entry.application.aliases.contains(literal) else { return nil }
+                return (entry.application, 0)
+            }
             var best: Int?
             for term in entry.terms {
                 let compact = term.replacingOccurrences(of: " ", with: "")
@@ -141,6 +145,14 @@ public struct ApplicationSearchIndex: Sendable {
             return best.map { (entry.application, $0) }
         }
         return matches.sorted {
+            // An exact name/alias always wins, regardless of launch frequency.
+            if ($0.1 == 0) != ($1.1 == 0) { return $0.1 == 0 }
+            let leftScore = $0.1 - usage.applicationBonus(for: $0.0.id)
+            let rightScore = $1.1 - usage.applicationBonus(for: $1.0.id)
+            if leftScore != rightScore { return leftScore < rightScore }
+            let left = LauncherUsageTarget.application($0.0.id), right = LauncherUsageTarget.application($1.0.id)
+            if usage.prefers(left, over: right) { return true }
+            if usage.prefers(right, over: left) { return false }
             if $0.1 != $1.1 { return $0.1 < $1.1 }
             let order = $0.0.name.localizedStandardCompare($1.0.name)
             return order == .orderedSame ? $0.0.url.path < $1.0.url.path : order == .orderedAscending

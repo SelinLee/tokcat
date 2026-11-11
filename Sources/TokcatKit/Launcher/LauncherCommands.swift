@@ -56,7 +56,7 @@ public final class LauncherCommandStore {
 
 public enum LauncherConfigurationValidation {
     public static func error(commands: [LauncherCustomCommand], websites: [LauncherWebShortcut]) -> String? {
-        var keywords: Set<String> = ["setup"]
+        var keywords: Set<String> = ["setup", "tran"]
         for keyword in commands.map(\.keyword) + websites.map(\.keyword) {
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
             guard !keyword.isEmpty, keyword.count <= 40, keyword.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
@@ -64,7 +64,7 @@ public enum LauncherConfigurationValidation {
             }
             guard LauncherCalculator.evaluate(keyword) == nil else { return "关键词「\(keyword)」与计算器冲突，请换一个。" }
             guard keywords.insert(keyword.lowercased()).inserted else {
-                return "关键词「\(keyword)」重复，或与 setup／其他命令／网站冲突。"
+                return "关键词「\(keyword)」重复，或与 setup／tran／其他命令／网站冲突。"
             }
         }
         for command in commands where command.action == .terminal {

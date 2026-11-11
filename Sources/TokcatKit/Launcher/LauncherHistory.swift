@@ -4,6 +4,7 @@ public enum LauncherInput: Equatable, Sendable {
     case application(String)
     case terminal(String)
     case settings
+    case translation(String)
 
     public init(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -11,12 +12,14 @@ public enum LauncherInput: Equatable, Sendable {
             self = .terminal(String(text.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines))
         } else if text.caseInsensitiveCompare("setup") == .orderedSame {
             self = .settings
+        } else if let translation = LauncherTranslationInput(text) {
+            self = .translation(translation.text)
         } else { self = .application(text) }
     }
 }
 
 public enum LauncherHistoryKind: String, Codable, Sendable {
-    case application, terminal, calculation, settings, customCommand, web
+    case application, terminal, calculation, settings, customCommand, web, translation
 }
 
 public struct LauncherHistoryEntry: Codable, Equatable, Sendable {
@@ -49,6 +52,7 @@ public struct LauncherHistory: Equatable, Sendable {
         } else { switch LauncherInput(text) {
         case .terminal(let command): guard !command.isEmpty, application == nil else { return }
         case .settings: guard application == nil else { return }
+        case .translation(let text): guard !text.isEmpty, application == nil else { return }
         case .application:
             guard application != nil || LauncherCalculator.evaluate(text)?.formattedResult != nil else { return }
         } }

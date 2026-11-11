@@ -10,20 +10,31 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         let shortcut: LauncherShortcut
     }
     @Published private(set) var shortcutError: String?
+    @Published private(set) var skin: LauncherSkin = .classic
+    @Published private(set) var cyberBackdropIsLight: Bool?
     @Published private(set) var query = ""
     @Published private(set) var results: [LauncherApplication] = []
     @Published private(set) var selectedIndex = 0
     @Published private(set) var isIndexing = false
     @Published private(set) var launchError: String?
     @Published private(set) var historyCount: Int
+    @Published private(set) var usage: LauncherUsageHistory
     @Published private(set) var isBrowsingHistory = false
     @Published private(set) var calculation: LauncherCalculation?
     @Published private(set) var customCommands: [LauncherCustomCommand]
     @Published private(set) var webShortcuts: [LauncherWebShortcut]
+    @Published private(set) var suggestedSearch: LauncherWebRequest?
+    @Published private var preferredSearchID: UUID?
+    @Published private(set) var translationSettings: LauncherTranslationSettings
+    @Published private(set) var dictionaryDefinition: String?
+    @Published private(set) var isLookingUpDictionary = false
+    @Published private(set) var prefersWebTranslation = false
     var onOpenSettings: (() -> Void)?
 
     private let hotKey = LauncherHotKey()
     private var subscription: AnyCancellable?
+    private var skinSubscription: AnyCancellable?
+    private var backdropTask: Task<Void, Never>?
     private var panel: LauncherPanel?
     weak var searchField: NSTextField?
     private var index = ApplicationSearchIndex(applications: [])
@@ -37,6 +48,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var scanGeneration = 0
     private var previousApp: NSRunningApplication?
     private let historyStore: LauncherHistoryStore
+    private let usageStore: LauncherUsageStore
+    private var usageGeneration = 0
     private var history: LauncherHistory
     private var historyCursor: Int?
     private var presentationID = 0
@@ -45,23 +58,42 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var isAdjustingFrame = false
     private let commandStore: LauncherCommandStore
     private let webShortcutStore: LauncherWebShortcutStore
+    private let translationStore: LauncherTranslationStore
+    private let dictionaryLookup: @Sendable (String) -> String?
+    private let openURL: (URL) -> Bool
+    private let dictionaryQueue = DispatchQueue(label: "tokcat.launcher.dictionary", qos: .userInitiated)
+    private var dictionaryWork: DispatchWorkItem?
+    private var dictionaryGeneration = 0
+    private var lastDictionaryInput: LauncherTranslationInput?
 
     init(historyStore: LauncherHistoryStore = LauncherHistoryStore(),
          positionStore: LauncherWindowPositionStore = LauncherWindowPositionStore(),
          commandStore: LauncherCommandStore = LauncherCommandStore(),
-         webShortcutStore: LauncherWebShortcutStore = LauncherWebShortcutStore()) {
+         webShortcutStore: LauncherWebShortcutStore = LauncherWebShortcutStore(),
+         translationStore: LauncherTranslationStore = LauncherTranslationStore(),
+         usageStore: LauncherUsageStore = LauncherUsageStore(),
+         dictionaryLookup: @escaping @Sendable (String) -> String? = { LauncherSystemDictionary.definition(for: $0) },
+         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         self.historyStore = historyStore
         self.positionStore = positionStore
         self.history = historyStore.load()
         self.historyCount = history.entries.count
+        self.usageStore = usageStore
+        self.usage = usageStore.load()
         self.commandStore = commandStore
         self.webShortcutStore = webShortcutStore
         self.customCommands = commandStore.load()
         self.webShortcuts = webShortcutStore.load()
+        self.preferredSearchID = webShortcutStore.preferredSearchID
+        self.translationStore = translationStore
+        self.translationSettings = translationStore.load()
+        self.dictionaryLookup = dictionaryLookup
+        self.openURL = openURL
         super.init()
     }
 
     var hasQuery: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var hasHistory: Bool { historyCount > 0 || !usage.isEmpty }
     var terminalCommand: String? {
         if case .terminal(let command) = LauncherInput(query) { return command }
         return nil
@@ -69,14 +101,44 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     var isTerminalMode: Bool { terminalCommand != nil }
     var isSettingsMode: Bool { LauncherInput(query) == .settings }
     var customCommand: LauncherCustomCommand? {
+        guard !isTranslationMode else { return nil }
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return customCommands.first { $0.enabled && $0.keyword.caseInsensitiveCompare(keyword) == .orderedSame }
     }
-    var webRequest: LauncherWebRequest? { LauncherWebSearch.request(for: query, shortcuts: webShortcuts) }
+    var webRequest: LauncherWebRequest? { isTranslationMode ? nil : LauncherWebSearch.request(for: query, shortcuts: webShortcuts) }
+    var searchEngines: [LauncherWebShortcut] { webShortcuts.filter { $0.isSearch && $0.request(for: "test") != nil } }
+    var defaultSearchEngine: LauncherWebShortcut? {
+        let engines = searchEngines
+        return engines.first { $0.id == preferredSearchID } ?? engines.first { $0.id == LauncherWebShortcut.baiduID } ?? engines.first
+    }
     var isCalculatorMode: Bool { calculation != nil }
+    var translationInput: LauncherTranslationInput? { LauncherTranslationInput(query) }
+    var isTranslationMode: Bool { translationInput != nil }
+    var showsDictionaryDefinition: Bool { dictionaryDefinition != nil && !prefersWebTranslation }
+    var translationRequests: [LauncherWebRequest] {
+        guard let input = translationInput, !isLookingUpDictionary, !showsDictionaryDefinition else { return [] }
+        return translationSettings.rankedProviders(usage: usage).compactMap { $0.request(for: input.text) }
+    }
+    var translationContentHeight: CGFloat {
+        if showsDictionaryDefinition, let definition = dictionaryDefinition {
+            return LauncherLayout.definitionHeight(definition)
+        }
+        if translationRequests.isEmpty { return LauncherLayout.actionHeight }
+        return LauncherLayout.sectionHeaderHeight + LauncherLayout.listInset * 2
+            + CGFloat(min(5, translationRequests.count)) * LauncherLayout.translationRowHeight
+    }
     var panelHeight: CGFloat {
-        guard hasQuery else { return 76 }
-        return isTerminalMode || results.isEmpty ? 200 : 130 + CGFloat(results.count) * 56
+        guard hasQuery else { return LauncherLayout.inputHeight }
+        if isTranslationMode { return LauncherLayout.chromeHeight + translationContentHeight }
+        if isTerminalMode || results.isEmpty { return LauncherLayout.singleResultHeight }
+        return LauncherLayout.chromeHeight + LauncherLayout.listInset * 2 + CGFloat(results.count) * LauncherLayout.rowHeight
+    }
+
+    var backdropMargins: CGSize { skin == .cyber ? LauncherLayout.cyberBackdropMargins : .zero }
+
+    var panelSize: CGSize {
+        CGSize(width: LauncherLayout.width + 2 * backdropMargins.width,
+               height: panelHeight + 2 * backdropMargins.height)
     }
 
     func start(settings: AnyPublisher<AppSettings, Never>) {
@@ -86,6 +148,18 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             .map { Preferences(enabled: $0.applicationLauncherEnabled, shortcut: $0.applicationLauncherShortcut) }
             .removeDuplicates()
             .sink { [weak self] preferences in self?.apply(preferences) }
+        skinSubscription = settings
+            .map(\.applicationLauncherSkin)
+            .removeDuplicates()
+            .sink { [weak self] skin in self?.applySkin(skin) }
+    }
+
+    private func applySkin(_ skin: LauncherSkin) {
+        guard self.skin != skin else { return }
+        self.skin = skin
+        panel?.hasShadow = skin == .classic
+        resizePanel()
+        startBackdropSampling()
     }
 
     private func apply(_ preferences: Preferences) {
@@ -101,6 +175,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         scanGeneration += 1
         subscription?.cancel()
         subscription = nil
+        skinSubscription?.cancel()
+        skinSubscription = nil
         hotKey.unregister()
         dismiss()
     }
@@ -138,7 +214,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         updateResults()
         refreshCatalog()
         if panel == nil {
-            let window = LauncherPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: panelHeight),
+            let window = LauncherPanel(contentRect: NSRect(origin: .zero, size: panelSize),
                 styleMask: [.borderless], backing: .buffered, defer: false)
             window.title = "tokcat 应用启动器"
             window.isReleasedWhenClosed = false
@@ -149,7 +225,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.hasShadow = true
+            window.hasShadow = skin == .classic
             window.hidesOnDeactivate = false
             window.delegate = self
             window.contentView = NSHostingView(rootView: ApplicationLauncherView(controller: self))
@@ -161,22 +237,65 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let anchor = positionStore.load() ?? LauncherWindowPosition(
-            x: visible.midX - 320, top: visible.maxY - visible.height * 0.2)
-        let frame = LauncherWindowPlacement.frame(anchor: anchor, size: NSSize(width: 640, height: panelHeight),
-            visibleFrames: NSScreen.screens.map(\.visibleFrame))
-        panelAnchor = LauncherWindowPosition(x: frame.minX, top: frame.maxY)
+            x: visible.midX - LauncherLayout.width / 2, top: visible.maxY - visible.height * 0.2)
+        let frame = panelFrame(anchoredAt: anchor)
+        panelAnchor = contentAnchor(in: frame)
         setPanelFrame(frame)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.contentView?.layoutSubtreeIfNeeded()
-        panel.makeFirstResponder(searchField)
+        focusSearchField(in: panel)
+        startBackdropSampling()
         DispatchQueue.main.async { [weak self, weak panel] in
             guard let self, let panel, panel.isKeyWindow else { return }
-            panel.makeFirstResponder(self.searchField)
+            self.focusSearchField(in: panel)
         }
     }
 
+    private func focusSearchField(in panel: LauncherPanel) {
+        guard let searchField, panel.makeFirstResponder(searchField),
+              let editor = searchField.currentEditor() as? NSTextView else { return }
+        let isLight = cyberBackdropIsLight ?? (panel.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .darkAqua)
+        editor.insertionPointColor = skin == .cyber ? LauncherCyberStyle(lightBackdrop: isLight).caret : .textColor
+        editor.shadow = searchField.shadow
+    }
+
+    private func startBackdropSampling() {
+        stopBackdropSampling()
+        guard #available(macOS 14, *), skin == .cyber, let panel, panel.isVisible,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+              CGPreflightScreenCaptureAccess() else { return }
+
+        backdropTask = Task { [weak self, weak panel] in
+            let sampler = LauncherBackdropSampler()
+            while !Task.isCancelled, let panel, panel.isVisible {
+                if let brightness = try? await sampler.brightness(behind: panel), !Task.isCancelled {
+                    self?.updateCyberBackdrop(brightness: brightness)
+                }
+                try? await Task.sleep(nanoseconds: 450_000_000)
+            }
+        }
+    }
+
+    func updateCyberBackdrop(brightness: Double) {
+        // Two thresholds keep text from flipping repeatedly on midtone backdrops.
+        let cutoff = cyberBackdropIsLight.map { $0 ? 0.16 : 0.23 } ?? 0.19
+        let isLight = brightness >= cutoff
+        if cyberBackdropIsLight != isLight { cyberBackdropIsLight = isLight }
+    }
+
+    private func stopBackdropSampling() {
+        backdropTask?.cancel()
+        backdropTask = nil
+        if cyberBackdropIsLight != nil { cyberBackdropIsLight = nil }
+    }
+
     func dismiss(restoreFocus: Bool = false) {
+        stopBackdropSampling()
+        dictionaryWork?.cancel()
+        dictionaryGeneration += 1
+        lastDictionaryInput = nil
+        isLookingUpDictionary = false
         panel?.orderOut(nil)
         if restoreFocus, let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp.activate(options: [])
@@ -188,7 +307,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     func windowDidMove(_ notification: Notification) {
         guard !isAdjustingFrame, let window = notification.object as? NSWindow,
               window === panel, window.isVisible else { return }
-        let anchor = LauncherWindowPosition(x: window.frame.minX, top: window.frame.maxY)
+        let anchor = contentAnchor(in: window.frame)
         panelAnchor = anchor
         positionStore.save(anchor)
     }
@@ -196,6 +315,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private func refreshCatalog() {
         guard !isIndexing, lastScan.map({ Date().timeIntervalSince($0) > 30 }) ?? true else { return }
         isIndexing = true
+        suggestedSearch = nil
         scanGeneration += 1
         let generation = scanGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -212,29 +332,85 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     private func updateResults() {
+        updateTranslation()
         let recalledApplication = historyCursor.flatMap { cursor in
             history.entries.indices.contains(cursor) ? history.entries[cursor].application : nil
         }
-        let hasAction = isTerminalMode || isSettingsMode || customCommand != nil || webRequest != nil
+        let hasAction = isTerminalMode || isSettingsMode || isTranslationMode || customCommand != nil || webRequest != nil
         calculation = hasAction || recalledApplication != nil ? nil : LauncherCalculator.evaluate(query)
-        results = hasQuery && !hasAction && !isCalculatorMode ? index.search(query) : []
-        if let historyCursor, history.entries.indices.contains(historyCursor),
+        results = hasQuery && !hasAction && !isCalculatorMode ? index.search(query, usage: usage) : []
+        if !hasAction, let historyCursor, history.entries.indices.contains(historyCursor),
            let application = history.entries[historyCursor].application {
-            let matches = index.search(query, limit: Int.max)
+            let matches = index.search(query, limit: Int.max, usage: usage)
             if let recalled = matches.first(where: { $0.id == application.id }) {
                 results = [recalled] + matches.filter { $0.id != recalled.id }.prefix(6)
             }
+        }
+        if hasQuery && !hasAction && !isCalculatorMode && results.isEmpty && !isIndexing {
+            suggestedSearch = defaultSearchEngine?.request(for: query)
+        } else {
+            suggestedSearch = nil
         }
         selectedIndex = 0
         resizePanel()
     }
 
+    private func updateTranslation() {
+        let input = translationInput
+        guard input != lastDictionaryInput else { return }
+        dictionaryWork?.cancel()
+        dictionaryGeneration += 1
+        lastDictionaryInput = input
+        dictionaryDefinition = nil
+        prefersWebTranslation = false
+        isLookingUpDictionary = false
+        guard let input, input.isDictionaryCandidate else { return }
+        isLookingUpDictionary = true
+        let generation = dictionaryGeneration
+        let lookup = dictionaryLookup
+        let work = DispatchWorkItem { [weak self] in
+            let definition = lookup(input.text)
+            DispatchQueue.main.async {
+                guard let self, self.dictionaryGeneration == generation, self.translationInput == input else { return }
+                self.dictionaryDefinition = definition
+                self.isLookingUpDictionary = false
+                self.selectedIndex = 0
+                self.resizePanel()
+            }
+        }
+        dictionaryWork = work
+        dictionaryQueue.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    func showWebTranslations() {
+        prefersWebTranslation = true
+        selectedIndex = 0
+        resizePanel()
+    }
+
+    func copyDictionaryDefinition() {
+        guard let definition = dictionaryDefinition else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(definition, forType: .string)
+        remember(kind: .translation)
+        dismiss(restoreFocus: true)
+    }
+
     func clearHistory() {
+        usageGeneration += 1
+        usage = LauncherUsageHistory()
+        usageStore.clear()
         history = LauncherHistory()
         historyCursor = nil
         isBrowsingHistory = false
         historyCount = 0
         historyStore.clear()
+        updateResults()
+    }
+
+    private func recordUsage(_ target: LauncherUsageTarget) {
+        usage.record(target)
+        usageStore.save(usage)
     }
 
     private func remember(application: LauncherApplication? = nil, kind: LauncherHistoryKind? = nil) {
@@ -261,11 +437,20 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     private func resizePanel() {
         guard let panel, panel.isVisible else { return }
-        let anchor = panelAnchor ?? LauncherWindowPosition(x: panel.frame.minX, top: panel.frame.maxY)
-        let frame = LauncherWindowPlacement.frame(anchor: anchor, size: NSSize(width: 640, height: panelHeight),
-            visibleFrames: NSScreen.screens.map(\.visibleFrame))
-        setPanelFrame(frame)
+        let anchor = panelAnchor ?? contentAnchor(in: panel.frame)
+        setPanelFrame(panelFrame(anchoredAt: anchor))
         panel.invalidateShadow()
+    }
+
+    // Store the position of the content, independent of the skin's transparent margins.
+    private func contentAnchor(in frame: NSRect) -> LauncherWindowPosition {
+        LauncherWindowPosition(x: frame.minX + backdropMargins.width, top: frame.maxY - backdropMargins.height)
+    }
+
+    private func panelFrame(anchoredAt anchor: LauncherWindowPosition) -> NSRect {
+        let outerAnchor = LauncherWindowPosition(x: anchor.x - backdropMargins.width, top: anchor.top + backdropMargins.height)
+        return LauncherWindowPlacement.frame(anchor: outerAnchor, size: panelSize,
+            visibleFrames: NSScreen.screens.map(\.visibleFrame))
     }
 
     private func setPanelFrame(_ frame: NSRect) {
@@ -294,6 +479,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         dismiss(restoreFocus: true)
         remember(application: application)
         guard pendingApplications.insert(application.id).inserted else { return }
+        let recordedUsageGeneration = usageGeneration
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: application.url, configuration: configuration) { [weak self] _, error in
@@ -302,6 +488,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
                 self.pendingApplications.remove(application.id)
                 if let error {
                     self.reportError("无法打开 \(application.name)：\(error.localizedDescription)", requestID: requestID)
+                } else if self.usageGeneration == recordedUsageGeneration {
+                    self.recordUsage(.application(application.id))
                 }
             }
         }
@@ -359,11 +547,30 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         return nil
     }
 
+    func setDefaultSearchEngine(_ id: UUID) {
+        guard searchEngines.contains(where: { $0.id == id }) else { return }
+        webShortcutStore.preferredSearchID = id
+        preferredSearchID = id
+        updateResults()
+    }
+
+    func saveTranslationSettings(_ settings: LauncherTranslationSettings) -> String? {
+        if let error = settings.validationError { return error }
+        var settings = settings
+        settings.defaultProviderID = settings.availableProviders.first?.id
+        translationStore.save(settings)
+        translationSettings = settings
+        updateResults()
+        return nil
+    }
+
     func openWebRequest(_ request: LauncherWebRequest) {
         let requestID = presentationID
         dismiss(restoreFocus: true)
-        remember(kind: .web)
-        if !NSWorkspace.shared.open(request.url) { reportError("无法打开网址：\(request.url.absoluteString)", requestID: requestID) }
+        remember(kind: isTranslationMode ? .translation : .web)
+        if openURL(request.url) {
+            if let id = request.translationProviderID { recordUsage(.translation(id)) }
+        } else { reportError("无法打开网址：\(request.url.absoluteString)", requestID: requestID) }
     }
 
     func executeCustomCommand(_ command: LauncherCustomCommand) {
@@ -423,10 +630,11 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private func reportError(_ message: String, requestID: Int) {
         guard presentationID == requestID else { return }
         launchError = message
-        if panel?.isVisible != true {
+        if let panel, !panel.isVisible {
             NSApp.activate(ignoringOtherApps: true)
-            panel?.makeKeyAndOrderFront(nil)
-            panel?.makeFirstResponder(searchField)
+            panel.makeKeyAndOrderFront(nil)
+            focusSearchField(in: panel)
+            startBackdropSampling()
         }
     }
 
@@ -445,17 +653,28 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         switch command {
         case #selector(NSResponder.moveDown(_:)):
             if isBrowsingHistory { recallHistory(older: false) }
+            else if !translationRequests.isEmpty {
+                selectedIndex = min(selectedIndex + 1, translationRequests.count - 1)
+            }
             else if !results.isEmpty { selectedIndex = min(selectedIndex + 1, results.count - 1) }
         case #selector(NSResponder.moveUp(_:)):
             if isBrowsingHistory || !hasQuery { recallHistory(older: true) }
+            else if !translationRequests.isEmpty {
+                selectedIndex = max(0, selectedIndex - 1)
+            }
             else { selectedIndex = max(0, selectedIndex - 1) }
         case #selector(NSResponder.insertNewline(_:)):
             if isSettingsMode { openSettings() }
             else if isTerminalMode { executeTerminalCommand() }
+            else if isTranslationMode {
+                if showsDictionaryDefinition { copyDictionaryDefinition() }
+                else if translationRequests.indices.contains(selectedIndex) { openWebRequest(translationRequests[selectedIndex]) }
+            }
             else if let command = customCommand { executeCustomCommand(command) }
             else if let request = webRequest { openWebRequest(request) }
             else if isCalculatorMode { copyCalculationResult() }
             else if results.indices.contains(selectedIndex) { launch(results[selectedIndex]) }
+            else if let request = suggestedSearch { openWebRequest(request) }
         case #selector(NSResponder.cancelOperation(_:)):
             dismiss(restoreFocus: true)
         default: return false
@@ -464,7 +683,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     #if DEBUG
-    func configurePreview(applications: [LauncherApplication], query: String) {
+    func configurePreview(applications: [LauncherApplication], query: String, skin: LauncherSkin = .classic) {
+        applySkin(skin)
         index = ApplicationSearchIndex(applications: applications)
         self.query = query
         updateResults()

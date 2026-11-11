@@ -11,6 +11,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case commands
     case websites
+    case translation
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "通用"
         case .commands: return "命令"
         case .websites: return "网站"
+        case .translation: return "翻译"
         }
     }
 
@@ -37,6 +39,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .commands: return "terminal"
         case .websites: return "globe"
+        case .translation: return "character.bubble"
         }
     }
 }
@@ -100,6 +103,8 @@ struct SettingsView: View {
                     LauncherCommandSettingsView(launcher: model.applicationLauncher)
                 case .websites:
                     LauncherWebsiteSettingsView(launcher: model.applicationLauncher)
+                case .translation:
+                    LauncherTranslationSettingsView(launcher: model.applicationLauncher)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -439,12 +444,21 @@ struct SettingsView: View {
                     }
                 }
                 LauncherShortcutStatus(launcher: model.applicationLauncher)
+                Picker("启动器皮肤", selection: binding(\.applicationLauncherSkin)) {
+                    ForEach(LauncherSkin.allCases, id: \.self) { skin in
+                        Text(skin.displayName).tag(skin)
+                    }
+                }
+                .pickerStyle(.menu)
+                if #available(macOS 14, *), settings.applicationLauncherSkin == .cyber {
+                    LauncherBackdropPermissionSetting()
+                }
                 LauncherHistorySettings(launcher: model.applicationLauncher)
                 Button("打开应用启动器") { model.applicationLauncher.show() }
             } header: {
                 Text("应用启动器")
             } footer: {
-                Text("默认 Control + 空格。输入应用名称后回车打开；输入算式实时显示结果，回车复制；以 > 开头时在终端执行。空白时按 ↑ 调出历史，再用 ↑ ↓ 切换；Esc 或点击外部收起。")
+                Text("默认 Control + 空格。输入应用名称后回车打开；输入算式实时显示结果，回车复制；以 > 开头时在终端执行；输入 tran+内容 翻译，单词优先查询系统词典，网页翻译可在「翻译」中设置。空白时按 ↑ 调出历史，再用 ↑ ↓ 切换；Esc 或点击外部收起。")
             }
 
             Section {
@@ -548,6 +562,28 @@ struct SettingsView: View {
     }
 }
 
+private struct LauncherBackdropPermissionSetting: View {
+    @State private var hasAccess = CGPreflightScreenCaptureAccess()
+
+    var body: some View {
+        Group {
+            if hasAccess {
+                LabeledContent("自动字色", value: "随背景明暗变化")
+            } else {
+                Button("启用自动字色…") {
+                    hasAccess = CGRequestScreenCaptureAccess()
+                }
+                Text("在 macOS「隐私与安全性 → 屏幕与系统音频录制」允许 TokenCat 后，字色会随背景变化。启动框打开时只读取后方亮度，不保存画面。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasAccess = CGPreflightScreenCaptureAccess()
+        }
+    }
+}
+
 private struct LauncherShortcutStatus: View {
     @ObservedObject var launcher: ApplicationLauncherController
 
@@ -562,12 +598,16 @@ private struct LauncherHistorySettings: View {
     @ObservedObject var launcher: ApplicationLauncherController
 
     var body: some View {
-        HStack {
-            Text("已记住 \(launcher.historyCount) 条启动记录")
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("已记住 \(launcher.historyCount) 条启动记录")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("清空历史与频次") { launcher.clearHistory() }
+                    .disabled(!launcher.hasHistory)
+            }
+            Text("常用应用会提高排序权重，精确名称优先；清空历史也会重置使用频次。")
                 .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("清空启动历史") { launcher.clearHistory() }
-                .disabled(launcher.historyCount == 0)
         }
     }
 }

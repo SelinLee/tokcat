@@ -31,6 +31,7 @@ Press **Control + Space** for a compact rounded input field. Matches or results 
 |---|---|---|
 | `Chrome` | Match English/Chinese app names, pinyin, or initials | Open the selected app |
 | `sqrt(9)+2^3` | See the result `11` live | Copy the result |
+| `tran+hello` / `tran hello` | Show a system dictionary definition for a word; offer web translators for phrases or missing entries | Copy the definition or open the selected translator |
 | `> pwd` | Terminal commands | Open Terminal and execute |
 | `baidu artificial intelligence` | Web search; `google` and `bing` work too | Search in your default browser |
 | `example.com` | Recognize a domain or full HTTP(S) URL | Open the website |
@@ -39,9 +40,13 @@ Press **Control + Space** for a compact rounded input field. Matches or results 
 | `gg` | Editable preset for quitting other apps | Confirm by default, then request quitting |
 
 - **History appears in the input itself:** the latest 50 entries stay on your Mac. Press **↑** in an empty field, then **↑ / ↓** to browse. Each entry replaces the input text so you can edit it or press Return to reuse it.
+- **Frequently used options rank higher:** successful app launches add a bounded frequency boost to text matching, while exact names stay first. Recent use breaks frequency ties. Translation keeps the configured default first and ranks alternatives by frequency. Counts persist locally across restarts, separately from the 50 recent inputs. Clear history and frequency in General settings to reset them. Older versions did not retain counts; accumulation starts after upgrading.
 - **Remembered position:** drag the background or search icon. Reopening or restarting preserves the location; display changes keep it visible.
 - **List first, details on click:** **Settings → Commands** and **Settings → Websites** show names, keywords, and enabled states. Click an item for details. Save applies an edit; Cancel keeps the previous configuration.
 - **Record your shortcut:** change or disable the global key combination in **Settings → General → Application Launcher**. Registration conflicts appear there.
+- **Choose a launcher skin:** select Classic or Cyber Floating in **Settings → General → Application Launcher**. Cyber Floating uses a borderless, feathered blur behind the full launcher, including gaps between content and the footer. On macOS 14 or later, enable automatic text color there and grant Screen & System Audio Recording access to adapt text to the backdrop. It samples a small area only while the launcher is open and does not save captures; without access, text colors follow the macOS appearance.
+- **Configure translation:** **Settings → Translation** lets you add, edit, remove, enable, and choose a default translation URL. Google Translate is the initial default, alongside Bing. Use `{query}` for the URL-encoded text. Presets translate into Chinese; edit the URL to change the target language. Select a provider with **↑ / ↓** and press Return. Dictionary definitions scroll inline and include a web translation option; their language follows macOS Dictionary settings.
+- **Search when no app matches:** choose a fallback search engine in **Settings → Websites**, then press Return to search the input in your default browser.
 
 <details>
 <summary>See calculator, web search, and settings previews</summary>
