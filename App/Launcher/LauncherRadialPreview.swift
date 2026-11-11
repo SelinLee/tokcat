@@ -70,7 +70,7 @@ enum LauncherRadialPreview {
         let controller = ApplicationLauncherController(historyStore: LauncherHistoryStore(defaults: defaults),
             positionStore: LauncherWindowPositionStore(defaults: defaults), commandStore: LauncherCommandStore(defaults: defaults),
             webShortcutStore: LauncherWebShortcutStore(defaults: defaults), translationStore: LauncherTranslationStore(defaults: defaults),
-            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { _ in "词典释义预览" },
+            usageStore: LauncherUsageStore(defaults: defaults), dictionaryLookup: { word in "\(word)：词典释义预览" },
             openURL: { opened.append($0); return true })
         verifyInteraction(controller, opened: { opened })
         verifyNativeInput(controller)
@@ -166,6 +166,23 @@ enum LauncherRadialPreview {
         controller.navigateRadial(.right)
         controller.performRadialItem(at: controller.selectedIndex)
         precondition(opened().last?.host == "www.bing.com")
+        for word in ["apple", "banana"] {
+            controller.configurePreview(applications: applications, query: "tran \(word)", skin: .radial)
+            precondition(!controller.showsDictionaryDefinition, "A new word must clear the previous definition immediately")
+            let deadline = Date().addingTimeInterval(2)
+            while controller.isLookingUpDictionary, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(controller.showsDictionaryDefinition && controller.dictionaryDefinition?.hasPrefix(word) == true)
+        }
+        controller.dismiss()
+        precondition(controller.dictionaryDefinition == nil && !controller.showsDictionaryDefinition,
+                     "Closing the launcher must clear its dictionary state")
+        for query in ["", "apple", "sqrt(9)+2^3"] {
+            controller.configurePreview(applications: applications, query: query, skin: .radial)
+            precondition(!controller.showsDictionaryDefinition && controller.dictionaryDefinition == nil,
+                         "Reopening or entering ordinary input must not revive an old definition")
+        }
         for (query, id) in [("sqrt(9)+2^3", "calculation"), ("> pwd", "terminal"), ("setup", "settings"), ("example.com", "web")] {
             controller.configurePreview(applications: applications, query: query, skin: .radial)
             precondition(controller.radialItems.first?.id == id && controller.results.isEmpty,
@@ -179,7 +196,7 @@ enum LauncherRadialPreview {
         // Start the render previews with ordinary following rather than keyboard lock.
         controller.configurePreview(applications: [], query: "", skin: .classic)
         controller.configurePreview(applications: [], query: "", skin: .radial)
-        print("Verified radial keyboard/hover/Command gestures and dictionary, web translation, calculator, terminal, settings and URL routes (web opens intercepted)")
+        print("Verified radial gestures, dictionary replacement/cleanup, web translation, calculator, terminal, settings and URL routes (web opens intercepted)")
     }
 
     private static func verifyNativeInput(_ controller: ApplicationLauncherController) {

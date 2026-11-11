@@ -31,6 +31,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     @Published private(set) var prefersWebTranslation = false
     @Published private(set) var radialIsFollowing = true
     @Published private(set) var radialIsAiming = false
+    @Published private(set) var radialIsReading = false
     @Published private(set) var radialAimVector = CGPoint.zero
     @Published private(set) var radialAimIndex: Int?
     @Published private(set) var radialScale: CGFloat = 1
@@ -81,6 +82,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var dictionaryPanel: LauncherDictionaryPanel?
     private var radialIgnoreCommand = false
     private var radialWasFollowing = true
+    private var radialReadingMomentum = false
 
     var radialLayout: LauncherRadialLayout { LauncherRadialLayout(count: radialItems.count) }
 
@@ -138,7 +140,10 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     var isCalculatorMode: Bool { calculation != nil }
     var translationInput: LauncherTranslationInput? { LauncherTranslationInput(query) }
     var isTranslationMode: Bool { translationInput != nil }
-    var showsDictionaryDefinition: Bool { dictionaryDefinition != nil && !prefersWebTranslation }
+    var showsDictionaryDefinition: Bool {
+        guard let input = translationInput, input == lastDictionaryInput else { return false }
+        return dictionaryDefinition != nil && !prefersWebTranslation
+    }
     var translationRequests: [LauncherWebRequest] {
         guard let input = translationInput, !isLookingUpDictionary, !showsDictionaryDefinition else { return [] }
         return translationSettings.rankedProviders(usage: usage).compactMap { $0.request(for: input.text) }
@@ -353,10 +358,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     func dismiss(restoreFocus: Bool = false) {
         stopRadialTracking()
         stopBackdropSampling()
-        dictionaryWork?.cancel()
-        dictionaryGeneration += 1
-        lastDictionaryInput = nil
-        isLookingUpDictionary = false
+        clearDictionaryLookup()
         panel?.orderOut(nil)
         if restoreFocus, let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp.activate(options: [])
@@ -421,12 +423,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private func updateTranslation() {
         let input = translationInput
         guard input != lastDictionaryInput else { return }
-        dictionaryWork?.cancel()
-        dictionaryGeneration += 1
+        clearDictionaryLookup()
         lastDictionaryInput = input
-        dictionaryDefinition = nil
-        prefersWebTranslation = false
-        isLookingUpDictionary = false
         guard let input, input.isDictionaryCandidate else { return }
         isLookingUpDictionary = true
         let generation = dictionaryGeneration
@@ -443,6 +441,17 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         }
         dictionaryWork = work
         dictionaryQueue.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    private func clearDictionaryLookup() {
+        dictionaryWork?.cancel()
+        dictionaryWork = nil
+        dictionaryGeneration += 1
+        lastDictionaryInput = nil
+        dictionaryDefinition = nil
+        prefersWebTranslation = false
+        isLookingUpDictionary = false
+        hideRadialDefinitionPanel()
     }
 
     func showWebTranslations() {
@@ -792,6 +801,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
                                  "width": readingFrame.width, "height": readingFrame.height],
                 "readingScroll": dictionaryPanel?.previewScrollOffset ?? 0,
                 "readingTextLayout": dictionaryPanel?.previewTextLayout ?? [:],
+                "definition": dictionaryDefinition ?? "", "reading": radialIsReading,
                 "translationMode": isTranslationMode,
                 "itemIDs": radialItems.map(\.id), "itemTitles": radialItems.map(\.title),
                 "visible": panel?.isVisible == true, "following": radialIsFollowing,
@@ -848,7 +858,7 @@ extension ApplicationLauncherController {
         radialEditorObserver = NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification,
             object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.updateRadialEditorState() } }
         radialLocalMonitor = NSEvent.addLocalMonitorForEvents(matching:
-            [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .flagsChanged, .keyDown, .leftMouseDown]
+            [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .flagsChanged, .keyDown, .leftMouseDown, .scrollWheel]
         ) { [weak self] event in
             let consumed = MainActor.assumeIsolated {
                 guard let self else { return false }
@@ -871,6 +881,7 @@ extension ApplicationLauncherController {
         if let radialEditorObserver { NotificationCenter.default.removeObserver(radialEditorObserver) }
         radialEditorObserver = nil
         radialIgnoreCommand = false
+        radialReadingMomentum = false
     }
 
     private func handleRadialEvent(_ event: NSEvent) -> NSEvent? {
@@ -894,12 +905,6 @@ extension ApplicationLauncherController {
                 dismiss(restoreFocus: true)
                 return nil
             }
-            if !radialIsAiming, showsDictionaryDefinition,
-               (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true,
-               event.keyCode == 116 || event.keyCode == 121 {
-                dictionaryPanel?.scrollPage(event.keyCode == 121 ? 1 : -1)
-                return nil
-            }
             if radialIsAiming {
                 if event.keyCode == 36 || event.keyCode == 76 {
                     finishRadialAim(commit: true)
@@ -910,11 +915,45 @@ extension ApplicationLauncherController {
             }
         case .leftMouseDown:
             if radialIsAiming { finishRadialAim(commit: true); return nil }
+        case .scrollWheel:
+            if handleRadialReadingScroll(event) { return nil }
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             handleRadialMotion(event)
         default: break
         }
         return event
+    }
+
+    private func handleRadialReadingScroll(_ event: NSEvent) -> Bool {
+        // Consume the tail of a reading gesture after Command is released, so
+        // trackpad momentum cannot scroll the app behind the transparent wheel.
+        let momentum = !event.momentumPhase.isEmpty
+        let beginsGesture = event.phase.contains(.began)
+            || (!momentum && event.phase.isEmpty && event.scrollingDeltaY != 0)
+        if beginsGesture { radialReadingMomentum = false }
+        let suppressTail = radialReadingMomentum && (momentum || !event.phase.isEmpty)
+        guard event.modifierFlags.contains(.command), !radialIgnoreCommand,
+              showsDictionaryDefinition, dictionaryPanel?.isVisible == true,
+              (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true else {
+            if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                radialReadingMomentum = false
+            }
+            return suppressTail
+        }
+        guard event.scrollingDeltaY != 0 else { return true }
+        guard radialIsAiming || beginRadialAim() else { return false }
+        // Scrolling owns this Command hold. Release must never execute the
+        // result that the ray happened to point at before reading began.
+        radialAim.cancel()
+        radialIsReading = true
+        radialReadingMomentum = true
+        radialAimVector = .zero
+        radialAimIndex = nil
+        dictionaryPanel?.scroll(by: -event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 1 : 18))
+        if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+            radialReadingMomentum = false
+        }
+        return true
     }
 
     private func handleRadialMotion(_ event: NSEvent) {
@@ -948,7 +987,7 @@ extension ApplicationLauncherController {
     }
 
     func moveRadialAim(dx: CGFloat, dy: CGFloat) {
-        guard radialIsAiming else { return }
+        guard radialIsAiming, !radialIsReading else { return }
         radialAim.move(dx: dx, dy: dy, limit: radialLayout.outerRadius + 16)
         radialAimVector = radialAim.vector
         radialAimIndex = radialAim.target(in: radialLayout)
@@ -961,6 +1000,7 @@ extension ApplicationLauncherController {
         let selected = radialAim.end(in: radialLayout)
         radialPointer.unlock()
         radialIsAiming = false
+        radialIsReading = false
         radialAimVector = .zero
         radialAimIndex = nil
         radialIsFollowing = radialWasFollowing

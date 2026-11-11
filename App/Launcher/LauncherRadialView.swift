@@ -106,7 +106,8 @@ struct LauncherRadialView: View {
 
     @ViewBuilder private var centerContent: some View {
         if controller.radialIsAiming || controller.launchError != nil || (controller.hasQuery && items.isEmpty) {
-            let lines = controller.radialIsAiming ? [items.isEmpty ? "松开返回" : "松开执行"]
+            let lines = controller.radialIsReading ? ["滚动阅读"]
+                : controller.radialIsAiming ? [items.isEmpty ? "松开返回" : "松开执行"]
                 : controller.radialStatus.split(separator: "\n", maxSplits: 1).map(String.init)
             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                 arcText(line, radius: 29 + CGFloat(index) * 14,

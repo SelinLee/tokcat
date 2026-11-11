@@ -53,6 +53,7 @@ extension ApplicationLauncherController {
 
     var radialStatus: String {
         if let launchError { return launchError }
+        if radialIsReading { return "滚动阅读\n松开 ⌘ 返回输入" }
         if radialIsAiming, !hasQuery { return "指向模式\n松开 ⌘ 返回输入" }
         if isLookingUpDictionary { return "正在查询词典…" }
         if !hasQuery { return "输入搜索\n按住 ⌘ 指向选择" }

@@ -44,11 +44,11 @@ final class LauncherDictionaryPanel: NSPanel {
         } else { contentView = NSHostingView(rootView: surface) }
     }
 
-    func scrollPage(_ direction: CGFloat) {
+    func scroll(by delta: CGFloat) {
         guard let scroll = readingText.enclosingScrollView else { return }
         let clip = scroll.contentView
         let maxY = max(0, readingText.bounds.height - clip.bounds.height)
-        let y = min(maxY, max(0, clip.bounds.minY + direction * max(30, clip.bounds.height - 20)))
+        let y = min(maxY, max(0, clip.bounds.minY + delta))
         clip.scroll(to: CGPoint(x: 0, y: y))
         scroll.reflectScrolledClipView(clip)
     }
@@ -76,7 +76,7 @@ private struct DictionaryReadingSurface: View {
                 .foregroundStyle(style.primaryText).lineLimit(1)
             DictionaryReadingText(textView: textView, definition: definition, style: style)
                 .frame(height: bodyHeight)
-            Text("Fn ↑/↓ 翻页 · 方向键固定后可滚动")
+            Text("按住 ⌘ · 双指上下滚动阅读")
                 .font(.system(size: 10)).foregroundStyle(style.secondaryText)
         }
         .padding(.horizontal, 32).padding(.vertical, 20)
