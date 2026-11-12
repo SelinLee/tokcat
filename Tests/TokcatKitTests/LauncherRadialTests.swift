@@ -60,7 +60,7 @@ final class LauncherRadialTests: XCTestCase {
 
     func testDirectionalNavigationFollowsVisiblePositionsAcrossRings() {
         let layout = LauncherRadialLayout(count: 9)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 4, "Down must reach the result visibly below the inner arc")
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 3, "The lower outer pair is the next visible row, starting at its left arc")
         XCTAssertEqual(layout.neighbor(of: 4, direction: .up), 0)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .up), 1)
         XCTAssertEqual(layout.neighbor(of: 1, direction: .down), 0)
@@ -75,7 +75,7 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertEqual(LauncherRadialLayout(count: 1).neighbor(of: 0, direction: .down), 0)
     }
 
-    func testEveryArrowMovesInItsScreenDirectionOrStaysAtTheEdge() {
+    func testEveryArrowFollowsItsScreenDirectionOrScansTheLowerRow() {
         for count in 2...18 {
             let layout = LauncherRadialLayout(count: count)
             for slot in layout.slots {
@@ -84,12 +84,36 @@ final class LauncherRadialTests: XCTestCase {
                     if next.index == slot.index { continue }
                     switch direction {
                     case .up: XCTAssertLessThan(next.center.y, slot.center.y - 0.5)
-                    case .down: XCTAssertGreaterThan(next.center.y, slot.center.y + 0.5)
+                    case .down:
+                        let lowerPair = slot.ring == 0 && next.ring == 1 && next.center.y > 0
+                        let rowScan = slot.ring == next.ring && abs(next.center.y - slot.center.y) < LauncherRadialLayout.resultThickness / 4 && next.center.x > slot.center.x
+                        XCTAssertTrue(next.center.y > slot.center.y + 0.5 || lowerPair || rowScan)
                     case .left: XCTAssertLessThan(next.center.x, slot.center.x - 0.5)
                     case .right: XCTAssertGreaterThan(next.center.x, slot.center.x + 0.5)
                     }
                 }
             }
+        }
+    }
+
+    func testDownScansTheLowerPairLeftThenRightWhenThereIsNoDeeperRow() {
+        let layout = LauncherRadialLayout(count: 4)
+        XCTAssertLessThan(layout.slots[3].center.x, layout.slots[2].center.x)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 3)
+        XCTAssertEqual(layout.neighbor(of: 3, direction: .down), 2)
+        XCTAssertEqual(layout.neighbor(of: 2, direction: .down), 2)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down, positions: [
+            0: CGPoint(x: 0, y: -80), 1: CGPoint(x: 0, y: -160),
+            2: CGPoint(x: 90, y: 80), 3: CGPoint(x: -90, y: 80)
+        ]), 3, "Equal candidates below must choose the left one rather than the earlier result index")
+    }
+
+    func testDownPrefersADeeperLayerBeforeTheRightSibling() {
+        for count in [5, 9] {
+            let layout = LauncherRadialLayout(count: count)
+            XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 3)
+            XCTAssertEqual(layout.neighbor(of: 3, direction: .down), 4)
+            XCTAssertGreaterThan(layout.slots[4].ring, layout.slots[3].ring)
         }
     }
 

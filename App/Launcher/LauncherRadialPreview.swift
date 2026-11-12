@@ -151,7 +151,9 @@ enum LauncherRadialPreview {
         controller.selectRadialHover(1)
         precondition(controller.selectedIndex == 0, "Following motion must not change selection")
         controller.navigateRadial(.down)
-        precondition(!controller.radialIsFollowing && controller.selectedIndex == 4)
+        precondition(!controller.radialIsFollowing && controller.selectedIndex == 3)
+        controller.navigateRadial(.down)
+        precondition(controller.selectedIndex == 4)
         controller.navigateRadial(.up)
         precondition(controller.selectedIndex == 0)
         controller.navigateRadial(.right)
@@ -164,6 +166,14 @@ enum LauncherRadialPreview {
         precondition(controller.radialAimIndex == 1, "Upper outer arcs must be selectable")
         controller.finishRadialAim(commit: false)
         precondition(opened().isEmpty)
+        controller.configurePreview(applications: applications, query: "web", skin: .radial)
+        precondition(controller.radialItems.count == 4)
+        controller.navigateRadial(.down)
+        precondition(controller.selectedIndex == 3)
+        controller.navigateRadial(.down)
+        precondition(controller.selectedIndex == 2)
+        controller.navigateRadial(.down)
+        precondition(controller.selectedIndex == 2)
 
         controller.configurePreview(applications: [], query: "example.com", skin: .radial)
         precondition(controller.beginRadialAim(capturePointer: false))
@@ -251,10 +261,21 @@ enum LauncherRadialPreview {
         let few = controller.radialItems
         motion.update(items: few, layout: controller.radialLayout, animated: true)
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            precondition(motion.isAnimating && motion.frame.extent == oldExtent)
+            precondition(motion.isAnimating && motion.frame.extent >= oldExtent)
             precondition(motion.frame.entries.contains { $0.isDeparting })
-            RunLoop.main.run(until: Date().addingTimeInterval(0.08))
-            precondition(motion.frame.entries.contains { abs($0.pose.swell) > 0.01 })
+            RunLoop.main.run(until: Date().addingTimeInterval(0.18))
+            precondition(motion.frame.flow > 0.5 && !motion.frame.bridges.isEmpty)
+            precondition(motion.frame.entries.contains { $0.pose.compression > 0.001 }, "Adjacent sectors must squeeze along their circle")
+            for link in motion.frame.bridges {
+                let path = LauncherRadialLiquid.bridge(link, center: .zero)
+                path.applyWithBlock { element in
+                    guard element.pointee.type != .closeSubpath else { return }
+                    let p = element.pointee.points[0]
+                    let radius = hypot(p.x, p.y)
+                    precondition(abs(abs(radius - link.radius) - LauncherRadialLayout.resultThickness / 2) < 0.001,
+                                 "Liquid links must retain the circle's exact inner and outer radii")
+                }
+            }
             for entry in motion.frame.entries where !entry.isDeparting && entry.pose.opacity > 0.9 {
                 precondition(motion.hitTest(entry.pose.center) != nil)
             }
@@ -264,15 +285,22 @@ enum LauncherRadialPreview {
             for entry in motion.frame.entries {
                 if let old = before[entry.id] { precondition(entry.pose == old, "Interrupted reflow must continue at the visible position") }
             }
-            RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            RunLoop.main.run(until: Date().addingTimeInterval(1.12))
             precondition(!motion.isAnimating && motion.frame.entries.count == many.count)
-            precondition(motion.frame.entries.allSatisfy { !$0.isDeparting && $0.pose.opacity == 1 && $0.pose.swell == 0 })
+            precondition(motion.frame.entries.allSatisfy { !$0.isDeparting && $0.pose.opacity == 1 && $0.pose.compression == 0 })
         }
+        // Close sectors on different radii must never acquire a liquid link.
+        controller.configurePreview(applications: applications, query: "apple", skin: .radial)
+        let isolated = LauncherRadialMotion()
+        isolated.update(items: controller.radialItems, layout: controller.radialLayout, animated: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.24))
+        precondition(isolated.frame.bridges.isEmpty, "Different circles must not fuse across the gap")
+        isolated.finishImmediately()
         controller.configurePreview(applications: [], query: "", skin: .radial)
         motion.update(items: [], layout: controller.radialLayout, animated: false)
         precondition(!motion.isAnimating && motion.frame.entries.isEmpty && motion.frame.bands.isEmpty)
         precondition(motion.frame.size == controller.radialLayout.size)
-        print("Verified bubble reflow continuity, swelling, visible hit regions, shrinking canvas, interruptions and immediate reduced-motion settlement")
+        print("Verified bubble reflow continuity, visible hit regions, circular same-ring liquid bridges, angular contact squeezing, flowing blur, shrinking canvas, interruptions and immediate reduced-motion settlement")
     }
 
     private static func verifyNativeInput(_ controller: ApplicationLauncherController) {

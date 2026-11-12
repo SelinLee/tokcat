@@ -108,22 +108,45 @@ public struct LauncherRadialLayout: Sendable {
         case .up: axis = CGPoint(x: 0, y: -1)
         case .down: axis = CGPoint(x: 0, y: 1)
         }
-        let candidates = slots.compactMap { slot -> (index: Int, forward: CGFloat, sideways: CGFloat)? in
+        func point(_ slot: Slot) -> CGPoint { positions[slot.index] ?? slot.center }
+        // The inner lower semicircle's center is slightly lower than the two
+        // outer lower arcs' centers. They still form the next visible row.
+        if direction == .down, current.ring == 0 {
+            let lowerPair = slots.filter {
+                let p = point($0)
+                return $0.ring == 1 && p.y > 0 && abs(p.y - origin.y) <= Self.resultThickness / 2
+            }
+            if lowerPair.count > 1 { return lowerPair.min { point($0).x < point($1).x }?.index }
+        }
+        let candidates = slots.compactMap { slot -> (index: Int, forward: CGFloat, sideways: CGFloat, x: CGFloat)? in
             guard slot.index != index else { return nil }
-            let point = positions[slot.index] ?? slot.center
-            let dx = point.x - origin.x, dy = point.y - origin.y
+            let candidate = point(slot)
+            // On the lower half, Down must not jump back to a shallower arc
+            // merely because its label center is a few points lower.
+            if direction == .down, origin.y > 0, candidate.y > 0, slot.ring < current.ring { return nil }
+            let dx = candidate.x - origin.x, dy = candidate.y - origin.y
             let forward = dx * axis.x + dy * axis.y
             guard forward > 0.5 else { return nil }
-            return (slot.index, forward, abs(dx * axis.y - dy * axis.x))
+            return (slot.index, forward, abs(dx * axis.y - dy * axis.x), candidate.x)
         }
-        // Prefer the requested direction's 90° cone, then allow a diagonal
-        // fallback. At an edge, stay put rather than wrapping to the other side.
+        // Prefer deeper rows before scanning the remaining item in this row.
         let aligned = candidates.filter { $0.sideways <= $0.forward }
-        return (aligned.isEmpty ? candidates : aligned).min {
+        let next = (aligned.isEmpty ? candidates : aligned).min {
             let a = $0.forward + $0.sideways * 2
             let b = $1.forward + $1.sideways * 2
+            if abs(a - b) < 0.5, direction == .down {
+                return $0.x < $1.x
+            }
             return abs(a - b) < 0.001 ? $0.index < $1.index : a < b
-        }?.index ?? index
+        }
+        if let next { return next.index }
+        if direction == .down {
+            return slots.filter {
+                let p = point($0)
+                return $0.ring == current.ring && abs(p.y - origin.y) < Self.resultThickness / 4 && p.x > origin.x + 0.5
+            }.min { point($0).x < point($1).x }?.index ?? index
+        }
+        return index
     }
 }
 

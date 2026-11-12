@@ -845,10 +845,11 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         if let content = panel?.contentView { visit(content) }
         return ["pid": ProcessInfo.processInfo.processIdentifier, "effects": effects,
                 "reflowing": radialMotion.isAnimating,
+                "liquidFlow": radialCanvas.flow, "liquidBridges": radialCanvas.bridges.count,
                 "presentation": radialCanvas.entries.map { entry in ["id": entry.id,
                     "x": entry.pose.center.x, "y": entry.pose.center.y,
                     "radius": entry.pose.radius, "span": entry.pose.span, "opacity": entry.pose.opacity,
-                    "swell": entry.pose.swell, "departing": entry.isDeparting] as [String: Any] },
+                    "ring": entry.ring, "compression": entry.pose.compression, "departing": entry.isDeparting] as [String: Any] },
                 "slots": radialLayout.slots.map { ["index": $0.index, "ring": $0.ring, "start": $0.startAngle,
                     "end": $0.endAngle, "radius": $0.radius, "x": $0.center.x, "y": $0.center.y] as [String: Any] },
                 "readingVisible": dictionaryPanel?.isVisible == true,

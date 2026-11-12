@@ -35,6 +35,8 @@ struct LauncherRadialView: View {
                     .frame(width: canvas.size.width, height: canvas.size.height)
             }
 
+            liquidSheen
+
             inputArc
 
             ForEach(canvas.entries) { entry in result(entry) }
@@ -79,13 +81,15 @@ struct LauncherRadialView: View {
         let pose = entry.pose
         let index = items.firstIndex { $0.id == entry.id }
         let selected = index != nil && (controller.radialIsAiming ? controller.radialAimIndex == index : controller.selectedIndex == index)
-        let sector = RadialSector(center: canvas.center, radius: pose.radius,
-                                  thickness: LauncherRadialLayout.resultThickness + pose.swell * 5,
-                                  start: pose.angle - pose.span / 2 + 0.022,
-                                  end: pose.angle + pose.span / 2 - 0.022, swell: pose.swell)
+        let bubbleCenter = canvas.center
+        let span = pose.span * (1 - pose.compression * 0.12)
+        let sector = RadialSector(center: bubbleCenter, radius: pose.radius,
+                                  thickness: LauncherRadialLayout.resultThickness,
+                                  start: pose.angle - span / 2 + 0.022,
+                                  end: pose.angle + span / 2 - 0.022)
         return ZStack(alignment: .topLeading) {
             sector.fill(style.pink.opacity(selected ? 0.14 : controller.radialIsAiming ? 0.065 : 0.03))
-                .blur(radius: (selected ? 7 : 9) + abs(pose.swell) * 2)
+                .blur(radius: (selected ? 7 : 9) + pose.compression * 3)
             sector.fill(Color.clear).contentShape(sector)
                 .onTapGesture { performResult(entry.id) }
                 .accessibilityElement(children: .ignore)
@@ -102,13 +106,14 @@ struct LauncherRadialView: View {
             }
             .frame(width: item.id == "web-search" ? 14 : 18, height: item.id == "web-search" ? 14 : 18)
             .rotationEffect(.radians(pose.angle + (pose.upper ? .pi / 2 : -.pi / 2)))
-            .position(x: canvas.center.x + cos(pose.angle) * (pose.radius - 12),
-                      y: canvas.center.y + sin(pose.angle) * (pose.radius - 12))
+            .scaleEffect(x: 1 + pose.compression * 0.13, y: 1 - pose.compression * 0.13)
+            .position(x: bubbleCenter.x + cos(pose.angle) * (pose.radius - 12),
+                      y: bubbleCenter.y + sin(pose.angle) * (pose.radius - 12))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             arcText(item.title, radius: pose.radius + 12, angle: pose.angle,
                     span: pose.span - 0.09, size: item.id == "web-search" ? 11 : 13,
-                    color: selected ? style.primaryText : style.secondaryText, upper: pose.upper)
+                    color: selected ? style.primaryText : style.secondaryText, upper: pose.upper, center: bubbleCenter)
         }
         .opacity(pose.opacity)
         .allowsHitTesting(!entry.isDeparting && pose.opacity > 0.25)
@@ -145,9 +150,26 @@ struct LauncherRadialView: View {
     }
 
     private func arcText(_ text: String, radius: CGFloat, angle: CGFloat, span: CGFloat,
-                         size: CGFloat, color: Color, upper: Bool = false) -> some View {
-        LauncherArcText(text: text, center: canvas.center, radius: radius, angle: angle, maxSpan: span,
+                         size: CGFloat, color: Color, upper: Bool = false, center: CGPoint? = nil) -> some View {
+        LauncherArcText(text: text, center: center ?? canvas.center, radius: radius, angle: angle, maxSpan: span,
                         font: .systemFont(ofSize: size, weight: .medium), color: color, upper: upper)
+    }
+
+    private var liquidSheen: some View {
+        Canvas { context, _ in
+            guard canvas.flow > 0.01 else { return }
+            context.addFilter(.blur(radius: 5))
+            for link in canvas.bridges {
+                context.fill(Path(LauncherRadialLiquid.bridge(link, center: canvas.center)),
+                             with: .color(style.accent.opacity(link.opacity * (0.14 + cos(canvas.phase + link.start * 2) * 0.04))))
+            }
+            for entry in canvas.entries where entry.pose.compression > 0.001 {
+                context.fill(Path(LauncherRadialLiquid.band(entry.pose, center: canvas.center)),
+                             with: .color(style.pink.opacity(entry.pose.opacity * entry.pose.compression * 0.06)))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var prismaticLens: some View {
@@ -173,7 +195,6 @@ struct RadialSector: Shape {
     let thickness: CGFloat
     let start: CGFloat
     let end: CGFloat
-    var swell: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -181,13 +202,13 @@ struct RadialSector: Shape {
         let outer = radius + thickness / 2
         for i in 0...48 {
             let a = start + (end - start) * CGFloat(i) / 48
-            let edge = outer + sin(CGFloat(i) / 48 * .pi * 2) * swell * 3
+            let edge = outer
             let point = CGPoint(x: center.x + cos(a) * edge, y: center.y + sin(a) * edge)
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
         for i in (0...48).reversed() {
             let a = start + (end - start) * CGFloat(i) / 48
-            let edge = inner + sin(CGFloat(i) / 48 * .pi * 2) * swell * 3
+            let edge = inner
             path.addLine(to: CGPoint(x: center.x + cos(a) * edge, y: center.y + sin(a) * edge))
         }
         path.closeSubpath()
@@ -207,8 +228,8 @@ private struct RadialFogView: View {
             for band in canvas.bands {
                 let pose = band.pose
                 let sector = RadialSector(center: canvas.center, radius: pose.radius,
-                    thickness: LauncherRadialLayout.resultThickness + 6 + pose.swell * 5,
-                    start: pose.angle - pose.span / 2, end: pose.angle + pose.span / 2, swell: pose.swell)
+                    thickness: LauncherRadialLayout.resultThickness + 6,
+                    start: pose.angle - pose.span / 2, end: pose.angle + pose.span / 2)
                 context.fill(sector.path(in: rect), with: .color(MonitorTheme.panelFill.opacity(pose.opacity)))
             }
             if centerRadius > 0 {
@@ -229,9 +250,9 @@ private struct LauncherRadialBlur: NSViewRepresentable {
     private static var masks: [String: NSImage] = [:]
     private var maskKey: String {
         let ranges = canvas.bands.map { band in
-            "\(band.id):\(band.pose.radius):\(band.pose.angle):\(band.pose.span):\(band.pose.opacity):\(band.pose.swell)"
+            "\(band.id):\(band.pose.radius):\(band.pose.angle):\(band.pose.span):\(band.pose.opacity)"
         }.joined(separator: ";")
-        return "\(canvas.extent):\(ranges):\(Int(centerRadius))"
+        return "\(canvas.extent):\(ranges):\(canvas.flow):\(canvas.phase):\(Int(centerRadius))"
     }
     final class Coordinator { var key: String? }
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -304,10 +325,37 @@ private struct LauncherRadialBlur: NSViewRepresentable {
             context.translateBy(x: 0, y: bounds.height)
             context.scaleBy(x: 1, y: -1)
             ring(LauncherRadialLayout.inputRadius, LauncherRadialLayout.inputThickness / 2, angles: .pi...(.pi * 2))
+            func liquid(_ path: CGPath, opacity: CGFloat) {
+                context.saveGState()
+                context.setAlpha(opacity)
+                context.setFillColor(white)
+                // Draw the source outside the image and retain only its blurred
+                // shadow, so the flowing mask has no hard filled-path boundary.
+                let displacement = canvas.size.width + 64
+                context.setShadow(offset: CGSize(width: displacement, height: 0), blur: 16, color: white)
+                context.translateBy(x: -displacement, y: 0)
+                context.addPath(path)
+                context.fillPath()
+                context.restoreGState()
+            }
+            let flow = min(1, canvas.flow)
             for band in canvas.bands where band.pose.opacity > 0.001 {
                 let pose = band.pose
-                ring(pose.radius, LauncherRadialLayout.resultThickness / 2 + pose.swell * 2.5,
-                     angles: (pose.angle - pose.span / 2)...(pose.angle + pose.span / 2), opacity: pose.opacity)
+                let localFlow = canvas.bridges.contains { $0.ring == band.ring } ? flow : 0
+                ring(pose.radius, LauncherRadialLayout.resultThickness / 2,
+                     angles: (pose.angle - pose.span / 2)...(pose.angle + pose.span / 2), opacity: pose.opacity * (1 - localFlow * 0.35))
+            }
+            for link in canvas.bridges {
+                let current = 0.75 + cos(canvas.phase + link.start * 2) * 0.25
+                liquid(LauncherRadialLiquid.bridge(link, center: canvas.center), opacity: link.opacity * current * 0.7)
+            }
+            if flow > 0.001 {
+                for entry in canvas.entries where entry.pose.opacity > 0.01 && canvas.bridges.contains(where: { $0.ring == entry.ring }) {
+                    var patch = entry.pose
+                    patch.span *= 1 - patch.compression * 0.12
+                    patch.angle += sin(canvas.phase + patch.angle) * flow * 0.055
+                    liquid(LauncherRadialLiquid.band(patch, center: canvas.center), opacity: patch.opacity * flow * 0.45)
+                }
             }
             if centerRadius > 0, let gradient = CGGradient(colorsSpace: space,
                 colors: [white, white, clear] as CFArray, locations: [0, 0.7, 1]) {
