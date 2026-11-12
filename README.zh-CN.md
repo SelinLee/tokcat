@@ -2,15 +2,15 @@
 
 # tokcat
 
-**多 Agent 同时开工，一眼看清谁在运行、谁在等你。**
+**多 Agent 状态一眼看清，应用、命令与搜索一个快捷键直达。**
 
 <p>
-  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4">
-    <img src="docs/assets/demos/launcher-chrome.gif" alt="tokcat 原生赛博轮盘：逐字输入 chrome，匹配结果沿圆弧流动、融合与重排" width="900" />
+  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
+    <img src="docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat 演示：顶部菜单栏状态点显示运行、等待、完成与失败，再逐字输入 chrome 展示快捷启动" width="900" />
   </a>
 </p>
 
-<sub>赛博轮盘 · 逐字输入 chrome，匹配项随输入动态重排 · 下载高清视频</sub>
+<sub>菜单栏状态点 + 赛博轮盘快捷启动 · 下载高清视频</sub>
 
 原生 macOS 多 Agent 状态监控：实时任务、等待提醒、本地对话、用量趋势，以及安静贴在桌边的人形挂件。
 

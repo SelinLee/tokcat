@@ -2,15 +2,15 @@
 
 # tokcat
 
-**Keep your agents' work in view.**
+**Keep your agents' work in view. Launch apps and commands in a keystroke.**
 
 <p>
-  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4">
-    <img src="docs/assets/demos/launcher-chrome.gif" alt="Native tokcat Cyber Wheel: typing chrome letter by letter reflows matches around circular arcs" width="900" />
+  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
+    <img src="docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat demo: native menu-bar task status dots, followed by typing chrome in the Cyber Wheel launcher" width="900" />
   </a>
 </p>
 
-<sub>Cyber Wheel · Type chrome and watch the results flow into place · Download full-quality video</sub>
+<sub>Live task status + Cyber Wheel launcher · Download full-quality video</sub>
 
 A native macOS monitor for multiple AI agents: live task states, waiting alerts, local conversations, usage trends, and a quiet companion at the edge of your desktop.
 
