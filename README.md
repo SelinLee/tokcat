@@ -4,6 +4,14 @@
 
 **Keep your agents' work in view.**
 
+<p>
+  <a href="docs/assets/demos/launcher-chrome.mp4">
+    <img src="docs/assets/demos/launcher-chrome.gif" alt="Native tokcat Cyber Wheel: typing chrome letter by letter reflows matches around circular arcs" width="900" />
+  </a>
+</p>
+
+<sub>Cyber Wheel · Type chrome and watch the results flow into place · Click for video</sub>
+
 A native macOS monitor for multiple AI agents: live task states, waiting alerts, local conversations, usage trends, and a quiet companion at the edge of your desktop.
 
 Now with a quick launcher for apps, live calculations, terminal commands, and websites—one keyboard shortcut away.

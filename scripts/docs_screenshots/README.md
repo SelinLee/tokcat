@@ -26,3 +26,26 @@ pet systems cannot survive in a documentation build.
 Before publishing, inspect every image for clipped or wrapped labels, check the
 OCR results, and verify the README image links. Keep real conversations and usage
 screenshots out of these documentation assets.
+
+
+## Launcher motion demo
+
+```sh
+python3 scripts/record_launcher_demo.py
+```
+
+Requires macOS 15+, Xcode, ffmpeg, and Google Chrome in `/Applications`. Run with
+Screen Recording and keyboard-event access already available to the recording
+process. The default work directory is `/tmp/tokcat-launcher-demo`; choose another
+with `--work-dir`, and change the asset destination with `--output`.
+
+The script builds a temporary English native preview with a fixed catalog of
+Chrome and six standard macOS apps. It types `chrome` one letter at a time,
+records the actual circular layout animation, then clears the input for a loop.
+Only its backdrop and preview windows are captured, without audio or cursor.
+The installed app, its settings, and local conversations are not used. The GIF
+plays in both README headers; clicking it opens the higher-quality MP4.
+
+Review the beginning, each typing stage, transitions, and the final empty frame
+before publishing. The temporary `typing-states.json` records the real queries
+and matching result titles so the sequence can be checked against the video.
