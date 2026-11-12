@@ -6,7 +6,7 @@
 
 <p>
   <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
-    <img src="docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat demo: native menu-bar task status dots, followed by typing chrome in the Cyber Wheel launcher" width="900" />
+    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat demo: native menu-bar task status dots, followed by typing chrome in the Cyber Wheel launcher" width="900" />
   </a>
 </p>
 

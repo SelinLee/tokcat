@@ -6,7 +6,7 @@
 
 <p>
   <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
-    <img src="docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat 演示：顶部菜单栏状态点显示运行、等待、完成与失败，再逐字输入 chrome 展示快捷启动" width="900" />
+    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat 演示：顶部菜单栏状态点显示运行、等待、完成与失败，再逐字输入 chrome 展示快捷启动" width="900" />
   </a>
 </p>
 
