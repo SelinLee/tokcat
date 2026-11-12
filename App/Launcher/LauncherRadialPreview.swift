@@ -83,6 +83,7 @@ enum LauncherRadialPreview {
             openURL: { opened.append($0); return true })
         verifyInteraction(controller, opened: { opened })
         verifyNativeInput(controller)
+        verifyBubbleMotion(controller)
         for dark in [false, true] {
             NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             for state in ["empty", "pair", "pressed", "aiming", "many", "outer-aiming", "calculator", "translation", "word-option", "word-selected", "chinese", "long-input"] {
@@ -150,7 +151,9 @@ enum LauncherRadialPreview {
         controller.selectRadialHover(1)
         precondition(controller.selectedIndex == 0, "Following motion must not change selection")
         controller.navigateRadial(.down)
-        precondition(!controller.radialIsFollowing && controller.selectedIndex == 1)
+        precondition(!controller.radialIsFollowing && controller.selectedIndex == 4)
+        controller.navigateRadial(.up)
+        precondition(controller.selectedIndex == 0)
         controller.navigateRadial(.right)
         precondition(controller.selectedIndex == 2)
         controller.selectRadialHover(5)
@@ -199,7 +202,7 @@ enum LauncherRadialPreview {
         precondition(opened().count == beforeTranslation + 1 && opened().last?.host == "translate.google.com")
         controller.configurePreview(applications: applications, query: "tran+How are you?", skin: .radial)
         precondition(controller.radialItems.count == 3 && controller.results.isEmpty)
-        controller.navigateRadial(.down)
+        controller.navigateRadial(.up)
         controller.performRadialItem(at: controller.selectedIndex)
         precondition(opened().last?.host == "www.bing.com")
 
@@ -236,6 +239,40 @@ enum LauncherRadialPreview {
         precondition(controller.showsDictionaryDefinition, "Classic explicit translation retains its existing behavior")
         controller.configurePreview(applications: [], query: "", skin: .radial)
         print("Verified concentric upper/lower selection, translation on selection, stale lookup cancellation, search only after input, calculator/terminal/settings/URL routes and classic translation (web opens intercepted)")
+    }
+
+    private static func verifyBubbleMotion(_ controller: ApplicationLauncherController) {
+        let motion = LauncherRadialMotion()
+        controller.configurePreview(applications: applications, query: "app", skin: .radial)
+        let many = controller.radialItems
+        motion.update(items: many, layout: controller.radialLayout, animated: false)
+        let oldExtent = motion.frame.extent
+        controller.configurePreview(applications: applications, query: "apple", skin: .radial)
+        let few = controller.radialItems
+        motion.update(items: few, layout: controller.radialLayout, animated: true)
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            precondition(motion.isAnimating && motion.frame.extent == oldExtent)
+            precondition(motion.frame.entries.contains { $0.isDeparting })
+            RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+            precondition(motion.frame.entries.contains { abs($0.pose.swell) > 0.01 })
+            for entry in motion.frame.entries where !entry.isDeparting && entry.pose.opacity > 0.9 {
+                precondition(motion.hitTest(entry.pose.center) != nil)
+            }
+            let before = Dictionary(uniqueKeysWithValues: motion.frame.entries.map { ($0.id, $0.pose) })
+            controller.configurePreview(applications: applications, query: "app", skin: .radial)
+            motion.update(items: many, layout: controller.radialLayout, animated: true)
+            for entry in motion.frame.entries {
+                if let old = before[entry.id] { precondition(entry.pose == old, "Interrupted reflow must continue at the visible position") }
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            precondition(!motion.isAnimating && motion.frame.entries.count == many.count)
+            precondition(motion.frame.entries.allSatisfy { !$0.isDeparting && $0.pose.opacity == 1 && $0.pose.swell == 0 })
+        }
+        controller.configurePreview(applications: [], query: "", skin: .radial)
+        motion.update(items: [], layout: controller.radialLayout, animated: false)
+        precondition(!motion.isAnimating && motion.frame.entries.isEmpty && motion.frame.bands.isEmpty)
+        precondition(motion.frame.size == controller.radialLayout.size)
+        print("Verified bubble reflow continuity, swelling, visible hit regions, shrinking canvas, interruptions and immediate reduced-motion settlement")
     }
 
     private static func verifyNativeInput(_ controller: ApplicationLauncherController) {

@@ -84,6 +84,9 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var radialIgnoreCommand = false
     private var radialWasFollowing = true
     private var radialReadingMomentum = false
+    let radialMotion = LauncherRadialMotion()
+
+    var radialCanvas: LauncherRadialMotion.Frame { radialMotion.frame }
 
     var radialLayout: LauncherRadialLayout {
         let items = radialItems
@@ -114,6 +117,10 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         self.dictionaryLookup = dictionaryLookup
         self.openURL = openURL
         super.init()
+        radialMotion.onSettled = { [weak self] in
+            guard let self, self.skin == .radial, self.panel?.isVisible == true else { return }
+            self.setRadialFrame()
+        }
     }
 
     deinit {
@@ -183,7 +190,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     var panelSize: CGSize {
         if skin == .radial {
-            let size = radialLayout.size
+            let size = radialCanvas.size
             return CGSize(width: size.width * radialScale, height: size.height * radialScale)
         }
         return CGSize(width: LauncherLayout.width + 2 * backdropMargins.width,
@@ -546,6 +553,9 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     }
 
     private func resizePanel() {
+        if skin == .radial {
+            radialMotion.update(items: radialItems, layout: radialLayout, animated: panel?.isVisible == true)
+        }
         guard let panel, panel.isVisible else { return }
         if skin == .radial {
             // A changed query invalidates a pending release-to-select gesture.
@@ -834,6 +844,11 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         }
         if let content = panel?.contentView { visit(content) }
         return ["pid": ProcessInfo.processInfo.processIdentifier, "effects": effects,
+                "reflowing": radialMotion.isAnimating,
+                "presentation": radialCanvas.entries.map { entry in ["id": entry.id,
+                    "x": entry.pose.center.x, "y": entry.pose.center.y,
+                    "radius": entry.pose.radius, "span": entry.pose.span, "opacity": entry.pose.opacity,
+                    "swell": entry.pose.swell, "departing": entry.isDeparting] as [String: Any] },
                 "slots": radialLayout.slots.map { ["index": $0.index, "ring": $0.ring, "start": $0.startAngle,
                     "end": $0.endAngle, "radius": $0.radius, "x": $0.center.x, "y": $0.center.y] as [String: Any] },
                 "readingVisible": dictionaryPanel?.isVisible == true,
@@ -874,20 +889,20 @@ extension ApplicationLauncherController {
         let anchor = radialIsFollowing ? NSEvent.mouseLocation : (radialAnchor ?? NSEvent.mouseLocation)
         let screen = NSScreen.screens.first { NSMouseInRect(anchor, $0.frame, false) } ?? panel.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let layout = radialLayout
-        let scale = min(1, (visible.width - 24) / layout.size.width, (visible.height - 24) / layout.size.height)
+        let canvas = radialCanvas
+        let scale = min(1, (visible.width - 24) / canvas.size.width, (visible.height - 24) / canvas.size.height)
         if radialScale != scale { radialScale = scale }
-        let size = CGSize(width: layout.size.width * scale, height: layout.size.height * scale)
+        let size = CGSize(width: canvas.size.width * scale, height: canvas.size.height * scale)
         let origin = CGPoint(x: min(max(anchor.x - size.width / 2, visible.minX + 12), visible.maxX - size.width - 12),
-                             y: min(max(anchor.y - layout.bottomExtent * scale, visible.minY + 12), visible.maxY - size.height - 12))
+                             y: min(max(anchor.y - canvas.extent * scale, visible.minY + 12), visible.maxY - size.height - 12))
         setPanelFrame(CGRect(origin: origin, size: size))
-        radialAnchor = CGPoint(x: origin.x + layout.center.x * scale, y: origin.y + layout.bottomExtent * scale)
+        radialAnchor = CGPoint(x: origin.x + canvas.center.x * scale, y: origin.y + canvas.extent * scale)
         updateRadialDefinitionPanel()
     }
 
     private func radialBackdropSampleRect(in panel: NSWindow) -> CGRect? {
         guard skin == .radial else { return nil }
-        let center = radialLayout.center
+        let center = radialCanvas.center
         return CGRect(x: panel.frame.minX + (center.x - 80) * radialScale,
                       y: panel.frame.maxY - (center.y + LauncherRadialLayout.inputCenter.y + 10) * radialScale,
                       width: 160 * radialScale, height: 20 * radialScale)
@@ -914,6 +929,7 @@ extension ApplicationLauncherController {
 
     private func stopRadialTracking() {
         cancelRadialAim(ignoreUntilRelease: false)
+        radialMotion.finishImmediately()
         hideRadialDefinitionPanel()
         if let radialLocalMonitor { NSEvent.removeMonitor(radialLocalMonitor) }
         if let radialGlobalMonitor { NSEvent.removeMonitor(radialGlobalMonitor) }
@@ -1006,7 +1022,9 @@ extension ApplicationLauncherController {
         } else if let anchor = radialAnchor {
             let mouse = NSEvent.mouseLocation
             let point = CGPoint(x: (mouse.x - anchor.x) / radialScale, y: (anchor.y - mouse.y) / radialScale)
-            if let index = radialLayout.hitTest(point) { selectRadialHover(index) }
+            if let id = radialMotion.hitTest(point), let index = radialItems.firstIndex(where: { $0.id == id }) {
+                selectRadialHover(index)
+            }
         }
     }
 
@@ -1017,6 +1035,12 @@ extension ApplicationLauncherController {
         guard !capturePointer || radialPointer.lock() else {
             launchError = "无法锁定鼠标，可使用方向键选择。"
             return false
+        }
+        // A deliberate aiming gesture settles the reflow before locking a ray
+        // target, so release always executes the sector under the light.
+        if radialMotion.isAnimating {
+            radialMotion.finishImmediately()
+            setRadialFrame()
         }
         radialWasFollowing = radialIsFollowing
         radialIsFollowing = false
@@ -1058,7 +1082,11 @@ extension ApplicationLauncherController {
     func navigateRadial(_ direction: LauncherRadialLayout.Direction) {
         cancelRadialAim(ignoreUntilRelease: true)
         radialIsFollowing = false
-        if let index = radialLayout.neighbor(of: selectedIndex, direction: direction) { selectedIndex = index }
+        let positions = Dictionary(uniqueKeysWithValues: radialCanvas.entries.compactMap { entry -> (Int, CGPoint)? in
+            guard !entry.isDeparting, let index = radialItems.firstIndex(where: { $0.id == entry.id }) else { return nil }
+            return (index, entry.pose.center)
+        })
+        if let index = radialLayout.neighbor(of: selectedIndex, direction: direction, positions: positions) { selectedIndex = index }
     }
 
     func selectRadialHover(_ index: Int) {

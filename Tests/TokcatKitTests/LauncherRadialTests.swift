@@ -58,18 +58,46 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertNil(LauncherRadialLayout(count: 0).hitTest(CGPoint(x: 0, y: 76), aiming: true))
     }
 
-    func testDirectionalNavigationCyclesRingsAndMovesBetweenLayers() {
+    func testDirectionalNavigationFollowsVisiblePositionsAcrossRings() {
         let layout = LauncherRadialLayout(count: 9)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 0)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 1)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .right), 2)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .left), 3)
-        XCTAssertEqual(layout.neighbor(of: 3, direction: .right), 1)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .up), 0)
-        let outward = layout.neighbor(of: 1, direction: .down)!
-        XCTAssertEqual(layout.slots.first { $0.index == outward }?.ring, 2)
-        XCTAssertEqual(layout.neighbor(of: outward, direction: .down), outward)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 4, "Down must reach the result visibly below the inner arc")
+        XCTAssertEqual(layout.neighbor(of: 4, direction: .up), 0)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .up), 1)
+        XCTAssertEqual(layout.neighbor(of: 1, direction: .down), 0)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 2)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .left), 3)
+        XCTAssertEqual(layout.neighbor(of: 2, direction: .right), 8)
+        XCTAssertEqual(layout.neighbor(of: 8, direction: .left), 2)
+        XCTAssertEqual(layout.neighbor(of: 4, direction: .down), 4, "Bottom edge must not wrap upward")
+        XCTAssertEqual(layout.neighbor(of: 8, direction: .right), 8)
         XCTAssertEqual(layout.neighbor(of: 999, direction: .down), 0)
+        XCTAssertNil(LauncherRadialLayout(count: 0).neighbor(of: 0, direction: .down))
+        XCTAssertEqual(LauncherRadialLayout(count: 1).neighbor(of: 0, direction: .down), 0)
+    }
+
+    func testEveryArrowMovesInItsScreenDirectionOrStaysAtTheEdge() {
+        for count in 2...18 {
+            let layout = LauncherRadialLayout(count: count)
+            for slot in layout.slots {
+                for direction in [LauncherRadialLayout.Direction.up, .down, .left, .right] {
+                    let next = layout.slots.first { $0.index == layout.neighbor(of: slot.index, direction: direction) }!
+                    if next.index == slot.index { continue }
+                    switch direction {
+                    case .up: XCTAssertLessThan(next.center.y, slot.center.y - 0.5)
+                    case .down: XCTAssertGreaterThan(next.center.y, slot.center.y + 0.5)
+                    case .left: XCTAssertLessThan(next.center.x, slot.center.x - 0.5)
+                    case .right: XCTAssertGreaterThan(next.center.x, slot.center.x + 0.5)
+                    }
+                }
+            }
+        }
+    }
+
+    func testNavigationUsesPresentationPositionsDuringAReflow() {
+        let layout = LauncherRadialLayout(count: 3)
+        let positions = [0: CGPoint(x: 0, y: 76), 1: CGPoint(x: 0, y: 170), 2: CGPoint(x: 0, y: -130)]
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down, positions: positions), 1)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .up, positions: positions), 2)
     }
 
     func testCommandTapDeadzoneAndInputNeverCommitButUpperArcsCan() {

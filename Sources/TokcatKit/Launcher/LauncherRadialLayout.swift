@@ -98,26 +98,32 @@ public struct LauncherRadialLayout: Sendable {
         }?.index
     }
 
-    public func neighbor(of index: Int, direction: Direction) -> Int? {
+    public func neighbor(of index: Int, direction: Direction, positions: [Int: CGPoint] = [:]) -> Int? {
         guard let current = slots.first(where: { $0.index == index }) else { return slots.first?.index }
+        let origin = positions[index] ?? current.center
+        let axis: CGPoint
         switch direction {
-        case .left, .right:
-            let row = slots.filter { $0.ring == current.ring }
-            guard let position = row.firstIndex(where: { $0.index == index }) else { return nil }
-            let next = position + (direction == .left ? -1 : 1)
-            return row[(next + row.count) % row.count].index
-        case .up, .down:
-            let ring = current.ring + (direction == .up ? -1 : 1)
-            let nextRow = slots.filter { $0.ring == ring }
-            if slots.filter({ $0.ring == current.ring }).count == 1 { return nextRow.first?.index ?? index }
-            func distance(_ angle: CGFloat) -> CGFloat {
-                let delta = abs(angle - current.angle).truncatingRemainder(dividingBy: .pi * 2)
-                return min(delta, .pi * 2 - delta)
-            }
-            return nextRow.min {
-                distance($0.angle) < distance($1.angle)
-            }?.index ?? index
+        case .left: axis = CGPoint(x: -1, y: 0)
+        case .right: axis = CGPoint(x: 1, y: 0)
+        case .up: axis = CGPoint(x: 0, y: -1)
+        case .down: axis = CGPoint(x: 0, y: 1)
         }
+        let candidates = slots.compactMap { slot -> (index: Int, forward: CGFloat, sideways: CGFloat)? in
+            guard slot.index != index else { return nil }
+            let point = positions[slot.index] ?? slot.center
+            let dx = point.x - origin.x, dy = point.y - origin.y
+            let forward = dx * axis.x + dy * axis.y
+            guard forward > 0.5 else { return nil }
+            return (slot.index, forward, abs(dx * axis.y - dy * axis.x))
+        }
+        // Prefer the requested direction's 90° cone, then allow a diagonal
+        // fallback. At an edge, stay put rather than wrapping to the other side.
+        let aligned = candidates.filter { $0.sideways <= $0.forward }
+        return (aligned.isEmpty ? candidates : aligned).min {
+            let a = $0.forward + $0.sideways * 2
+            let b = $1.forward + $1.sideways * 2
+            return abs(a - b) < 0.001 ? $0.index < $1.index : a < b
+        }?.index ?? index
     }
 }
 
