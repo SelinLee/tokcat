@@ -5,12 +5,12 @@
 **多 Agent 同时开工，一眼看清谁在运行、谁在等你。**
 
 <p>
-  <a href="docs/assets/demos/launcher-chrome.mp4">
+  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4">
     <img src="docs/assets/demos/launcher-chrome.gif" alt="tokcat 原生赛博轮盘：逐字输入 chrome，匹配结果沿圆弧流动、融合与重排" width="900" />
   </a>
 </p>
 
-<sub>赛博轮盘 · 逐字输入 chrome，匹配项随输入动态重排 · 点击查看视频</sub>
+<sub>赛博轮盘 · 逐字输入 chrome，匹配项随输入动态重排 · 下载高清视频</sub>
 
 原生 macOS 多 Agent 状态监控：实时任务、等待提醒、本地对话、用量趋势，以及安静贴在桌边的人形挂件。
 

@@ -44,7 +44,7 @@ Chrome and six standard macOS apps. It types `chrome` one letter at a time,
 records the actual circular layout animation, then clears the input for a loop.
 Only its backdrop and preview windows are captured, without audio or cursor.
 The installed app, its settings, and local conversations are not used. The GIF
-plays in both README headers; clicking it opens the higher-quality MP4.
+plays in both README headers; clicking it downloads the higher-quality MP4.
 
 Review the beginning, each typing stage, transitions, and the final empty frame
 before publishing. The temporary `typing-states.json` records the real queries
