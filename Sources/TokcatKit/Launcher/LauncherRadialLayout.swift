@@ -5,11 +5,10 @@ public struct LauncherRadialLayout: Sendable {
     public static let inputCenter = CGPoint(x: 0, y: -74)
     public static let inputRadius: CGFloat = 76
     public static let inputThickness: CGFloat = 34
-    public static let resultRadius: CGFloat = 116
-    public static let ringSpacing: CGFloat = 64
-    public static let resultThickness: CGFloat = 48
+    public static let resultRadius = inputRadius
+    public static let ringSpacing: CGFloat = 56
+    public static let resultThickness = inputThickness
     public static let feather: CGFloat = 20
-    public static let accessorySpan: CGFloat = .pi / 6
 
     public struct Slot: Equatable, Sendable {
         public let index: Int
@@ -18,6 +17,8 @@ public struct LauncherRadialLayout: Sendable {
         public let startAngle: CGFloat
         public let endAngle: CGFloat
         public var angle: CGFloat { (startAngle + endAngle) / 2 }
+        public var span: CGFloat { endAngle - startAngle }
+        public var isUpperHalf: Bool { sin(angle) < -0.001 }
         public var center: CGPoint {
             CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
         }
@@ -32,7 +33,7 @@ public struct LauncherRadialLayout: Sendable {
             : Self.resultRadius + CGFloat(ringCount - 1) * Self.ringSpacing + Self.resultThickness / 2
     }
     public var diameter: CGFloat { (outerRadius + Self.feather) * 2 }
-    public var topExtent: CGFloat { Self.inputRadius + Self.inputThickness / 2 + Self.feather }
+    public var topExtent: CGFloat { outerRadius + Self.feather }
     public var bottomExtent: CGFloat { outerRadius + Self.feather }
     public var size: CGSize { CGSize(width: diameter, height: topExtent + bottomExtent) }
     public var center: CGPoint { CGPoint(x: diameter / 2, y: topExtent) }
@@ -41,44 +42,42 @@ public struct LauncherRadialLayout: Sendable {
         self.init(weights: Array(repeating: 1, count: max(0, count)))
     }
 
-    /// Primary choices share each arc by weight, with a minimum readable angle.
-    /// A small utility sector stays at the right end of the first arc.
-    public init(weights: [Double], accessoryIndex: Int? = nil) {
+    /// The leading result completes the input's circle. Smaller choices form
+    /// rotationally balanced rings around it, alternating the leading side.
+    public init(weights: [Double]) {
         var slots: [Slot] = []
-        let accessory = accessoryIndex.flatMap { weights.indices.contains($0) ? $0 : nil }
-        let primary = weights.indices.filter { $0 != accessory }
-        var offset = 0
-        var ring = 0
-        while offset < primary.count {
-            let capacity = 2 + ring * 6
-            let indices = Array(primary.dropFirst(offset).prefix(capacity))
-            let available = CGFloat.pi - (ring == 0 && accessory != nil ? Self.accessorySpan : 0)
-            let minimum = min(0.32, available / CGFloat(indices.count))
-            let flexible = max(0, available - minimum * CGFloat(indices.count))
-            let values = indices.map { weights[$0].isFinite ? min(8, max(0.1, weights[$0])) : 1 }
-            let total = values.reduce(0, +)
-            var end = CGFloat.pi
+        let values = weights.map { $0.isFinite ? min(8, max(0.1, $0)) : 1 }
+        let ranked = weights.indices.sorted {
+            values[$0] == values[$1] ? $0 < $1 : values[$0] > values[$1]
+        }
+        if let first = ranked.first {
+            slots.append(Slot(index: first, ring: 0, radius: Self.resultRadius, startAngle: 0, endAngle: .pi))
+        }
+        var offset = min(1, ranked.count)
+        var ring = 1
+        while offset < ranked.count {
+            let capacity = 1 + ring * 2
+            let indices = Array(ranked.dropFirst(offset).prefix(capacity))
+            let step = CGFloat.pi * 2 / CGFloat(indices.count)
+            let maximum = CGFloat.pi * 2 / CGFloat(capacity) * 0.9
+            let leadingAngle: CGFloat = ring.isMultiple(of: 2) ? .pi / 2 : .pi * 1.5
             for (position, index) in indices.enumerated() {
-                let span = minimum + flexible * CGFloat(values[position] / total)
-                let start = position == indices.count - 1 ? CGFloat.pi - available : end - span
+                let span = max(min(0.42, maximum), maximum * CGFloat(sqrt(values[index] / (values[ranked[0]]))))
+                let angle = (leadingAngle + CGFloat(position) * step).truncatingRemainder(dividingBy: .pi * 2)
                 slots.append(Slot(index: index, ring: ring,
                     radius: Self.resultRadius + CGFloat(ring) * Self.ringSpacing,
-                    startAngle: start, endAngle: end))
-                end = start
+                    startAngle: angle - span / 2, endAngle: angle + span / 2))
             }
             offset += indices.count
             ring += 1
         }
-        if let accessory {
-            slots.append(Slot(index: accessory, ring: 0, radius: Self.resultRadius,
-                              startAngle: 0, endAngle: Self.accessorySpan))
-        }
         self.slots = slots
-        ringCount = max(1, ring)
+        ringCount = (slots.last?.ring ?? 0) + 1
     }
 
     public func occupiedAngles(in ring: Int) -> ClosedRange<CGFloat>? {
         let row = slots.filter { $0.ring == ring }
+        if row.count > 1 { return 0...(.pi * 2) }
         guard let start = row.map(\.startAngle).min(), let end = row.map(\.endAngle).max() else { return nil }
         return start...end
     }
@@ -87,13 +86,16 @@ public struct LauncherRadialLayout: Sendable {
         let distance = hypot(point.x, point.y)
         guard distance >= (aiming ? 24 : Self.resultRadius - Self.resultThickness / 2) else { return nil }
         let angle = atan2(point.y, point.x)
-        guard angle >= 0, angle <= .pi else { return nil }
         let ring = aiming
             ? min(ringCount - 1, max(0, Int(((distance - Self.resultRadius) / Self.ringSpacing).rounded())))
             : Int(((distance - Self.resultRadius) / Self.ringSpacing).rounded())
         guard ring >= 0, ring < ringCount,
               aiming || abs(distance - (Self.resultRadius + CGFloat(ring) * Self.ringSpacing)) <= Self.resultThickness / 2 else { return nil }
-        return slots.first { $0.ring == ring && angle >= $0.startAngle && angle <= $0.endAngle }?.index
+        return slots.first { slot in
+            guard slot.ring == ring else { return false }
+            let relative = (angle - slot.startAngle + .pi * 4).truncatingRemainder(dividingBy: .pi * 2)
+            return relative <= slot.span + 0.0001
+        }?.index
     }
 
     public func neighbor(of index: Int, direction: Direction) -> Int? {
@@ -103,11 +105,17 @@ public struct LauncherRadialLayout: Sendable {
             let row = slots.filter { $0.ring == current.ring }
             guard let position = row.firstIndex(where: { $0.index == index }) else { return nil }
             let next = position + (direction == .left ? -1 : 1)
-            return row.indices.contains(next) ? row[next].index : index
+            return row[(next + row.count) % row.count].index
         case .up, .down:
             let ring = current.ring + (direction == .up ? -1 : 1)
-            return slots.filter { $0.ring == ring }.min {
-                abs($0.angle - current.angle) < abs($1.angle - current.angle)
+            let nextRow = slots.filter { $0.ring == ring }
+            if slots.filter({ $0.ring == current.ring }).count == 1 { return nextRow.first?.index ?? index }
+            func distance(_ angle: CGFloat) -> CGFloat {
+                let delta = abs(angle - current.angle).truncatingRemainder(dividingBy: .pi * 2)
+                return min(delta, .pi * 2 - delta)
+            }
+            return nextRow.min {
+                distance($0.angle) < distance($1.angle)
             }?.index ?? index
         }
     }

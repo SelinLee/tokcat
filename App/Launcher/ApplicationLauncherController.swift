@@ -73,6 +73,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var dictionaryWork: DispatchWorkItem?
     private var dictionaryGeneration = 0
     private var lastDictionaryInput: LauncherTranslationInput?
+    private var radialTranslationQuery: String?
     private var radialAnchor: CGPoint?
     private var radialAim = LauncherRadialAim()
     private let radialPointer = LauncherRadialPointer()
@@ -86,7 +87,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     var radialLayout: LauncherRadialLayout {
         let items = radialItems
-        return LauncherRadialLayout(weights: items.map(\.weight), accessoryIndex: items.firstIndex { $0.id == "web-search" })
+        return LauncherRadialLayout(weights: items.map(\.weight))
     }
 
     init(historyStore: LauncherHistoryStore = LauncherHistoryStore(),
@@ -150,12 +151,16 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
               let input = LauncherTranslationInput("tran+" + query), input.isDictionaryCandidate else { return nil }
         return input
     }
+    var radialTranslationIsRequested: Bool {
+        dictionaryInput != nil && radialTranslationQuery == query
+    }
     var showsDictionaryDefinition: Bool {
+        guard skin != .radial || radialTranslationIsRequested else { return false }
         guard let input = dictionaryInput, input == lastDictionaryInput else { return false }
         return dictionaryDefinition != nil && !prefersWebTranslation
     }
     var translationRequests: [LauncherWebRequest] {
-        guard let input = translationInput ?? (prefersWebTranslation ? dictionaryInput : nil),
+        guard let input = translationInput ?? ((prefersWebTranslation || radialTranslationIsRequested) ? dictionaryInput : nil),
               !isLookingUpDictionary, !showsDictionaryDefinition else { return [] }
         return translationSettings.rankedProviders(usage: usage).compactMap { $0.request(for: input.text) }
     }
@@ -433,8 +438,13 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     private func updateTranslation() {
         let input = dictionaryInput
+        if skin == .radial, !radialTranslationIsRequested {
+            clearDictionaryLookup()
+            return
+        }
         guard input != lastDictionaryInput else { return }
         clearDictionaryLookup()
+        if skin == .radial { radialTranslationQuery = query }
         lastDictionaryInput = input
         guard let input, input.isDictionaryCandidate else { return }
         isLookingUpDictionary = true
@@ -468,9 +478,18 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         dictionaryGeneration += 1
         lastDictionaryInput = nil
         dictionaryDefinition = nil
+        radialTranslationQuery = nil
         prefersWebTranslation = false
         isLookingUpDictionary = false
         hideRadialDefinitionPanel()
+    }
+
+    func revealDictionaryDefinition() {
+        guard dictionaryInput?.isDictionaryCandidate == true, !isLookingUpDictionary else { return }
+        radialTranslationQuery = query
+        updateTranslation()
+        selectedIndex = 0
+        resizePanel()
     }
 
     func showWebTranslations() {
@@ -823,6 +842,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
                 "readingScroll": dictionaryPanel?.previewScrollOffset ?? 0,
                 "readingTextLayout": dictionaryPanel?.previewTextLayout ?? [:],
                 "definition": dictionaryDefinition ?? "", "reading": radialIsReading,
+                "translationRequested": radialTranslationIsRequested,
                 "translationMode": isTranslationMode,
                 "itemIDs": radialItems.map(\.id), "itemTitles": radialItems.map(\.title),
                 "visible": panel?.isVisible == true, "following": radialIsFollowing,

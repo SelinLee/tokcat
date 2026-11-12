@@ -52,7 +52,7 @@ struct LauncherRadialView: View {
     private var inputArc: some View {
         ZStack(alignment: .topLeading) {
             let arc = RadialSector(center: layout.center, radius: LauncherRadialLayout.inputRadius,
-                                   thickness: LauncherRadialLayout.inputThickness, start: .pi * 1.10, end: .pi * 1.90)
+                                   thickness: LauncherRadialLayout.inputThickness, start: .pi, end: .pi * 2)
             arc.fill(style.accent.opacity(controller.radialIsAiming ? 0.12 : 0.05)).blur(radius: 7)
             LauncherSearchField(controller: controller, query: controller.query, cyberStyle: style, compact: true)
                 .frame(width: 166, height: 28)
@@ -78,7 +78,6 @@ struct LauncherRadialView: View {
                 .blur(radius: selected ? 7 : 9)
             // A broad arc remains one hit target even where its text is not drawn.
             sector.fill(Color.clear).contentShape(sector)
-                .onHover { if $0 { controller.selectRadialHover(slot.index) } }
                 .onTapGesture { controller.performRadialItem(at: slot.index) }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(item.title)，\(item.detail)")
@@ -93,14 +92,14 @@ struct LauncherRadialView: View {
                 }
             }
             .frame(width: item.id == "web-search" ? 14 : 18, height: item.id == "web-search" ? 14 : 18)
-            .rotationEffect(.radians(slot.angle - .pi / 2))
+            .rotationEffect(.radians(slot.angle + (slot.isUpperHalf ? .pi / 2 : -.pi / 2)))
             .position(x: layout.center.x + cos(slot.angle) * (slot.radius - 12),
                       y: layout.center.y + sin(slot.angle) * (slot.radius - 12))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             arcText(item.title, radius: slot.radius + 12, angle: slot.angle,
                     span: slot.endAngle - slot.startAngle - 0.09, size: item.id == "web-search" ? 11 : 13,
-                    color: selected ? style.primaryText : style.secondaryText)
+                    color: selected ? style.primaryText : style.secondaryText, upper: slot.isUpperHalf)
         }
     }
 
@@ -183,7 +182,7 @@ private struct RadialFogShape: Shape {
         var path = Path()
         path.addPath(RadialSector(center: layout.center, radius: LauncherRadialLayout.inputRadius,
                                  thickness: LauncherRadialLayout.inputThickness + 6,
-                                 start: .pi * 1.06, end: .pi * 1.94).path(in: rect))
+                                 start: .pi, end: .pi * 2).path(in: rect))
         if !layout.slots.isEmpty {
             for ring in 0..<layout.ringCount {
                 guard let angles = layout.occupiedAngles(in: ring) else { continue }
@@ -226,7 +225,10 @@ private struct LauncherRadialBlur: NSViewRepresentable {
     func updateNSView(_ effect: NSVisualEffectView, context: Context) {
         let name: NSAppearance.Name = style == .lightBackdrop ? .aqua : .darkAqua
         if effect.appearance?.name != name { effect.appearance = NSAppearance(named: name) }
-        if Self.masks[maskKey] == nil { Self.masks[maskKey] = makeMask() }
+        if Self.masks[maskKey] == nil {
+            if Self.masks.count >= 32 { Self.masks.removeAll() }
+            Self.masks[maskKey] = makeMask()
+        }
         if effect.maskImage !== Self.masks[maskKey] { effect.maskImage = Self.masks[maskKey] }
     }
 
@@ -257,9 +259,11 @@ private struct LauncherRadialBlur: NSViewRepresentable {
                         end: CGPoint(x: layout.center.x + normal.x * 8, y: layout.center.y + normal.y * 8),
                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
                 }
-                softenEdge(CGPoint(x: -sin(angles.lowerBound), y: cos(angles.lowerBound)))
-                if angles.upperBound - angles.lowerBound < .pi - 0.001 {
-                    softenEdge(CGPoint(x: sin(angles.upperBound), y: -cos(angles.upperBound)))
+                if angles.upperBound - angles.lowerBound < .pi * 2 - 0.001 {
+                    softenEdge(CGPoint(x: -sin(angles.lowerBound), y: cos(angles.lowerBound)))
+                    if angles.upperBound - angles.lowerBound < .pi - 0.001 {
+                        softenEdge(CGPoint(x: sin(angles.upperBound), y: -cos(angles.upperBound)))
+                    }
                 }
                 context.endTransparencyLayer()
                 context.setBlendMode(.normal)

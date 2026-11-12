@@ -5,7 +5,7 @@ struct LauncherRadialItem: Identifiable {
     enum Action {
         case application(LauncherApplication), web(LauncherWebRequest)
         case settings, terminal, command(LauncherCustomCommand), calculation
-        case definition, webTranslations
+        case translate, definition, webTranslations
     }
 
     let id: String
@@ -18,7 +18,10 @@ struct LauncherRadialItem: Identifiable {
 
 extension ApplicationLauncherController {
     var radialItems: [LauncherRadialItem] {
-        radialPrimaryItems + (radialSearchItem.map { [$0] } ?? [])
+        let items = radialPrimaryItems + (radialSearchItem.map { [$0] } ?? [])
+        return items.enumerated().sorted {
+            $0.element.weight == $1.element.weight ? $0.offset < $1.offset : $0.element.weight > $1.element.weight
+        }.map(\.element)
     }
 
     private var radialPrimaryItems: [LauncherRadialItem] {
@@ -27,12 +30,7 @@ extension ApplicationLauncherController {
             return [.init(id: "settings", title: "tokcat 设置", detail: "打开设置", symbol: "gearshape", action: .settings)]
         }
         if isTranslationMode || (prefersWebTranslation && dictionaryInput != nil) {
-            if showsDictionaryDefinition { return radialDictionaryItems }
-            return translationRequests.enumerated().map { rank, request in
-                .init(id: "translation:\(request.translationProviderID?.uuidString ?? request.url.absoluteString)",
-                      title: request.title, detail: "网页翻译", symbol: "character.bubble", action: .web(request),
-                      weight: learnedWeight(request.translationProviderID.map(LauncherUsageTarget.translation), rank: rank))
-            }
+            return radialTranslationItems
         }
         if isTerminalMode {
             guard terminalCommand?.isEmpty == false else { return [] }
@@ -52,7 +50,23 @@ extension ApplicationLauncherController {
         return results.enumerated().map { rank, app in
             .init(id: "app:\(app.id)", title: app.name, detail: "打开应用", symbol: "app", action: .application(app),
                   weight: learnedWeight(.application(app.id), rank: rank))
-        } + (showsDictionaryDefinition ? radialDictionaryItems : [])
+        } + radialTranslationItems
+    }
+
+    private var radialTranslationItems: [LauncherRadialItem] {
+        guard let input = dictionaryInput else { return [] }
+        if input.isDictionaryCandidate, !radialTranslationIsRequested {
+            return [.init(id: "translate", title: "翻译", detail: "查看 \(input.text) 的释义", symbol: "character.bubble", action: .translate, weight: 1.8)]
+        }
+        if isLookingUpDictionary {
+            return [.init(id: "translate", title: "查询中…", detail: input.text, symbol: "hourglass", action: .translate, weight: 1.8)]
+        }
+        if showsDictionaryDefinition { return radialDictionaryItems }
+        return translationRequests.enumerated().map { rank, request in
+            .init(id: "translation:\(request.translationProviderID?.uuidString ?? request.url.absoluteString)",
+                  title: request.title, detail: "网页翻译", symbol: "character.bubble", action: .web(request),
+                  weight: learnedWeight(request.translationProviderID.map(LauncherUsageTarget.translation), rank: rank))
+        }
     }
 
     private var radialDictionaryItems: [LauncherRadialItem] {
@@ -66,21 +80,10 @@ extension ApplicationLauncherController {
     }
 
     private var radialSearchItem: LauncherRadialItem? {
+        guard hasQuery else { return nil }
         let engine = defaultSearchEngine ?? LauncherWebShortcut.defaults[0]
         let content = (translationInput?.text ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
-        let request: LauncherWebRequest
-        if content.isEmpty {
-            guard let url = LauncherWebSearch.httpURL(engine.urlTemplate.replacingOccurrences(of: "{query}", with: ""), allowBareDomain: false),
-                  var home = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-            home.path = "/"
-            home.query = nil
-            home.fragment = nil
-            guard let url = home.url else { return nil }
-            request = LauncherWebRequest(url: url, title: engine.displayName, detail: "打开搜索主页")
-        } else {
-            guard let search = engine.request(for: content) else { return nil }
-            request = search
-        }
+        guard let request = engine.request(for: content) else { return nil }
         return .init(id: "web-search", title: "网页搜索", detail: engine.displayName,
                      symbol: "globe", action: .web(request), weight: 0.25)
     }
@@ -113,6 +116,7 @@ extension ApplicationLauncherController {
         case .terminal: executeTerminalCommand()
         case .command(let command): executeCustomCommand(command)
         case .calculation: copyCalculationResult()
+        case .translate: revealDictionaryDefinition()
         case .definition: copyDictionaryDefinition()
         case .webTranslations: showWebTranslations()
         }

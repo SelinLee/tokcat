@@ -85,12 +85,17 @@ enum LauncherRadialPreview {
         verifyNativeInput(controller)
         for dark in [false, true] {
             NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            for state in ["empty", "pair", "pressed", "aiming", "many", "outer-aiming", "calculator", "translation", "chinese", "long-input"] {
+            for state in ["empty", "pair", "pressed", "aiming", "many", "outer-aiming", "calculator", "translation", "word-option", "word-selected", "chinese", "long-input"] {
                 let query = state == "empty" ? "" : state == "calculator" ? "sqrt(9)+2^3"
-                    : state == "translation" ? "tran+How are you?" : state == "chinese" ? "计算器"
+                    : state == "translation" ? "tran+How are you?" : state.hasPrefix("word-") ? "apple" : state == "chinese" ? "计算器"
                     : state == "long-input" ? "输入很长的中文测试👩‍🚀与 English 12345678901234567890" : "app"
                 controller.configurePreview(applications: state == "many" || state == "outer-aiming" ? applications : Array(applications.prefix(2)),
                                             query: query, skin: .radial)
+                if state == "word-selected" {
+                    controller.revealDictionaryDefinition()
+                    let deadline = Date().addingTimeInterval(2)
+                    while controller.isLookingUpDictionary, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+                }
                 let host = NSHostingView(rootView: ApplicationLauncherView(controller: controller).environment(\.colorScheme, dark ? .dark : .light))
                 let window = NSWindow(contentRect: CGRect(origin: .zero, size: controller.panelSize),
                                       styleMask: .borderless, backing: .buffered, defer: false)
@@ -127,103 +132,110 @@ enum LauncherRadialPreview {
     }
 
     private static func verifyInteraction(_ controller: ApplicationLauncherController, opened: () -> [URL]) {
+        func settleLookup() {
+            let deadline = Date().addingTimeInterval(2)
+            while controller.isLookingUpDictionary, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+        }
+        func choose(_ id: String) {
+            guard let index = controller.radialItems.firstIndex(where: { $0.id == id }) else { preconditionFailure("Missing action: \(id)") }
+            controller.performRadialItem(at: index)
+        }
         controller.configurePreview(applications: applications, query: "app", skin: .radial)
-        precondition(controller.radialItems.count == 8 && controller.radialLayout.ringCount == 2)
-        precondition(controller.radialItems.last?.id == "web-search")
-        let firstSpan = controller.radialLayout.slots[0].endAngle - controller.radialLayout.slots[0].startAngle
-        let secondSpan = controller.radialLayout.slots[1].endAngle - controller.radialLayout.slots[1].startAngle
-        precondition(firstSpan > secondSpan, "Result rank must influence angular size")
-        precondition(controller.radialIsFollowing)
+        precondition(controller.radialItems.count == 9 && controller.radialLayout.ringCount == 3)
+        precondition(controller.radialLayout.slots[0].span == .pi)
+        precondition(controller.radialLayout.slots[1].isUpperHalf)
+        precondition(!controller.isLookingUpDictionary && !controller.showsDictionaryDefinition)
         controller.selectRadialHover(1)
-        precondition(controller.selectedIndex == 0, "Natural mouse motion must not change selection")
-        controller.navigateRadial(.right)
-        precondition(!controller.radialIsFollowing && controller.selectedIndex == 1)
+        precondition(controller.selectedIndex == 0, "Following motion must not change selection")
         controller.navigateRadial(.down)
-        precondition(controller.radialLayout.slots[controller.selectedIndex].ring == 1)
+        precondition(!controller.radialIsFollowing && controller.selectedIndex == 1)
+        controller.navigateRadial(.right)
+        precondition(controller.selectedIndex == 2)
         controller.selectRadialHover(5)
         precondition(controller.selectedIndex == 5)
         precondition(controller.beginRadialAim(capturePointer: false))
-        controller.moveRadialAim(dx: -50, dy: 50)
-        precondition(controller.radialAimIndex == 0)
+        let upper = controller.radialLayout.slots[1].center
+        controller.moveRadialAim(dx: upper.x, dy: upper.y)
+        precondition(controller.radialAimIndex == 1, "Upper outer arcs must be selectable")
         controller.finishRadialAim(commit: false)
-        precondition(!controller.radialIsAiming && !controller.radialIsFollowing && opened().isEmpty)
+        precondition(opened().isEmpty)
+
         controller.configurePreview(applications: [], query: "example.com", skin: .radial)
         precondition(controller.beginRadialAim(capturePointer: false))
         controller.finishRadialAim(commit: true)
         precondition(opened().isEmpty, "Command tap alone must not execute")
         precondition(controller.beginRadialAim(capturePointer: false))
-        controller.moveRadialAim(dx: 0, dy: 80)
+        controller.moveRadialAim(dx: 0, dy: LauncherRadialLayout.resultRadius)
         controller.configurePreview(applications: [], query: "bing another query", skin: .radial)
         controller.finishRadialAim(commit: true)
         precondition(opened().isEmpty, "Changed results must cancel pending selection")
         controller.configurePreview(applications: [], query: "example.com", skin: .radial)
         precondition(controller.beginRadialAim(capturePointer: false))
-        controller.moveRadialAim(dx: 0, dy: 80)
+        controller.moveRadialAim(dx: 0, dy: LauncherRadialLayout.resultRadius)
         controller.finishRadialAim(commit: true)
         controller.finishRadialAim(commit: true)
-        precondition(opened().count == 1 && opened().first?.host == "example.com", "Release executes exactly the pointed result once")
-        controller.configurePreview(applications: applications, query: "tran apple", skin: .radial)
-        let deadline = Date().addingTimeInterval(2)
-        while controller.isLookingUpDictionary, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        precondition(opened().count == 1 && opened().first?.host == "example.com")
+
+        for query in ["apple", "banana", "tran apple"] {
+            controller.configurePreview(applications: applications, query: query, skin: .radial)
+            precondition(!controller.isLookingUpDictionary && !controller.showsDictionaryDefinition,
+                         "Typing a word must offer translation without querying or revealing it")
+            precondition(controller.radialItems.contains { $0.id == "translate" })
+            if query == "apple" { precondition(!controller.results.isEmpty, "App matches must coexist with the translation option") }
+            choose("translate")
+            precondition(controller.radialTranslationIsRequested)
+            settleLookup()
+            let word = query == "tran apple" ? "apple" : query
+            precondition(controller.showsDictionaryDefinition && controller.dictionaryDefinition?.hasPrefix(word) == true)
+            controller.configurePreview(applications: applications, query: query, skin: .radial)
+            precondition(controller.showsDictionaryDefinition, "Refreshing matches must preserve a deliberately opened definition")
         }
-        precondition(controller.showsDictionaryDefinition && controller.results.isEmpty)
-        precondition(controller.radialItems.map(\.id) == ["definition", "web-translations", "web-search"])
-        controller.performRadialItem(at: 1)
+        choose("web-translations")
         precondition(controller.translationRequests.count == 2 && !controller.showsDictionaryDefinition)
         let beforeTranslation = opened().count
         controller.performRadialItem(at: 0)
         precondition(opened().count == beforeTranslation + 1 && opened().last?.host == "translate.google.com")
         controller.configurePreview(applications: applications, query: "tran+How are you?", skin: .radial)
         precondition(controller.radialItems.count == 3 && controller.results.isEmpty)
-        controller.navigateRadial(.right)
+        controller.navigateRadial(.down)
         controller.performRadialItem(at: controller.selectedIndex)
         precondition(opened().last?.host == "www.bing.com")
-        let directApplications = applications + [.init(url: URL(fileURLWithPath: "/Applications/Apple Notes.app"), name: "Apple Notes")]
-        for word in ["apple", "banana"] {
-            controller.configurePreview(applications: directApplications, query: word, skin: .radial)
-            precondition(!controller.showsDictionaryDefinition, "A new word must clear the previous definition immediately")
-            let deadline = Date().addingTimeInterval(2)
-            while controller.isLookingUpDictionary, Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-            }
-            precondition(controller.showsDictionaryDefinition && controller.dictionaryDefinition?.hasPrefix(word) == true)
-            precondition(!controller.isTranslationMode && controller.radialItems.last?.id == "web-search")
-            if word == "apple" {
-                precondition(!controller.results.isEmpty && controller.radialItems.contains { $0.id.hasPrefix("app:") },
-                             "Automatic lookup must coexist with application matches")
-            }
-        }
+
+        controller.configurePreview(applications: [], query: "apple", skin: .radial)
+        choose("translate")
+        controller.configurePreview(applications: [], query: "banana", skin: .radial)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        precondition(!controller.showsDictionaryDefinition && !controller.radialTranslationIsRequested && controller.dictionaryDefinition == nil,
+                     "An old lookup must not reveal translation for the new word")
+        controller.configurePreview(applications: [], query: "unknownword", skin: .radial)
+        choose("translate")
+        settleLookup()
+        precondition(!controller.showsDictionaryDefinition && controller.translationRequests.count == 2,
+                     "Missing local definitions must still offer web translation after selection")
         controller.dismiss()
-        precondition(controller.dictionaryDefinition == nil && !controller.showsDictionaryDefinition,
-                     "Closing the launcher must clear its dictionary state")
-        for query in ["", "sqrt(9)+2^3", "> pwd"] {
-            controller.configurePreview(applications: applications, query: query, skin: .radial)
-            precondition(!controller.showsDictionaryDefinition && controller.dictionaryDefinition == nil,
-                         "Reopening or entering a different mode must not revive an old definition")
-        }
+        precondition(controller.dictionaryDefinition == nil && !controller.radialTranslationIsRequested)
         for (query, id) in [("sqrt(9)+2^3", "calculation"), ("> pwd", "terminal"), ("setup", "settings"), ("example.com", "web")] {
             controller.configurePreview(applications: applications, query: query, skin: .radial)
-            precondition(controller.radialItems.first?.id == id && controller.results.isEmpty,
-                         "The wheel must preserve the existing \(id) route")
+            precondition(controller.radialItems.first?.id == id && controller.results.isEmpty)
+            precondition(controller.radialItems.contains { $0.id == "web-search" })
         }
-        controller.configurePreview(applications: [], query: "", skin: .radial)
-        precondition(controller.radialItems.map(\.id) == ["web-search"], "Search is available before typing")
-        let beforeSearch = opened().count
-        controller.performRadialItem(at: 0)
-        precondition(opened().count == beforeSearch + 1 && opened().last?.host == "www.baidu.com")
         controller.configurePreview(applications: [], query: "hello world", skin: .radial)
-        controller.performRadialItem(at: controller.radialItems.count - 1)
+        choose("web-search")
         precondition(URLComponents(url: opened().last!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "wd" }?.value == "hello world")
         controller.configurePreview(applications: [], query: "", skin: .radial)
-        precondition(controller.beginRadialAim(capturePointer: false), "Command activates optical effects before typing")
+        precondition(controller.radialItems.isEmpty && !controller.showsDictionaryDefinition,
+                     "Opening or clearing the launcher must leave only the input arc")
+        precondition(controller.beginRadialAim(capturePointer: false))
         precondition(controller.radialIsAiming && controller.radialAimIndex == nil)
         controller.dismiss()
         precondition(!controller.radialIsAiming)
-        // Start the render previews with ordinary following rather than keyboard lock.
-        controller.configurePreview(applications: [], query: "", skin: .classic)
+        controller.configurePreview(applications: [], query: "tran apple", skin: .classic)
+        settleLookup()
+        precondition(controller.showsDictionaryDefinition, "Classic explicit translation retains its existing behavior")
         controller.configurePreview(applications: [], query: "", skin: .radial)
-        print("Verified radial gestures, dictionary replacement/cleanup, web translation, calculator, terminal, settings and URL routes (web opens intercepted)")
+        print("Verified concentric upper/lower selection, translation on selection, stale lookup cancellation, search only after input, calculator/terminal/settings/URL routes and classic translation (web opens intercepted)")
     }
 
     private static func verifyNativeInput(_ controller: ApplicationLauncherController) {

@@ -2,103 +2,104 @@ import XCTest
 @testable import TokcatKit
 
 final class LauncherRadialTests: XCTestCase {
-    func testTwoResultsFillFirstArcAndAdditionalResultsExpandOutward() {
-        let pair = LauncherRadialLayout(count: 2)
-        XCTAssertEqual(pair.ringCount, 1)
-        XCTAssertEqual(pair.slots.count, 2)
-        XCTAssertEqual(pair.slots[0].endAngle, .pi, accuracy: 0.001)
-        XCTAssertEqual(pair.slots[1].startAngle, 0, accuracy: 0.001)
-        XCTAssertEqual(pair.slots[0].startAngle, pair.slots[1].endAngle, accuracy: 0.001)
-        XCTAssertLessThan(pair.slots[0].center.x, 0)
-        XCTAssertGreaterThan(pair.slots[1].center.x, 0)
-        let seven = LauncherRadialLayout(count: 7)
-        XCTAssertEqual(seven.slots.map(\.ring), [0, 0, 1, 1, 1, 1, 1])
-        XCTAssertEqual(seven.ringCount, 2)
-        XCTAssertGreaterThan(seven.diameter, pair.diameter)
-        XCTAssertLessThan(seven.size.height, seven.size.width)
+    func testHighestWeightCompletesTheInputCircle() {
+        let layout = LauncherRadialLayout(weights: [1, 4, 2, 0.25])
+        XCTAssertEqual(layout.slots.map(\.index), [1, 2, 0, 3])
+        let first = layout.slots[0]
+        XCTAssertEqual(first.ring, 0)
+        XCTAssertEqual(first.startAngle, 0)
+        XCTAssertEqual(first.endAngle, .pi)
+        XCTAssertEqual(first.radius, LauncherRadialLayout.inputRadius)
+        XCTAssertEqual(layout.topExtent, layout.bottomExtent)
+        XCTAssertEqual(layout.size.width, layout.size.height)
+        XCTAssertEqual(LauncherRadialLayout(count: 1).diameter, LauncherRadialLayout(count: 0).diameter)
     }
 
-    func testPointerHitTestingRespectsInputArcCenterAndGaps() {
-        let layout = LauncherRadialLayout(count: 7)
-        for slot in layout.slots { XCTAssertEqual(layout.hitTest(slot.center), slot.index) }
-        XCTAssertNil(layout.hitTest(.zero))
-        XCTAssertNil(layout.hitTest(LauncherRadialLayout.inputCenter))
-        let gap = LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing / 2
-        XCTAssertNil(layout.hitTest(CGPoint(x: 0, y: gap)))
-        XCTAssertNil(layout.hitTest(CGPoint(x: 900, y: 900)))
-        XCTAssertNil(LauncherRadialLayout(count: 0).hitTest(CGPoint(x: 0, y: 150)))
+    func testAdditionalChoicesFormBalancedFullCircleRings() {
+        let layout = LauncherRadialLayout(count: 9)
+        XCTAssertEqual(layout.slots.map(\.ring), [0, 1, 1, 1, 2, 2, 2, 2, 2])
+        XCTAssertEqual(layout.ringCount, 3)
+        XCTAssertTrue(layout.slots[1].isUpperHalf)
+        XCTAssertFalse(layout.slots[4].isUpperHalf)
+        for ring in 1..<layout.ringCount {
+            let row = layout.slots.filter { $0.ring == ring }
+            XCTAssertEqual(row.reduce(0) { $0 + cos($1.angle) }, 0, accuracy: 0.001)
+            XCTAssertEqual(row.reduce(0) { $0 + sin($1.angle) }, 0, accuracy: 0.001)
+            XCTAssertEqual(layout.occupiedAngles(in: ring)?.upperBound, .pi * 2)
+        }
+        let pair = LauncherRadialLayout(count: 3).slots.filter { $0.ring == 1 }
+        XCTAssertEqual(abs(pair[0].angle - pair[1].angle), .pi, accuracy: 0.001)
     }
 
-    func testDirectionalNavigationMovesAlongAndBetweenRings() {
-        let layout = LauncherRadialLayout(count: 11)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 1)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .left), 0)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .left), 0)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .up), 1)
-        let outer = layout.neighbor(of: 1, direction: .down)!
-        XCTAssertEqual(layout.slots[outer].ring, 1)
-        XCTAssertEqual(layout.neighbor(of: outer, direction: .down), 10)
-        XCTAssertEqual(layout.neighbor(of: 10, direction: .down), 10)
-        XCTAssertEqual(layout.neighbor(of: 999, direction: .down), 0)
-    }
-
-    func testWeightsResizeSectorsWhileSearchStaysSmallAndSelectable() {
-        let layout = LauncherRadialLayout(weights: [4, 1, 0.25], accessoryIndex: 2)
-        let first = layout.slots[0], second = layout.slots[1], search = layout.slots[2]
-        XCTAssertGreaterThan(first.endAngle - first.startAngle, second.endAngle - second.startAngle)
-        XCTAssertEqual(first.startAngle, second.endAngle, accuracy: 0.001)
-        XCTAssertEqual(second.startAngle, search.endAngle, accuracy: 0.001)
-        XCTAssertEqual(search.endAngle - search.startAngle, LauncherRadialLayout.accessorySpan, accuracy: 0.001)
+    func testWeightedArcsShrinkOutwardWithoutOverlapping() {
+        let layout = LauncherRadialLayout(weights: [4, 3, 2, 1.8, 1.5, 1, 0.8, 0.5, 0.25])
+        for (first, next) in zip(layout.slots, layout.slots.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(first.span + 0.001, next.span)
+            XCTAssertLessThanOrEqual(first.radius, next.radius)
+        }
+        XCTAssertLessThan(layout.slots.last!.span, layout.slots[1].span)
         for slot in layout.slots {
             XCTAssertEqual(layout.hitTest(slot.center), slot.index)
             XCTAssertEqual(layout.hitTest(slot.center, aiming: true), slot.index)
         }
+    }
+
+    func testHitTestingReachesUpperOuterChoicesAndRespectsInputAndGaps() {
+        let layout = LauncherRadialLayout(count: 9)
+        for slot in layout.slots { XCTAssertEqual(layout.hitTest(slot.center), slot.index) }
+        XCTAssertNil(layout.hitTest(.zero))
+        XCTAssertNil(layout.hitTest(LauncherRadialLayout.inputCenter, aiming: true))
+        let outer = LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing
+        XCTAssertEqual(layout.hitTest(CGPoint(x: 0, y: -outer)), 1)
+        XCTAssertNil(layout.hitTest(CGPoint(x: 0, y: outer)))
+        let gap = LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing / 2
+        XCTAssertNil(layout.hitTest(CGPoint(x: 0, y: gap)))
+        XCTAssertNil(layout.hitTest(CGPoint(x: 900, y: 900)))
+        XCTAssertNil(LauncherRadialLayout(count: 0).hitTest(CGPoint(x: 0, y: 76), aiming: true))
+    }
+
+    func testDirectionalNavigationCyclesRingsAndMovesBetweenLayers() {
+        let layout = LauncherRadialLayout(count: 9)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 0)
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 1)
         XCTAssertEqual(layout.neighbor(of: 1, direction: .right), 2)
-        XCTAssertEqual(layout.neighbor(of: 2, direction: .left), 1)
-        let searchOnly = LauncherRadialLayout(weights: [0.25], accessoryIndex: 0)
-        XCTAssertEqual(searchOnly.occupiedAngles(in: 0)?.upperBound, LauncherRadialLayout.accessorySpan)
-        XCTAssertNil(searchOnly.hitTest(CGPoint(x: -80, y: 80), aiming: true))
-        XCTAssertEqual(searchOnly.hitTest(searchOnly.slots[0].center), 0)
-        let many = LauncherRadialLayout(weights: Array(repeating: 1, count: 10), accessoryIndex: 9)
-        XCTAssertEqual(many.ringCount, 2, "Apps, dictionary actions and search should fit two compact arcs")
-        XCTAssertEqual(many.slots.last?.ring, 0)
+        XCTAssertEqual(layout.neighbor(of: 1, direction: .left), 3)
+        XCTAssertEqual(layout.neighbor(of: 3, direction: .right), 1)
+        XCTAssertEqual(layout.neighbor(of: 1, direction: .up), 0)
+        let outward = layout.neighbor(of: 1, direction: .down)!
+        XCTAssertEqual(layout.slots.first { $0.index == outward }?.ring, 2)
+        XCTAssertEqual(layout.neighbor(of: outward, direction: .down), outward)
+        XCTAssertEqual(layout.neighbor(of: 999, direction: .down), 0)
     }
 
-    func testInvalidAndExtremeWeightsKeepFiniteReadableSectors() {
-        let layout = LauncherRadialLayout(weights: [.nan, .infinity, -5, 0, 1e12, 0.001])
-        for slot in layout.slots {
-            XCTAssertTrue(slot.startAngle.isFinite && slot.endAngle.isFinite)
-            XCTAssertGreaterThanOrEqual(slot.endAngle - slot.startAngle, 0.319)
-            XCTAssertEqual(layout.hitTest(slot.center), slot.index)
-        }
-        XCTAssertTrue(LauncherRadialLayout(weights: [], accessoryIndex: 4).slots.isEmpty)
-    }
-
-    func testCommandTapAndCentreDeadzoneNeverCommit() {
-        let layout = LauncherRadialLayout(count: 2)
+    func testCommandTapDeadzoneAndInputNeverCommitButUpperArcsCan() {
+        let layout = LauncherRadialLayout(count: 7)
         var aim = LauncherRadialAim()
         aim.begin()
         XCTAssertNil(aim.end(in: layout))
         aim.begin(); aim.move(dx: 4, dy: 8, limit: 250)
         XCTAssertNil(aim.end(in: layout))
-        XCTAssertFalse(aim.isActive)
-    }
-
-    func testRaySelectsByAngleAndRadialDistanceAndCancelsForEditing() {
-        let layout = LauncherRadialLayout(count: 7)
-        var aim = LauncherRadialAim()
-        aim.begin(); aim.move(dx: -50, dy: 50, limit: 400)
-        XCTAssertEqual(aim.target(in: layout), 0)
+        aim.begin(); aim.move(dx: 0, dy: 76, limit: 400)
         XCTAssertEqual(aim.end(in: layout), 0)
         XCTAssertNil(aim.end(in: layout), "A release cannot commit twice")
-        aim.begin(); aim.move(dx: 0, dy: LauncherRadialLayout.resultRadius + LauncherRadialLayout.ringSpacing, limit: 400)
-        XCTAssertEqual(aim.target(in: layout), 4)
+        aim.begin(); aim.move(dx: 0, dy: -132, limit: 400)
+        XCTAssertEqual(aim.target(in: layout), 1)
         aim.cancel()
         XCTAssertNil(aim.end(in: layout))
-        aim.begin(); aim.move(dx: 0, dy: -100, limit: 400)
-        XCTAssertNil(aim.end(in: layout), "The input arc is not an action")
+        aim.begin(); aim.move(dx: 0, dy: -74, limit: 400)
+        XCTAssertNil(aim.end(in: layout))
         aim.begin(); aim.move(dx: 800, dy: 600, limit: 400)
         XCTAssertEqual(hypot(aim.vector.x, aim.vector.y), 400, accuracy: 0.01)
+    }
+
+    func testInvalidWeightsStillProduceFiniteReadableArcs() {
+        let layout = LauncherRadialLayout(weights: [.nan, .infinity, -5, 0, 1e12, 0.001])
+        for slot in layout.slots {
+            XCTAssertTrue(slot.startAngle.isFinite && slot.endAngle.isFinite)
+            XCTAssertGreaterThanOrEqual(slot.span, 0.419)
+            XCTAssertEqual(layout.hitTest(slot.center), slot.index)
+        }
+        XCTAssertTrue(LauncherRadialLayout(weights: []).slots.isEmpty)
     }
 
     func testRadialSkinPersistsWithoutChangingExistingSkins() throws {
