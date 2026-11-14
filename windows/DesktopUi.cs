@@ -9,6 +9,7 @@ using Microsoft.Win32;
 // Keep this source compatible with the Windows PowerShell 5.1 C# compiler.
 public static class TokcatUi
 {
+    public static Icon ApplicationIcon { get; set; }
     public static readonly bool Dark = IsDark();
     public static readonly Color Background = Palette("#17151C", "#F6F3EE", SystemColors.Window);
     public static readonly Color Surface = Palette("#25222D", "#FFFFFF", SystemColors.Window);
@@ -49,6 +50,7 @@ public static class TokcatUi
 
     public static void StyleWindow(Form form)
     {
+        if (ApplicationIcon != null) form.Icon = ApplicationIcon;
         form.AutoScaleDimensions = new SizeF(96, 96);
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.BackColor = Background; form.ForeColor = Text;
@@ -211,6 +213,7 @@ public sealed class TokcatMainWindow : Form
     public readonly Button LauncherButton = TokcatUi.Button("快速启动", "launcher", false);
     public readonly Button LauncherSettingsButton = TokcatUi.Button("启动器设置", "settings", false);
     public readonly Label LauncherStatus = TokcatUi.Label("快速启动", 9, TokcatUi.Secondary);
+    public readonly Panel LauncherSettingsHost = new Panel { Dock = DockStyle.Fill, Visible = false };
     public readonly Button StripButton = TokcatUi.Button("隐藏任务栏", "taskbar", false);
     public readonly Button QuitButton = TokcatUi.Button("退出 tokcat", "exit", false);
     public readonly Button RefreshButton = TokcatUi.Button("立即刷新", "refresh", false);
@@ -255,7 +258,7 @@ public sealed class TokcatMainWindow : Form
         header.Resize += delegate { RefreshButton.Left = header.ClientSize.Width - RefreshButton.Width; };
         Note.Dock = DockStyle.Bottom; Note.Height = 52; Note.Padding = new Padding(0, 8, 0, 0);
         tasks.Dock = DockStyle.Fill; settings.Dock = DockStyle.Fill; settings.Visible = false;
-        content.Controls.Add(tasks); content.Controls.Add(settings); content.Controls.Add(Note); content.Controls.Add(header);
+        content.Controls.Add(tasks); content.Controls.Add(settings); content.Controls.Add(LauncherSettingsHost); content.Controls.Add(Note); content.Controls.Add(header);
         Controls.Add(content); Controls.Add(rail);
 
         TableLayoutPanel cards = new TableLayoutPanel { Dock = DockStyle.Top, Height = 80, ColumnCount = 4, RowCount = 1 };
@@ -299,6 +302,8 @@ public sealed class TokcatMainWindow : Form
         BuildSettings(); SetSelection(null, null, null);
         taskNav.Click += delegate { ShowSettings(false); };
         settingsNav.Click += delegate { ShowSettings(true); };
+        LauncherButton.Click += delegate { ShowLauncherSettings(); };
+        LauncherSettingsButton.Click += delegate { ShowLauncherSettings(); };
         KeyDown += delegate(object sender, KeyEventArgs e) {
             if (e.Control && e.KeyCode == Keys.F) { ShowSettings(false); Search.Focus(); e.SuppressKeyPress = true; }
             if (e.KeyCode == Keys.F5) { RefreshButton.PerformClick(); e.SuppressKeyPress = true; }
@@ -330,6 +335,7 @@ public sealed class TokcatMainWindow : Form
 
     public void ShowSettings(bool visible)
     {
+        LauncherSettingsHost.Visible = false; Note.Visible = true; RefreshButton.Visible = true;
         tasks.Visible = !visible; settings.Visible = visible;
         title.Text = visible ? "设置" : "任务总览";
         subtitle.Text = visible ? "SETTINGS  /  任务栏、指标与通知" : "TASKS  /  本地 Agent 的最近 7 天";
@@ -337,6 +343,17 @@ public sealed class TokcatMainWindow : Form
         settingsNav.BackColor = visible ? TokcatUi.Selection : TokcatUi.Surface;
         taskNav.ForeColor = visible ? TokcatUi.Text : TokcatUi.Accent;
         settingsNav.ForeColor = visible ? TokcatUi.Accent : TokcatUi.Text;
+        LauncherButton.BackColor = TokcatUi.Surface; LauncherButton.ForeColor = TokcatUi.Text;
+    }
+
+    public void ShowLauncherSettings()
+    {
+        tasks.Visible = false; settings.Visible = false; LauncherSettingsHost.Visible = true;
+        title.Text = "快速启动"; subtitle.Text = "预览与设置  /  调整皮肤、快捷键、命令与翻译";
+        Note.Visible = false; RefreshButton.Visible = false;
+        taskNav.BackColor = settingsNav.BackColor = TokcatUi.Surface;
+        taskNav.ForeColor = settingsNav.ForeColor = TokcatUi.Text;
+        LauncherButton.BackColor = TokcatUi.Selection; LauncherButton.ForeColor = TokcatUi.Accent;
     }
 
     public void SetTotals(int running, int waiting, int completed, int problems)

@@ -4,6 +4,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 . (Join-Path $PSScriptRoot 'Load-TaskbarWidget.ps1')
 Add-Type -Path (Join-Path $PSScriptRoot 'DesktopUi.cs') -ReferencedAssemblies @([Windows.Forms.Form].Assembly.Location, [Drawing.Color].Assembly.Location)
+. (Join-Path $PSScriptRoot 'Load-Launcher.ps1')
 [Windows.Forms.Application]::EnableVisualStyles()
 $window = New-Object TokcatMainWindow
 try {
@@ -24,6 +25,9 @@ try {
     $window.Quota.Text = 'Codex 本地额度：5h 82% · 周 65%'
     $window.Note.Text = "CPU 12% · GPU — · 内存 48% · 网络 ↓ 842 KiB/s ↑ 24 KiB/s`n预览使用示例任务，不读取任何本地 Agent 记录。"
     $window.Taskbar.Checked = $true
+    $launcherPalette=[Drawing.Color[]]@([TokcatUi]::Background,[TokcatUi]::Surface,[TokcatUi]::Text,[TokcatUi]::Secondary,[TokcatUi]::Selection)
+    $launcherPage=[TokcatLauncherSettingsPage]::new($launcherPalette,[Func[TokcatLauncherSettings]]{ return [TokcatLauncherSettings]::new() })
+    $window.LauncherSettingsHost.Controls.Add($launcherPage)
     [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
     $window.Show(); [Windows.Forms.Application]::DoEvents()
     foreach ($page in @('tasks','settings')) {
@@ -34,6 +38,18 @@ try {
             $path = Join-Path $OutputDirectory ($page + '.png')
             $bitmap.Save($path, [Drawing.Imaging.ImageFormat]::Png)
             Write-Output $path
+        } finally { $bitmap.Dispose() }
+    }
+    $window.ShowLauncherSettings()
+    foreach($skin in @('classic','cyber','radial')) {
+        $skinControl=$launcherPage.Editor.GetType().GetField('skin',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($launcherPage.Editor)
+        $skinControl.SelectedIndex=if($skin -eq 'radial'){2}elseif($skin -eq 'cyber'){1}else{0}
+        [Windows.Forms.Application]::DoEvents()
+        $bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height)
+        try {
+            $window.DrawToBitmap($bitmap,[Drawing.Rectangle]::new([Drawing.Point]::Empty,$bitmap.Size))
+            $path=Join-Path $OutputDirectory ('launcher-settings-'+$skin+'.png')
+            $bitmap.Save($path,[Drawing.Imaging.ImageFormat]::Png); Write-Output $path
         } finally { $bitmap.Dispose() }
     }
 } finally { $window.Close(); $window.Dispose() }

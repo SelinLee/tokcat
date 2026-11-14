@@ -13,8 +13,8 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 | | macOS 13 or later | Windows 10 / 11 preview |
 |---|---|---|
 | Task monitor | Click the menu-bar dots to open your tasks, or keep toki or biti at the edge of your desktop | Click the taskbar dots to open task details, or use the notification-area icon |
-| Quick launcher | **Control + Space** opens the launcher to search apps and run Terminal commands | **Alt + Space** opens the launcher, with optional local file search through Everything |
-| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Windows builds](https://github.com/SelinLee/tokcat/actions/workflows/windows-monitor.yml?query=branch%3Amain) · [Windows guide](windows/README.md) |
+| Quick launcher | **Control + Space** opens the launcher to search apps and run Terminal commands | **Alt + Space** opens the launcher, with an optional Cyber Wheel layout and local file search through Everything |
+| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Download main branch ZIP](https://github.com/SelinLee/tokcat/archive/refs/heads/main.zip) · [Windows installation](#install-for-windows) |
 
 ## Quick launcher
 
@@ -28,7 +28,7 @@ On either platform, find an app by name, pinyin or initials. Try `sqrt(9)+2^3` a
   </a>
 </p>
 
-**Windows** · The launcher on the main branch supports apps, files, calculations, websites and PowerShell commands. To try the new wheel, download the [Cyber Wheel development source](https://github.com/SelinLee/tokcat/archive/refs/heads/codex/sync-mac-launcher-windows.zip), extract it and double-click `windows/Tokcat.cmd`. Under **Quick launcher → General**, choose Classic, Cyber Floating or Cyber Wheel. The wheel matches apps as you compose Chinese text and displays up to three rings. [Development build guide](https://github.com/SelinLee/tokcat/blob/codex/sync-mac-launcher-windows/windows/README.md)
+**Windows** · Select **Cyber Wheel** under **Quick launcher → General**, save your choice and press **Alt + Space**. The wheel matches apps as you type pinyin, before you choose a Chinese character. As you type or backspace, results move into place across up to three rings. Classic and Cyber Floating are also available in the same settings. [Windows launcher guide](windows/README.md#quick-launcher)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="windows/docs/ui-dark.png" />

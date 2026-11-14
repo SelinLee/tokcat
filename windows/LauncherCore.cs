@@ -73,6 +73,12 @@ public sealed class TokcatLauncherSettings
     public int Key { get; set; }
     public int? X { get; set; }
     public int? Y { get; set; }
+    public string Skin { get; set; }
+    public bool AutoTextColor { get; set; }
+    public string PreferredSearchKeyword { get; set; }
+    public string DefaultTranslationId { get; set; }
+    public string DictionaryPath { get; set; }
+    public List<TokcatLauncherTranslationProvider> Translations { get; set; }
     public List<TokcatLauncherShortcut> Commands { get; set; }
     public List<TokcatLauncherShortcut> Websites { get; set; }
     public List<TokcatLauncherHistory> History { get; set; }
@@ -84,6 +90,9 @@ public sealed class TokcatLauncherSettings
         Enabled = true;
         Modifiers = 1;
         Key = 32;
+        Skin = "classic";
+        Translations = TokcatLauncherTranslationProvider.Defaults();
+        DefaultTranslationId = Translations[0].Id;
         Commands = new List<TokcatLauncherShortcut>();
         Websites = new List<TokcatLauncherShortcut>
         {
@@ -108,7 +117,12 @@ public sealed class TokcatLauncherSettings
             throw new InvalidDataException("快捷键需要包含 Ctrl 或 Alt，以及一个普通按键。");
         if (Commands == null || Websites == null || History == null || Commands.Count + Websites.Count > 200)
             throw new InvalidDataException("启动器设置内容无效。");
-        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "setup" };
+        if (Skin != "classic" && Skin != "cyber" && Skin != "radial") throw new InvalidDataException("请选择有效的启动器皮肤。");
+        if (Translations == null || Translations.Count > 100 || Translations.Any(p => p == null) ||
+            Translations.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != Translations.Count)
+            throw new InvalidDataException("翻译方式配置无效或重复。");
+        foreach (var provider in Translations) provider.Validate();
+        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "setup", "tran" };
         foreach (var entry in Commands.Concat(Websites))
         {
             if (entry == null || !Regex.IsMatch(entry.Keyword ?? "", @"^[\p{L}\p{N}_-]{1,40}$") ||
@@ -125,7 +139,27 @@ public sealed class TokcatLauncherSettings
         Usage = Usage.Where(u => u != null && !string.IsNullOrWhiteSpace(u.Key) && u.Count > 0)
             .GroupBy(u => u.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g => new TokcatLauncherUsage { Key = g.Key, Count = (int)Math.Min(1000000L, g.Sum(u => (long)u.Count)), LastUsed = g.Max(u => u.LastUsed) })
-            .OrderByDescending(u => u.LastUsed).Take(200).ToList();
+            .OrderByDescending(u => u.LastUsed).Take(2000).ToList();
+    }
+
+    [ScriptIgnore]
+    public TokcatLauncherShortcut DefaultSearch
+    {
+        get
+        {
+            var engines = Websites.Where(w => w.Enabled && w.Value.Contains("{query}") &&
+                TokcatLauncherResolver.HttpUrl(w.Value.Replace("{query}", "test"), false) != null).ToArray();
+            return engines.FirstOrDefault(w => string.Equals(w.Keyword, PreferredSearchKeyword, StringComparison.OrdinalIgnoreCase)) ??
+                engines.FirstOrDefault(w => string.Equals(w.Keyword, "baidu", StringComparison.OrdinalIgnoreCase)) ?? engines.FirstOrDefault();
+        }
+    }
+
+    public TokcatLauncherTranslationProvider[] RankedTranslations()
+    {
+        var available = Translations.Where(p => p.Enabled).ToArray();
+        var preferred = available.FirstOrDefault(p => p.Id == DefaultTranslationId) ?? available.FirstOrDefault();
+        return available.OrderByDescending(p => p == preferred).ThenByDescending(p => Usage.Where(u => u.Key == "translation:" + p.Id).Select(u => u.Count).FirstOrDefault())
+            .ThenByDescending(p => Usage.Where(u => u.Key == "translation:" + p.Id).Select(u => u.LastUsed).FirstOrDefault()).ToArray();
     }
 
     static JavaScriptSerializer Serializer()
@@ -395,7 +429,16 @@ public sealed class TokcatLauncherIndex
     sealed class Entry
     {
         public TokcatLauncherApp App;
-        public string[] Terms;
+        public SearchTerm[] Terms;
+    }
+    sealed class SearchTerm
+    {
+        public string Compact, Initials;
+        public SearchTerm(string normalized)
+        {
+            Compact = normalized.Replace(" ", "");
+            Initials = string.Concat(normalized.Split(' ').Where(word => word.Length != 0).Select(word => word[0]));
+        }
     }
     readonly Entry[] entries;
     public TokcatLauncherIndex(IEnumerable<TokcatLauncherApp> apps)
@@ -404,7 +447,7 @@ public sealed class TokcatLauncherIndex
         {
             App = app,
             Terms = new[] { Normalize(app.Name), Normalize(Latin(app.Name)), Normalize(app.Alias),
-                Normalize(app.TargetAlias) }.Distinct().ToArray()
+                Normalize(app.TargetAlias) }.Distinct().Select(term => new SearchTerm(term)).ToArray()
         }).ToArray();
     }
     public int Count { get { return entries.Length; } }
@@ -416,7 +459,11 @@ public sealed class TokcatLauncherIndex
     {
         string query = Normalize(text).Replace(" ", "");
         if (query.Length == 0) return new TokcatLauncherMatch[0];
-        return entries.Select(e => new { Entry = e, Score = e.Terms.Min(t => Score(t, query)) })
+        // A partially committed IME query can mix Chinese and pinyin (网yi).
+        // Keep literal matches first, then try its phonetic form once per query.
+        string phonetic = text.Any(c => c > 127) && text.Any(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+            ? Normalize(Latin(text)).Replace(" ", "") : query;
+        return entries.Select(e => new { Entry = e, Score = e.Terms.Min(t => Math.Min(Score(t, query), phonetic == query ? 100 : Score(t, phonetic) + 1)) })
             .Where(e => e.Score < 100).OrderBy(e => e.Score).ThenBy(e => e.Entry.App.Name, StringComparer.CurrentCultureIgnoreCase)
             .Take(Math.Max(0, Math.Min(limit, 200))).Select(e => new TokcatLauncherMatch { Application = e.Entry.App, Score = e.Score }).ToArray();
     }
@@ -424,13 +471,13 @@ public sealed class TokcatLauncherIndex
     {
         return Regex.Replace((text ?? "").Normalize(NormalizationForm.FormKD).ToLowerInvariant(), @"[^\p{L}\p{N}]+", " ").Trim();
     }
-    static int Score(string term, string query)
+    static int Score(SearchTerm term, string query)
     {
-        string compact = term.Replace(" ", "");
+        string compact = term.Compact;
         if (compact == query) return 0;
         if (compact.StartsWith(query, StringComparison.Ordinal)) return 10;
         if (compact.Contains(query)) return 30;
-        if (query.Length >= 2 && string.Concat(term.Split(' ').Where(p => p.Length > 0).Select(p => p[0])) == query) return 40;
+        if (query.Length >= 2 && term.Initials == query) return 40;
         if (query.Length >= 2)
         {
             int cursor = 0;

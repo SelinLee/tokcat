@@ -5,6 +5,22 @@
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Load-Launcher.ps1')
 function Assert-Launcher($Condition,[string]$Message) { if (-not $Condition) { throw $Message } }
+function Assert-LauncherBackdrop($Window,$Editor,[string]$Description) {
+    $actual=[Drawing.Bitmap]::new($Editor.ClientSize.Width,$Editor.ClientSize.Height)
+    $expected=[Drawing.Bitmap]::new($Editor.ClientSize.Width,$Editor.ClientSize.Height)
+    $graphics=[Drawing.Graphics]::FromImage($expected)
+    try {
+        $Editor.DrawToBitmap($actual,[Drawing.Rectangle]::new([Drawing.Point]::Empty,$actual.Size))
+        $origin=$Window.PointToClient($Editor.PointToScreen([Drawing.Point]::Empty))
+        $Window.Appearance.Paint($graphics,[Drawing.Rectangle]::new([Drawing.Point]::Empty,$expected.Size),$origin)
+        foreach($fraction in @(0.65,0.8,0.95)) {
+            foreach($y in @(2,($actual.Height-3))) {
+                $x=[int]($fraction*($actual.Width-1))
+                Assert-Launcher ($actual.GetPixel($x,$y).ToArgb() -eq $expected.GetPixel($x,$y).ToArgb()) ($Description+' must paint the continuous launcher background.')
+            }
+        }
+    } finally { $graphics.Dispose();$expected.Dispose();$actual.Dispose() }
+}
 function Wait-LauncherIcon($Icons,$App,$Graphics) {
     $deadline=[datetimeoffset]::UtcNow.AddSeconds(8)
     do {
@@ -109,6 +125,151 @@ try {
     [IO.File]::WriteAllText($legacyPath,'{"Version":1,"History":[{"Text":"editor","Application":{"Name":"Beta Editor","Target":"beta.exe"}}]}')
     $legacy=[TokcatLauncherSettings]::Load($legacyPath)
     Assert-Launcher ($legacy.History.Count -eq 1 -and $legacy.Usage[0].Count -eq 1 -and [TokcatLauncherRanking]::History($legacy)[0].Kind -eq 'application') 'Older history is migrated into usage statistics.'
+
+    foreach($query in @('tran+hello','TRAN hello','  tran + hello  ',"tran`thello")) {
+        Assert-Launcher ([TokcatLauncherTranslationInput]::Parse($query).Text -eq 'hello') ('Translation prefix '+$query)
+    }
+    foreach($query in @('transport','translate hello','transaction','> tran+hello','google tran hello')) {
+        Assert-Launcher ($null -eq [TokcatLauncherTranslationInput]::Parse($query)) ('Translation must not capture other input '+$query)
+    }
+    foreach($text in @('hello','café',"don't",'mother-in-law','你好')) {
+        Assert-Launcher ([TokcatLauncherTranslationInput]::Parse('tran+'+$text).IsDictionaryCandidate) ('Dictionary candidate '+$text)
+    }
+    foreach($text in @('','hello world','1234','C++','你好。',('a'*129))) {
+        Assert-Launcher (-not [TokcatLauncherTranslationInput]::Parse('tran+'+$text).IsDictionaryCandidate) ('Not a word '+$text)
+    }
+    $translationSettings=[TokcatLauncherSettings]::new()
+    $translationSettings.Translations.Add([TokcatLauncherTranslationProvider]@{Name='Custom';UrlTemplate='https://example.com/#auto/zh/{query}'})
+    $text="中文 &text=evil # /? + C++ %`nsecond line"
+    $request=$translationSettings.Translations[0].Request($text)
+    Assert-Launcher ($request.Value.Contains('text='+[Uri]::EscapeDataString($text)) -and -not ([Uri]$request.Value).Fragment) 'Translation encodes the entire text without injecting parameters or fragments.'
+    foreach($template in @('https://example.com','file:///tmp/{query}','javascript:{query}','https://user:password@example.com/?q={query}','https://{query}.example.com/')) {
+        $invalid=[TokcatLauncherTranslationProvider]@{Name='Test';UrlTemplate=$template}; $rejected=$false
+        try { $invalid.Validate() } catch { $rejected=$true }
+        Assert-Launcher $rejected ('Reject invalid translation template '+$template)
+    }
+    $alternative=$translationSettings.Translations[2]
+    foreach($n in 1..12) { $translationSettings.Remember('tran hello',$null,'translation',$alternative.UrlTemplate,('translation:'+$alternative.Id)) }
+    $providers=$translationSettings.RankedTranslations()
+    Assert-Launcher ($providers[0].Name -eq 'Google 翻译' -and $providers[1].Name -eq 'Custom') 'The default remains first while frequent alternatives move up.'
+    $translationSettings.DefaultTranslationId=$alternative.Id
+    Assert-Launcher ($translationSettings.RankedTranslations()[0].Name -eq 'Custom') 'An explicitly chosen translation becomes the Return action.'
+    $alternative.Enabled=$false
+    Assert-Launcher ($translationSettings.RankedTranslations()[0].Name -eq 'Google 翻译') 'A disabled default falls back to an enabled translation.'
+    $translationSettings.PreferredSearchKeyword='bing'
+    $ranked=[TokcatLauncherRanking]::Build('unmatched fixture',$translationSettings,$emptyMatches,$emptyFiles,$true,$null)
+    Assert-Launcher ($ranked[0].Value.StartsWith('https://www.bing.com/')) 'The configured fallback search engine is used.'
+    $translationSettings.Websites[2].Enabled=$false
+    Assert-Launcher ($translationSettings.DefaultSearch.Keyword -eq 'baidu') 'A disabled search engine falls back to Baidu.'
+    $translationSettings.Websites.Clear()
+    Assert-Launcher ([TokcatLauncherRanking]::Build('unmatched fixture',$translationSettings,$emptyMatches,$emptyFiles,$true,$null).Count -eq 0) 'No search is invented when all engines are removed.'
+    $ranked=[TokcatLauncherRanking]::Build('tran hello',$translationSettings,$index.SearchMatches('chrome',200),$files,$true,$null)
+    Assert-Launcher ($ranked.Count -eq 2 -and @($ranked | Where-Object Kind -ne 'translation').Count -eq 0) 'Translation mode excludes unrelated apps and files.'
+    $reserved=[TokcatLauncherSettings]::new()
+    $reserved.Commands.Add([TokcatLauncherShortcut]@{Keyword='TRAN';Value='Get-Date';Enabled=$true})
+    $rejected=$false; try { $reserved.Validate() } catch { $rejected=$true }
+    Assert-Launcher $rejected 'The tran keyword is reserved.'
+    $exactApps=[TokcatLauncherApp[]]@([TokcatLauncherApp]@{Name='Editor';Target='exact.exe'},[TokcatLauncherApp]@{Name='Editor Pro';Target='popular.exe'})
+    $exactIndex=[TokcatLauncherIndex]::new($exactApps); $exactSettings=[TokcatLauncherSettings]::new()
+    foreach($n in 1..300) { $exactSettings.Remember('editor',$exactApps[1]) }
+    Assert-Launcher ([TokcatLauncherRanking]::Build('editor',$exactSettings,$exactIndex.SearchMatches('editor',200),$emptyFiles,$true,$null)[0].App.Target -eq 'exact.exe') 'An exact name always ranks ahead of a popular prefix match.'
+    $dictionaryPath=Join-Path $testRoot 'dictionary.json'
+    [IO.File]::WriteAllText($dictionaryPath,'{"hello":"你好；问候。","café":"咖啡馆。"}',[Text.Encoding]::UTF8)
+    $dictionary=[TokcatLauncherDictionary]::new()
+    Assert-Launcher ($dictionary.Lookup($dictionaryPath,'HELLO') -eq '你好；问候。') 'Local dictionary lookup is case insensitive.'
+    Assert-Launcher ($null -eq $dictionary.Lookup($dictionaryPath,'hello world') -and $null -eq $dictionary.Lookup($dictionaryPath,'helloworld')) 'Dictionary lookup never returns only a prefix definition.'
+    [IO.File]::WriteAllText($dictionaryPath,'{"hello":"updated definition"}',[Text.Encoding]::UTF8)
+    Assert-Launcher ($dictionary.Lookup($dictionaryPath,'hello') -eq 'updated definition') 'Dictionary changes invalidate the cache.'
+    $enhancedPath=Join-Path $testRoot 'enhanced.json'
+    $enhancedSettings=[TokcatLauncherSettings]::new(); $enhancedSettings.Skin='cyber'; $enhancedSettings.AutoTextColor=$true
+    $enhancedSettings.DictionaryPath=$dictionaryPath; $enhancedSettings.PreferredSearchKeyword='bing'
+    $enhancedSettings.DefaultTranslationId=$enhancedSettings.Translations[1].Id; $enhancedSettings.Save($enhancedPath)
+    $savedEnhanced=[TokcatLauncherSettings]::Load($enhancedPath)
+    Assert-Launcher ($savedEnhanced.Skin -eq 'cyber' -and $savedEnhanced.AutoTextColor -and $savedEnhanced.DefaultSearch.Keyword -eq 'bing' -and $savedEnhanced.RankedTranslations()[0].Name -eq 'Bing 翻译') 'Skin, automatic colors, search and translation defaults survive restart.'
+    $enhanced=[TokcatLauncherController]::new($enhancedPath,$palette,$false)
+    try {
+        $enhanced.Show(); $queryControl=$enhanced.Window.Query
+        $enhanced.Window.Query.Text='tran hello'
+        $deadline=[datetimeoffset]::UtcNow.AddSeconds(4)
+        while (-not $enhanced.Window.DictionaryDefinition -and [datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
+        Assert-Launcher ($enhanced.Window.DictionaryDefinition -eq 'updated definition') 'Debounced dictionary lookup appears in the real window.'
+        $enhanced.ShowWebTranslations()
+        Assert-Launcher ($null -eq $enhanced.Window.DictionaryDefinition -and $enhanced.Window.Results.Items[0].Title -eq 'Bing 翻译') 'The definition can switch to the configured web translations.'
+        $enhanced.Window.Query.Text='tran café'; $enhanced.Window.Query.Text='sqrt(9)+2^3'
+        $deadline=[datetimeoffset]::UtcNow.AddMilliseconds(350)
+        while ([datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 10 }
+        Assert-Launcher ($enhanced.Window.Results.Items[0].Kind -eq 'calculation' -and -not $enhanced.Window.DictionaryDefinition) 'A stale dictionary response cannot replace a newer calculation.'
+        $anchor=$enhanced.Window.Location
+        $enhanced.Window.Appearance.Configure('classic',$false)
+        Assert-Launcher ($enhanced.Window.Query -eq $queryControl -and $enhanced.Window.Query.Text -eq 'sqrt(9)+2^3' -and $enhanced.Window.Location -eq $anchor) 'Changing skins preserves the native input, current query and position.'
+        $enhanced.Window.Appearance.Configure('cyber',$true)
+        $enhanced.Window.Appearance.UpdateBrightness(0.8)
+        Assert-Launcher $enhanced.Window.Appearance.IsLight 'Bright backgrounds use dark text.'
+        $enhanced.Window.Appearance.UpdateBrightness(0.18)
+        Assert-Launcher $enhanced.Window.Appearance.IsLight 'Brightness hysteresis avoids flicker.'
+        $enhanced.Window.Appearance.UpdateBrightness(0.05)
+        Assert-Launcher (-not $enhanced.Window.Appearance.IsLight) 'Dark backgrounds use light text.'
+        $inputPanel=$enhanced.Window.Query.Parent
+        Assert-Launcher ([Math]::Abs(($inputPanel.Height-$queryControl.Height)/2-$queryControl.Top) -le 1) 'Native text and placeholder are vertically centered.'
+    } finally { $enhanced.Dispose() }
+    $settingsCopy=$savedEnhanced.Copy()
+    $settingsDialog=[TokcatLauncherSettingsWindow]::new($settingsCopy,$palette)
+    try {
+        $settingsDialog.Show(); [Windows.Forms.Application]::DoEvents()
+        $grid=$settingsDialog.GetType().GetField('translations',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($settingsDialog)
+        $grid.Rows[0].Cells[0].Value=$true
+        $grid.Rows[0].Cells[2].Value='Edited Google'
+        $read=$settingsDialog.GetType().GetMethod('ReadTranslations',[Reflection.BindingFlags]'Instance,NonPublic')
+        $settingsCopy.Translations=$read.Invoke($settingsDialog,$null)
+        $settingsCopy.Validate()
+        Assert-Launcher ($settingsCopy.DefaultTranslationId -eq $savedEnhanced.Translations[0].Id -and $settingsCopy.Translations[0].Id -eq $savedEnhanced.Translations[0].Id -and $settingsCopy.Translations[0].Name -eq 'Edited Google') 'Editing a translation and changing its default retain the stable usage identity.'
+        Assert-Launcher ($savedEnhanced.Translations[0].Name -eq 'Google 翻译' -and $savedEnhanced.DefaultTranslationId -eq $savedEnhanced.Translations[1].Id) 'Editing the settings copy leaves the original untouched until Save.'
+    } finally { $settingsDialog.Dispose() }
+
+    $pageController=[TokcatLauncherController]::new((Join-Path $testRoot 'inline-page.json'),$palette,$false)
+    $pageHost=[Windows.Forms.Form]::new(); $pageHost.ClientSize=[Drawing.Size]::new(900,650)
+    $page=$pageController.CreateSettingsPage(); $pageHost.Controls.Add($page)
+    try {
+        $pageHost.Show(); [Windows.Forms.Application]::DoEvents()
+        Assert-Launcher ($page.Editor.Visible -and $page.Preview.Launcher.Visible -and -not $pageController.Window.Visible) 'The embedded settings page shows a native preview without opening the real launcher.'
+        $skinControl=$page.Editor.GetType().GetField('skin',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($page.Editor)
+        $previewInput=$page.Preview.Launcher.Query
+        $skinControl.SelectedIndex=1
+        [Windows.Forms.Application]::DoEvents()
+        Assert-Launcher ($page.Preview.Launcher.Appearance.IsCyber -and $page.Preview.Launcher.Query -eq $previewInput) 'Changing skin updates the embedded native preview immediately.'
+        $page.Sample.SelectedIndex=3
+        Assert-Launcher ($page.Preview.Launcher.Results.Items[0].Value -eq '11') 'Preview samples use the real launcher result renderer.'
+        $page.Preview.Launcher.Query.Select(0,0)
+        Assert-LauncherBackdrop $page.Preview.Launcher $page.Preview.Launcher.Query 'Read-only preview text'
+        Assert-Launcher ($page.Preview.Launcher.Query.Right -le $page.Preview.Launcher.Query.Parent.ClientSize.Width) 'The native editor remains inside the input row.'
+        foreach($light in @($true,$false)) {
+            $page.PreviewBackground.SelectedIndex=if($light){0}else{1}
+            $page.Preview.Launcher.Query.ReadOnly=$false
+            $page.Preview.Launcher.Query.Text='English 中文'
+            $page.Preview.Launcher.Query.Select(0,0)
+            [Windows.Forms.Application]::DoEvents()
+            Assert-LauncherBackdrop $page.Preview.Launcher $page.Preview.Launcher.Query 'Editable English and Chinese text'
+            $page.Preview.Launcher.Query.Clear()
+            [Windows.Forms.Application]::DoEvents()
+            Assert-LauncherBackdrop $page.Preview.Launcher $page.Preview.Launcher.Query 'Cleared text'
+            $placeholder=$page.Preview.Launcher.GetType().GetField('placeholder',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($page.Preview.Launcher)
+            Assert-Launcher ($placeholder.BackColor -eq [Drawing.Color]::Transparent) 'The cyber placeholder has no solid fill.'
+        }
+        $page.Preview.Launcher.Query.ReadOnly=$true
+        $page.Editor.CancelSettings.PerformClick(); [Windows.Forms.Application]::DoEvents()
+        Assert-Launcher (-not $page.Preview.Launcher.Appearance.IsCyber) 'Cancel restores the saved skin and preview.'
+        $skinControl=$page.Editor.GetType().GetField('skin',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($page.Editor)
+        $skinControl.SelectedIndex=1
+        $page.OpenLauncher.PerformClick()
+        Assert-Launcher $pageController.Window.Visible 'The page provides a separate action to try the real launcher.'
+        $pageController.Window.Query.Text='setup'
+        $pageController.SubmitSelection()
+        [Windows.Forms.Application]::DoEvents()
+        $page.Editor.SaveSettings.PerformClick(); [Windows.Forms.Application]::DoEvents()
+        $inlineSaved=[TokcatLauncherSettings]::Load((Join-Path $testRoot 'inline-page.json'))
+        Assert-Launcher ($inlineSaved.Skin -eq 'cyber' -and $inlineSaved.History[0].Text -eq 'setup') 'Saving embedded settings applies the skin and retains usage recorded while the page was open.'
+        Assert-Launcher ($pageHost.Visible -and $page.Editor.Visible) 'Saving keeps the embedded settings page open.'
+    } finally { $pageHost.Dispose(); $pageController.Dispose() }
 
     # Exercise the documented Unicode IPC reply layout, including malformed offsets.
     $names=@('论文.txt','项目','C:'); $paths=@('D:\测试','D:\测试','')
@@ -283,7 +444,7 @@ try {
         $controller.Window.Results.SelectedIndex=1
         $controller.Window.SetResults([TokcatLauncherResult[]]@($secondRow,$firstRow),'fixture refresh')
         Assert-Launcher ($controller.Window.Results.SelectedItem.Key -eq 'second') 'Asynchronous results preserve the selected action.'
-        Assert-Launcher (-not $controller.Window.Hint.Visible -and $controller.Window.ClientSize.Height -eq $emptyLauncherHeight+2*$controller.Window.Results.ItemHeight) 'Result updates add only result rows without a footer gap.'
+        Assert-Launcher ($controller.Window.Hint.Visible -and $controller.Window.ClientSize.Height -eq $emptyLauncherHeight+2*$controller.Window.Results.ItemHeight+$controller.Window.Hint.Height) 'Compact results include one footer with no unused gap.'
         $controller.Window.Query.Text='setup'
         $opened=@{Value=$false}; $controller.Add_OpenSettings({$opened.Value=$true}.GetNewClosure())
         $controller.SubmitSelection()
@@ -331,8 +492,8 @@ try {
     $startup.Window.add_Shown({
         $shown.Rows=$startup.Window.Results.Items.Count
         $shown.InputReady=$startup.Window.Query.IsHandleCreated
-        $inputPanel=@($startup.Window.Controls | Where-Object { $_ -is [Windows.Forms.Panel] })[0]
-        $searchIcon=@($inputPanel.Controls | Where-Object { $_ -is [Windows.Forms.Label] })[0]
+        $inputPanel=$startup.Window.Query.Parent
+        $searchIcon=@($inputPanel.Controls | Where-Object Name -eq 'SearchIcon')[0]
         $shown.IconReady=$searchIcon.IsHandleCreated -and $searchIcon.Visible
     }.GetNewClosure())
     try {

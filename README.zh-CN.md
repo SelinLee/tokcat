@@ -13,8 +13,8 @@
 | | macOS 13 及以上 | Windows 10 / 11 预览版 |
 |---|---|---|
 | 查看任务 | 点击菜单栏状态点打开任务列表，也可把 toki 或 biti 挂件放在桌边 | 点击任务栏状态点打开详情窗口，或从通知区域进入 |
-| 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可通过 Everything 搜索本机文件 |
-| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows 构建包](https://github.com/SelinLee/tokcat/actions/workflows/windows-monitor.yml?query=branch%3Amain) · [Windows 使用指南](windows/README.zh-CN.md) |
+| 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可切换赛博轮盘，也可通过 Everything 搜索本机文件 |
+| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [下载主分支 ZIP](https://github.com/SelinLee/tokcat/archive/refs/heads/main.zip) · [Windows 安装说明](#安装-windows-版) |
 
 ## 快捷运行框
 
@@ -28,7 +28,7 @@
   </a>
 </p>
 
-**Windows** · 主分支的快速启动框支持应用、文件、计算、网站和 PowerShell 命令。想试用新版轮盘，可以下载[赛博轮盘开发版源码](https://github.com/SelinLee/tokcat/archive/refs/heads/codex/sync-mac-launcher-windows.zip)，解压后双击 `windows/Tokcat.cmd`。「快速启动 → 通用」提供经典、赛博悬浮和赛博轮盘三种皮肤。轮盘会在中文选词前匹配应用，最多显示三层圆弧。[开发版使用说明](https://github.com/SelinLee/tokcat/blob/codex/sync-mac-launcher-windows/windows/README.zh-CN.md)
+**Windows** · 在「快速启动 → 通用」选择「赛博轮盘」并保存，再按 **Alt + 空格** 唤出。输入拼音时，轮盘会在选词前匹配应用。继续输入或退格，结果会在最多三层圆弧内连续重排。同一设置页也可选择「经典」和「赛博悬浮」。[Windows 快速启动指南](windows/README.zh-CN.md#快速启动框)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="windows/docs/ui-dark.png" />

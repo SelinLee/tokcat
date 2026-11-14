@@ -1,6 +1,7 @@
 ﻿param(
     [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
-    [switch]$SmokeTest
+    [switch]$SmokeTest,
+    [switch]$ShowLauncherSettings
 )
 
 . (Join-Path $PSScriptRoot 'Instance.ps1')
@@ -30,11 +31,16 @@ Add-Type -Path (Join-Path $PSScriptRoot 'ForegroundAgent.cs')
 Add-Type -Path (Join-Path $PSScriptRoot 'DesktopUi.cs') -ReferencedAssemblies @([Windows.Forms.Form].Assembly.Location, [Drawing.Color].Assembly.Location)
 . (Join-Path $PSScriptRoot 'Load-Launcher.ps1')
 
+$applicationIcon = [Drawing.Icon]::new((Join-Path $PSScriptRoot 'Tokcat.ico'))
+$notificationIcon = [Drawing.Icon]::new((Join-Path $PSScriptRoot 'Tokcat.ico'), [Drawing.Size]::new(16,16))
+[TokcatUi]::ApplicationIcon = $applicationIcon
 $form = New-Object TokcatMainWindow
 $form.ShowInTaskbar = $true
 $launcherPalette = [Drawing.Color[]]@([TokcatUi]::Background,[TokcatUi]::Surface,[TokcatUi]::Text,[TokcatUi]::Secondary,[TokcatUi]::Selection)
 $launcherPath = Join-Path $env:LOCALAPPDATA 'Tokcat\launcher.json'
-$launcher = [TokcatLauncherController]::new($launcherPath,$launcherPalette,(-not $SmokeTest))
+$launcher = [TokcatLauncherHost]::new($form,$launcherPath,$launcherPalette,(-not $SmokeTest))
+$launcherPage = $launcher.CreateSettingsPage()
+$form.LauncherSettingsHost.Controls.Add($launcherPage)
 $form.LauncherStatus.Text = $launcher.Status
 $launcher.Add_StatusChanged({ $form.LauncherStatus.Text = $launcher.Status })
 $launcher.Add_OpenSettings({ $form.Show(); $form.WindowState = 'Normal'; $form.ShowSettings($true); $form.Activate() })
@@ -54,8 +60,8 @@ $memoryMenu = $metricsMenu.DropDownItems.Add('内存'); $memoryMenu.Tag = 'Memor
 [void]$menu.Items.Add('-')
 $exit = $menu.Items.Add('退出 tokcat')
 $tray = New-Object Windows.Forms.NotifyIcon
-$tray.ContextMenuStrip = $menu; $tray.Visible = $true
-$script:icon = $null; $script:quitting = $false; $script:scanning = $false
+$tray.ContextMenuStrip = $menu; $tray.Icon = $notificationIcon; $tray.Visible = $true
+$script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
 $script:dshBaseline = @{}; $script:dshUsagePath = Join-Path $env:LOCALAPPDATA 'Tokcat\dsh-usage.jsonl'; $script:dshUsageError = $false
 $script:metricsPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar-metrics.json'; $script:metricsPreferenceError = $false
@@ -139,28 +145,8 @@ function Open-SelectedConversation {
 }
 
 function Set-TrayIcon([string[]]$States, [string]$Text) {
-    $bitmap = New-Object Drawing.Bitmap(32,32)
-    $graphics = [Drawing.Graphics]::FromImage($bitmap)
-    $graphics.SmoothingMode = 'AntiAlias'
-    if (-not $States -or $States.Count -eq 0) { $States = @('unknown') }
-    $shown = @($States | Select-Object -First 6)
-    for ($i = 0; $i -lt $shown.Count; $i++) {
-        $color = switch ($shown[$i]) { 'waiting' { 'OrangeRed' } 'approval' { 'OrangeRed' } 'failed' { 'Red' } 'running' { 'Goldenrod' } 'stalled' { 'DarkOrange' } 'completed' { 'ForestGreen' } default { 'Gray' } }
-        $brush = New-Object Drawing.SolidBrush([Drawing.Color]::FromName($color))
-        if ($shown.Count -eq 1) { $x = 2; $y = 2; $diameter = 28 }
-        else { $x = 1 + ($i % 3) * 10; $y = 5 + [Math]::Floor($i / 3) * 12; $diameter = 9 }
-        $graphics.FillEllipse($brush, [int]$x, [int]$y, [int]$diameter, [int]$diameter)
-        $graphics.DrawEllipse([Drawing.Pens]::White, [int]$x, [int]$y, [int]$diameter, [int]$diameter)
-        $brush.Dispose()
-    }
-    $handle = $bitmap.GetHicon()
-    $newIcon = [Drawing.Icon]::FromHandle($handle).Clone()
-    [void][Tokcat.Native]::DestroyIcon($handle)
-    $tray.Icon = $newIcon
-    $form.Icon = $newIcon
-    if ($script:icon) { $script:icon.Dispose() }; $script:icon = $newIcon
+    $tray.Icon = $notificationIcon
     $tray.Text = if ($Text.Length -gt 63) { $Text.Substring(0,63) } else { $Text }
-    $graphics.Dispose(); $bitmap.Dispose()
 }
 
 function Set-StatusStrip([bool]$Enabled, [bool]$Persist = $true) {
@@ -349,8 +335,6 @@ $form.ProjectButton.Add_Click({
 $usageMenu.Add_Click({ Show-UsageWindow $form $CodexHome })
 $usageButton.Add_Click({ Show-UsageWindow $form $CodexHome })
 $launcherMenu.Add_Click({ $launcher.Show() })
-$form.LauncherButton.Add_Click({ $launcher.Show() })
-$form.LauncherSettingsButton.Add_Click({ $launcher.Configure($form) })
 $toggleStrip = { Set-StatusStrip (-not $script:stripEnabled) }
 $stripMenu.Add_Click($toggleStrip); $stripButton.Add_Click($toggleStrip)
 $showMain = { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }
@@ -402,8 +386,21 @@ $instanceTimer = New-Object Windows.Forms.Timer
 $instanceTimer.Interval = 500
 $instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }; if ($script:stripEnabled -and $taskbarWidget.Status -ne 'Embedded') { $quotaLabel.Text = '任务栏监控暂不可用：' + $(switch ($taskbarWidget.Status) { 'No free taskbar space' { '任务栏空间不足' } 'Waiting for taskbar layout' { '正在读取布局' } default { '等待任务栏恢复' } }) } })
 Set-TrayIcon @('unknown') 'tokcat: 正在读取 Codex 会话'
-$form.Add_Shown({ Update-SystemDisplay; Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $metricsTimer.Start(); $snapshotPoll.Start(); $instanceTimer.Start(); if (-not $SmokeTest) { $form.Hide() } })
+$form.Add_Shown({ Update-SystemDisplay; Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $metricsTimer.Start(); $snapshotPoll.Start(); $instanceTimer.Start(); if ($ShowLauncherSettings) { $form.ShowLauncherSettings() } elseif (-not $SmokeTest) { $form.Hide() } })
 if ($SmokeTest) {
+    $testController = $launcher.GetType().GetField('controller',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($launcher)
+    $testWindow = $testController.Window
+    function Invoke-LauncherCheck($Target, [string]$Method, [type]$Signature, [object[]]$Arguments = @()) {
+        $operation = [Delegate]::CreateDelegate($Signature,$Target,$Method)
+        $call = $testWindow.BeginInvoke($operation,$Arguments)
+        $timeout = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $call.IsCompleted) {
+            if ($timeout.ElapsedMilliseconds -ge 3000) { throw 'Launcher input thread did not respond.' }
+            [Windows.Forms.Application]::DoEvents()
+            [Threading.Thread]::Sleep(1)
+        }
+        return $testWindow.EndInvoke($call)
+    }
     $smokeTimer = New-Object Windows.Forms.Timer
     $smokeTimer.Interval = 1000
     $script:smokeDeadline = [datetimeoffset]::UtcNow.AddSeconds(30)
@@ -425,12 +422,16 @@ if ($SmokeTest) {
         $form.ShowSettings($false)
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $form.LauncherButton.PerformClick()
-        if (-not $launcher.Window.Visible -or -not $launcher.Window.Query.IsHandleCreated) { $script:smokeError = 'Quick launcher did not open from the dashboard.' }
-        $launcher.Window.Query.Text = 'sqrt(9)+2^3'
-        if ($launcher.Window.Results.Items.Count -ne 1 -or $launcher.Window.Results.Items[0].Value -ne '11') { $script:smokeError = 'Quick launcher did not calculate through the packaged entry point.' }
-        $launcher.Window.Query.Text = 'setup'
-        $launcher.SubmitSelection()
-        if ($launcher.Window.Visible -or -not $stripButton.Visible) { $script:smokeError = 'Launcher setup did not open the settings page.' }
+        if (-not $form.LauncherSettingsHost.Visible -or (Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $launcherPage.Preview.Launcher.Visible) { $script:smokeError = 'The launcher sidebar did not open its embedded preview and settings.' }
+        $launcherPage.OpenLauncher.PerformClick()
+        if (-not (Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $testWindow.Query.IsHandleCreated) { $script:smokeError = 'The launcher preview page did not open the real launcher.' }
+        Invoke-LauncherCheck $testWindow.Query set_Text ([Action[string]]) @('sqrt(9)+2^3')
+        $answer = Invoke-LauncherCheck $testWindow.Results get_SelectedItem ([Func[object]])
+        if ($answer.Value -ne '11') { $script:smokeError = 'Quick launcher did not calculate through the packaged entry point.' }
+        Invoke-LauncherCheck $testWindow.Query set_Text ([Action[string]]) @('setup')
+        Invoke-LauncherCheck $testController SubmitSelection ([Action])
+        [Windows.Forms.Application]::DoEvents()
+        if ((Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $stripButton.Visible) { $script:smokeError = 'Launcher setup did not open the settings page.' }
         $form.ShowSettings($false)
         $form.Search.Text = 'no-matching-task-fixture-83c12'
         if ($list.Items.Count -ne 0) { $script:smokeError = 'Search did not filter the visible task list.' }
@@ -453,14 +454,30 @@ if ($SmokeTest) {
         Set-TrayIcon @('running','waiting','failed','completed','stalled','approval') 'tokcat: smoke test'
         $iconBitmap = $tray.Icon.ToBitmap()
         $taskbarBitmap = $form.Icon.ToBitmap()
+        $catBitmap = $applicationIcon.ToBitmap()
+        $trayCatBitmap = $notificationIcon.ToBitmap()
         try {
-            if ($iconBitmap.GetPixel(5,9).ToArgb() -ne [Drawing.Color]::Goldenrod.ToArgb() -or $iconBitmap.GetPixel(15,9).ToArgb() -ne [Drawing.Color]::OrangeRed.ToArgb() -or $iconBitmap.GetPixel(25,9).ToArgb() -ne [Drawing.Color]::Red.ToArgb()) { $script:smokeError = 'Task state dots were not drawn in the tray icon.' }
-            if ($taskbarBitmap.GetPixel(5,9).ToArgb() -ne $iconBitmap.GetPixel(5,9).ToArgb() -or $taskbarBitmap.GetPixel(15,9).ToArgb() -ne $iconBitmap.GetPixel(15,9).ToArgb()) { $script:smokeError = 'Taskbar and tray icons did not match.' }
-        } finally { $iconBitmap.Dispose(); $taskbarBitmap.Dispose() }
+            if ($iconBitmap.Size -ne $trayCatBitmap.Size) { $script:smokeError = 'The tray cat icon size changed.' }
+            else {
+                foreach ($x in 0..($trayCatBitmap.Width-1)) {
+                    foreach ($y in 0..($trayCatBitmap.Height-1)) {
+                        if ($iconBitmap.GetPixel($x,$y).ToArgb() -ne $trayCatBitmap.GetPixel($x,$y).ToArgb()) { $script:smokeError = 'Task state updates replaced the macOS cat tray icon.' }
+                    }
+                }
+            }
+            if ($taskbarBitmap.Size -ne $catBitmap.Size) { $script:smokeError = 'The taskbar cat icon size changed.' }
+            else {
+                foreach ($x in 0..($catBitmap.Width-1)) {
+                    foreach ($y in 0..($catBitmap.Height-1)) {
+                        if ($taskbarBitmap.GetPixel($x,$y).ToArgb() -ne $catBitmap.GetPixel($x,$y).ToArgb()) { $script:smokeError = 'Task state updates replaced the macOS cat taskbar icon.' }
+                    }
+                }
+            }
+        } finally { $iconBitmap.Dispose(); $taskbarBitmap.Dispose(); $catBitmap.Dispose(); $trayCatBitmap.Dispose() }
         $script:quitting = $true
         $form.Close()
     })
     $form.Add_Shown({ $smokeTimer.Start() })
 }
-try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $metricsTimer.Stop(); $metricsTimer.Dispose(); $snapshotPoll.Stop(); $snapshotPoll.Dispose(); Close-AgentSnapshotReader $script:snapshotReader; $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $launcher.Dispose(); $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); if ($script:icon) { $script:icon.Dispose() }; Close-TokcatInstance $instance }
+try { [Windows.Forms.Application]::Run($form) } finally { $timer.Stop(); $timer.Dispose(); $metricsTimer.Stop(); $metricsTimer.Dispose(); $snapshotPoll.Stop(); $snapshotPoll.Dispose(); Close-AgentSnapshotReader $script:snapshotReader; $instanceTimer.Stop(); $instanceTimer.Dispose(); if ($SmokeTest) { $smokeTimer.Dispose() }; if ($script:gpuSampler) { $script:gpuSampler.Stop() }; $launcher.Dispose(); $taskbarWidget.Dispose(); $tray.Visible = $false; $tray.Dispose(); $form.Dispose(); $applicationIcon.Dispose(); $notificationIcon.Dispose(); Close-TokcatInstance $instance }
 if ($SmokeTest -and $script:smokeError) { [Console]::Error.WriteLine($script:smokeError); exit 1 }
