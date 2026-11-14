@@ -6,7 +6,7 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[Install for macOS](#install-for-macos)** · **[Install for Windows](#install-for-windows)**
+**[Install for macOS](#install-for-macos)** · **[Download Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip)**
 
 </div>
 
@@ -14,7 +14,7 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 |---|---|---|
 | Task monitor | Click the menu-bar dots to open your tasks, or keep toki or biti at the edge of your desktop | Click the taskbar dots to open task details, or use the notification-area icon |
 | Quick launcher | **Control + Space** opens the launcher to search apps and run Terminal commands | **Alt + Space** opens the launcher, with an optional Cyber Wheel layout and local file search through Everything |
-| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Download main branch ZIP](https://github.com/SelinLee/tokcat/archive/refs/heads/main.zip) · [Windows installation](#install-for-windows) |
+| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip) · [Windows installation](#install-for-windows) |
 
 ## Quick launcher
 
@@ -234,9 +234,9 @@ Monitoring reads local records; no API key is required. Usage data stays in `~/L
 
 ### Install for Windows
 
-On Windows 10 or 11, [download the main branch ZIP](https://github.com/SelinLee/tokcat/archive/refs/heads/main.zip), extract the entire archive and double-click `windows/Tokcat.cmd`. It runs with the Windows PowerShell 5.1 included with the system.
+On Windows 10 or 11, [download the Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip), extract the entire archive and double-click `tokcat-windows/Tokcat.cmd`. It runs with the Windows PowerShell 5.1 included with the system.
 
-For a Windows-only package, sign in to GitHub, open the [Windows builds](https://github.com/SelinLee/tokcat/actions/workflows/windows-monitor.yml?query=branch%3Amain), pick the latest successful main-branch run and download `tokcat-windows` under **Artifacts**. Extract the downloaded archive and the program ZIP inside it, then double-click `tokcat-windows/Tokcat.cmd`. [Windows guide](windows/README.md)
+The **Windows 2026.11.14** release includes Cyber Wheel, live Chinese composition matching and the fix for the flash when the wheel settles. Select Cyber Wheel under **Quick launcher → General**, save and press **Alt + Space**. [Release notes and SHA-256 checksum](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.14) · [Windows guide](windows/README.md)
 
 ## Get started
 
