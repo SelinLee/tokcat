@@ -6,7 +6,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[安装 macOS 版](#安装-macos-版)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip)**
+**[安装 macOS 版](#安装-macos-版)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
 
 </div>
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | 查看任务 | 点击菜单栏状态点打开任务列表，也可把 toki 或 biti 挂件放在桌边 | 点击任务栏状态点打开详情窗口，或从通知区域进入 |
 | 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可切换赛博轮盘，也可通过 Everything 搜索本机文件 |
-| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip) · [Windows 安装说明](#安装-windows-版) |
+| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip) · [Windows 安装说明](#安装-windows-版) |
 
 ## 快捷运行框
 
@@ -234,9 +234,9 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 ### 安装 Windows 版
 
-在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14/tokcat-windows-2026.11.14.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
+在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
 
-**Windows 2026.11.14** 包含赛博轮盘、中文输入法组字即时匹配，以及轮盘停稳时闪烁的修复。在「快速启动 → 通用」选择「赛博轮盘」并保存，按 **Alt + 空格** 即可使用。[更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.14) · [Windows 使用指南](windows/README.zh-CN.md)
+**Windows 2026.11.14.1** 支持搜狗悬浮候选框中的拼音即时匹配，输入、退格时可在选字前更新结果，并包含赛博轮盘和停稳闪烁修复。在「快速启动 → 通用」选择「赛博轮盘」并保存，按 **Alt + 空格** 即可使用。[更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.14.1) · [Windows 使用指南](windows/README.zh-CN.md)
 
 ## 快速开始
 
