@@ -636,7 +636,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
                 g.ScaleTransform(Scale, Scale); g.TranslateTransform((float)Motion.Extent, (float)Motion.Extent);
-                DrawMovingGlows(g); DrawContents(g); DrawInput(g);
+                DrawWheelContents(g); DrawInput(g);
             }
             return;
         }
@@ -652,23 +652,12 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
                 if (contentLayer != null) contentLayer.Dispose();
                 contentLayer = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppPArgb);
             }
-            // Soft effects contain no fine detail. Rasterize and blur them at
-            // quarter size, then draw crisp glyphs at the actual display scale.
-            float detail = Motion.IsAnimating ? 0.125f : 0.25f;
-            using (var glow = new Bitmap(Math.Max(1, (int)Math.Ceiling(image.Width * detail)), Math.Max(1, (int)Math.Ceiling(image.Height * detail)), PixelFormat.Format32bppPArgb))
-            {
-                using (var g = Graphics.FromImage(glow))
-                {
-                    g.SmoothingMode = SmoothingMode.AntiAlias; g.ScaleTransform(Scale * detail, Scale * detail); g.TranslateTransform((float)Motion.Extent, (float)Motion.Extent);
-                    DrawGlows(g);
-                }
-                Blur(glow, Math.Max(1, (int)Math.Round(7 * Scale * detail)));
-                using (var g = Graphics.FromImage(contentLayer)) { g.CompositingMode = CompositingMode.SourceCopy; g.InterpolationMode = InterpolationMode.Bilinear; g.DrawImage(glow, new Rectangle(Point.Empty, image.Size)); }
-            }
             using (var g = Graphics.FromImage(contentLayer))
             {
+                g.Clear(Color.Transparent);
                 g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                g.ScaleTransform(Scale, Scale); g.TranslateTransform((float)Motion.Extent, (float)Motion.Extent); DrawContents(g);
+                g.ScaleTransform(Scale, Scale); g.TranslateTransform((float)Motion.Extent, (float)Motion.Extent);
+                DrawWheelContents(g);
             }
             contentKey = key; ContentBuildCount++;
         }
@@ -710,45 +699,28 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         }
         finally { image.UnlockBits(data); }
     }
-    void DrawGlows(Graphics g)
+    void DrawWheelContents(Graphics g)
     {
-        var style = window.Appearance;
-        using (var inputGlow = Sector(76, 34, Math.PI, Math.PI * 2))
-        using (var glow = new SolidBrush(Color.FromArgb(Aiming ? 30 : 13, style.Accent))) g.FillPath(glow, inputGlow);
-        foreach (var entry in Motion.Entries)
-        {
-            var pose = entry.Pose; int index = Array.FindIndex(Items, r => r.Key == entry.Id);
-            bool selected = index >= 0 && (Aiming ? AimIndex == index : window.Results.SelectedIndex == index);
-            double span = pose.Span * (1 - pose.Compression * 0.12);
-            using (var path = Sector(pose.Radius, 34, pose.Angle - span / 2 + 0.022, pose.Angle + span / 2 - 0.022))
-            using (var fill = new SolidBrush(Color.FromArgb((int)(pose.Opacity * (selected ? 36 : Aiming ? 17 : 8)), style.Pink))) g.FillPath(fill, path);
-        }
-        foreach (var link in Motion.Bridges)
-        {
-            using (var path = Sector(link.Radius, 34, link.Start, link.End))
-            using (var fill = new SolidBrush(Color.FromArgb((int)(255 * link.Opacity * (0.14 + Math.Cos(Motion.Phase + link.Start * 2) * 0.04)), style.Accent))) g.FillPath(fill, path);
-        }
-    }
-    void DrawMovingGlows(Graphics g)
-    {
-        var style = window.Appearance; var items = Items;
-        StrokeGlow(g, 76, Math.PI, Math.PI, style.Accent, 13);
+        var style = window.Appearance; var items = accessibleItems;
+        int selection = Aiming ? AimIndex : window.Results.SelectedIndex;
+        StrokeGlow(g, 76, Math.PI, Math.PI, style.Accent, Aiming ? 30 : 13);
         foreach (var entry in Motion.Entries)
         {
             var p = entry.Pose; if (p.Opacity <= 0.003) continue;
             int index = Array.FindIndex(items, r => r.Key == entry.Id);
-            bool selected = index >= 0 && window.Results.SelectedIndex == index;
+            bool selected = index >= 0 && selection == index;
             double span = p.Span * (1 - p.Compression * 0.12);
-            StrokeGlow(g, p.Radius, p.Angle - span / 2 + 0.022, Math.Max(0.01, span - 0.044), style.Pink, p.Opacity * (selected ? 36 : 8));
+            StrokeGlow(g, p.Radius, p.Angle - span / 2 + 0.022, Math.Max(0.01, span - 0.044), style.Pink, p.Opacity * (selected ? 36 : Aiming ? 17 : 8));
         }
         foreach (var link in Motion.Bridges)
             StrokeGlow(g, link.Radius, link.Start, link.End - link.Start, style.Accent, 255 * link.Opacity * (0.14 + Math.Cos(Motion.Phase + link.Start * 2) * 0.04));
+        DrawContents(g);
     }
     static void StrokeGlow(Graphics g, double radius, double start, double span, Color color, double opacity)
     {
         float r = (float)radius;
         // Broad, faint strokes feather the moving glow without filtering a
-        // full-window bitmap. The detailed settled glow remains cached.
+        // full-window bitmap.
         for (int layer = 0; layer < 3; layer++)
         {
             int alpha = (int)Math.Min(255, Math.Max(0, opacity * (layer == 0 ? 0.15 : layer == 1 ? 0.28 : 0.5)));
@@ -776,7 +748,9 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         }
         else maskPixels = new byte[length];
         MaskBuildCount++;
-        float detail = animated ? 0.125f : 0.25f;
+        // Keep the feather profile identical when the last moving frame settles.
+        const int shift = 3, step = 1 << shift;
+        const float detail = 1f / step;
         using (var small = new Bitmap(Math.Max(1, (int)Math.Ceiling(size.Width * detail)), Math.Max(1, (int)Math.Ceiling(size.Height * detail)), PixelFormat.Format32bppPArgb))
         {
             using (var g = Graphics.FromImage(small))
@@ -800,7 +774,6 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
                 int stride = data.Stride;
                 if (maskRasterPixels == null || maskRasterPixels.Length != stride * small.Height) maskRasterPixels = new byte[stride * small.Height];
                 Marshal.Copy(data.Scan0, maskRasterPixels, 0, maskRasterPixels.Length);
-                int shift = animated ? 3 : 2, step = 1 << shift;
                 int smallWidth = small.Width, smallHeight = small.Height;
                 int width = size.Width, height = size.Height;
                 for (int y = 0; y < height; y++)
@@ -993,13 +966,6 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
             }
         }
         return result;
-    }
-    static GraphicsPath Sector(double radius, double thickness, double start, double end)
-    {
-        var path = new GraphicsPath(); var points = new List<PointF>();
-        for (int i = 0; i <= 48; i++) { double a = start + (end - start) * i / 48; points.Add(new PointF((float)(Math.Cos(a) * (radius + thickness / 2)), (float)(Math.Sin(a) * (radius + thickness / 2)))); }
-        for (int i = 48; i >= 0; i--) { double a = start + (end - start) * i / 48; points.Add(new PointF((float)(Math.Cos(a) * (radius - thickness / 2)), (float)(Math.Sin(a) * (radius - thickness / 2)))); }
-        path.AddPolygon(points.ToArray()); return path;
     }
     public static void DrawArcText(Graphics g, string text, double radius, double angle, double maxSpan, Font font, Color color, bool upper, int caret, int selection, int markedStart, int markedLength)
     {

@@ -7,6 +7,24 @@ function New-AnimationRows([int]$count,[int]$shift,[int]$catalog=24) {
         [TokcatLauncherResult]@{Title=('Application '+$id);Kind='settings';Key=('animate:'+$id);RadialWeight=(2/(1+$_*.25))}
     })
 }
+function Measure-SettleChange($before,$after) {
+    # Align on the input arc when the outer rings retire and the canvas shrinks.
+    $side=[Math]::Min($before.Width,$after.Width)
+    $first=[int](($before.Width-$side)/2); $second=[int](($after.Width-$side)/2)
+    $changed=0; $samples=0
+    for($y=1;$y -lt $side;$y+=4) {
+        for($x=1;$x -lt $side;$x+=4) {
+            $a=$before.GetPixel($first+$x,$first+$y); $b=$after.GetPixel($second+$x,$second+$y)
+            if ($a.A -eq 0 -and $b.A -eq 0) { continue }
+            $samples++
+            if ([Math]::Abs([int]$a.A-$b.A) -gt 8 -or
+                [Math]::Abs($a.R*$a.A-$b.R*$b.A) -gt 8*255 -or
+                [Math]::Abs($a.G*$a.A-$b.G*$b.A) -gt 8*255 -or
+                [Math]::Abs($a.B*$a.A-$b.B*$b.A) -gt 8*255) { $changed++ }
+        }
+    }
+    return 100.0*$changed/[Math]::Max(1,$samples)
+}
 $palette=[Drawing.Color[]]@([Drawing.Color]::Black,[Drawing.Color]::FromArgb(32,35,40),[Drawing.Color]::White,[Drawing.Color]::Silver,[Drawing.Color]::DarkCyan)
 $window=[TokcatLauncherWindow]::new($palette);$window.IsPreview=$true
 try {
@@ -29,6 +47,19 @@ try {
         Assert-Animation ($median -lt 16 -and $p95 -lt 30) ('Reflow rendering exceeds the frame budget: median '+[Math]::Round($median,2)+' ms; p95 '+[Math]::Round($p95,2)+' ms.')
         Assert-Animation ($window.Radial.SpriteBuildCount -eq $tailBuilds) 'Moving and fading existing labels must reuse their glyph outlines.'
         Write-Output ('Reflow render median: '+[Math]::Round($median,2)+' ms; p95: '+[Math]::Round($p95,2)+' ms.')
+
+        foreach($count in @(9,4,1)) {
+            $window.SetResults((New-AnimationRows $count 8),'')
+            $window.Radial.Motion.Advance(.9599)
+            $before=$window.Radial.Render()
+            try {
+                $window.Radial.Motion.Advance(.96); $window.Radial.Update($false)
+                $after=$window.Radial.Render()
+                try { $changed=Measure-SettleChange $before $after } finally { $after.Dispose() }
+            } finally { $before.Dispose() }
+            Write-Output ('Changed visible samples on settling ('+$count+' results): '+[Math]::Round($changed,2)+'%.')
+            Assert-Animation ($changed -lt 2) 'Settling may finish minor spring motion but must not repaint the whole wheel differently.'
+        }
 
         # Interrupt before settling, with both replacements and different ring
         # counts. Departing entries, masks and glyph caches must stay bounded.
