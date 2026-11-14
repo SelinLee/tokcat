@@ -49,6 +49,31 @@ try {
     $indexField.SetValue($controller,[TokcatLauncherIndex]::new($apps))
     $controller.Show();$window=$controller.Window;$editor=$window.Query
     $previewMethod=$editor.GetType().GetMethod('SetCompositionPreview',[Reflection.BindingFlags]'Instance,NonPublic')
+    # Sogou's floating reading window can send only candidate notifications and
+    # processed keys. Exercise that path without injecting a composition string.
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]5,[IntPtr]1)
+    foreach($key in @(87,69,73)) {
+        [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]3,[IntPtr]1)
+        [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]$key,[IntPtr]::Zero)
+    }
+    Assert-Input ($editor.Composing -and $editor.Text -eq '' -and $editor.DisplayText -eq 'wei') 'Candidate-only IMEs must expose their uncommitted spelling to matching.'
+    Assert-Input (@($window.Results.Items | Where-Object Title -eq '微信').Count -eq 1) 'The candidate notification path must match applications before Chinese is committed.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]8,[IntPtr]::Zero)
+    Assert-Input ($editor.DisplayText -eq 'we') 'Backspacing while candidates are open must update the pending spelling.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr]229,[IntPtr](0x17 -shl 16))
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]73,[IntPtr]::Zero)
+    Assert-Input ($editor.DisplayText -eq 'wei') 'A physical processed key and its key-up must add the reading character once.'
+    $editor.Text='微信'
+    Assert-Input (-not $editor.Composing -and $editor.DisplayText -eq '微信') 'Committing candidate-only input must discard its provisional spelling.'
+    $editor.Text='网';$editor.Select(1,0)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]5,[IntPtr]1)
+    foreach($key in @(89,73)) { [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]$key,[IntPtr]::Zero) }
+    Assert-Input ($editor.DisplayText -eq '网yi' -and @($window.Results.Items | Where-Object Title -eq '网易云音乐').Count -eq 1) 'Candidate-only spelling must retain the committed Chinese prefix.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]4,[IntPtr]1)
+    Assert-Input (-not $editor.Composing -and $editor.DisplayText -eq '网') 'Closing the candidate window must discard pending input.'
+    $editor.Text=''
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]87,[IntPtr]::Zero)
+    Assert-Input ($editor.DisplayText -eq '' -and -not $editor.Composing) 'Key-up outside a candidate session must not manufacture input.'
     # Measure a newly matched application's first clickable native frame while
     # IME preedit changes. Reading Results.Items only measures ranking.
     $surface=$window.Radial.GetType().GetField('surface',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($window.Radial)

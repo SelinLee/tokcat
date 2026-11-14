@@ -338,6 +338,8 @@ public sealed class TokcatLauncherTextBox : TextBox
     public int CompositionStart { get; private set; }
     public int CompositionCaret { get; private set; }
     int compositionSelection;
+    bool candidateComposition;
+    Keys compositionKeyDown;
     public string DisplayText
     {
         get
@@ -363,6 +365,7 @@ public sealed class TokcatLauncherTextBox : TextBox
     [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr handle);
     [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr handle, IntPtr context);
     [DllImport("imm32.dll", EntryPoint = "ImmGetCompositionStringW")] static extern int ImmGetCompositionString(IntPtr context, uint index, byte[] buffer, int length);
+    [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
 
     IntPtr BackgroundBrush()
     {
@@ -397,6 +400,49 @@ public sealed class TokcatLauncherTextBox : TextBox
         if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
     }
 
+    void EndCandidateComposition()
+    {
+        if (!candidateComposition) return;
+        candidateComposition = false; compositionKeyDown = Keys.None;
+        Composing = false; SetCompositionPreview("", 0);
+    }
+
+    void UpdateCandidateComposition(Keys key)
+    {
+        if (!candidateComposition || (ModifierKeys & (Keys.Control | Keys.Alt)) != 0) return;
+        string text = CompositionText ?? "";
+        int caret = CompositionCaret;
+        bool letter = key >= Keys.A && key <= Keys.Z;
+        if (letter || key == Keys.OemQuotes)
+        {
+            int available = MaxLength - (TextLength - compositionSelection) - text.Length;
+            if (MaxLength > 0 && available <= 0) return;
+            string value = letter ? ((char)('a' + (int)key - (int)Keys.A)).ToString() : "'";
+            text = text.Insert(caret, value); caret++;
+        }
+        else if (key == Keys.Back && caret > 0) text = text.Remove(--caret, 1);
+        else if (key == Keys.Delete && caret < text.Length) text = text.Remove(caret, 1);
+        else if (key == Keys.Left) caret = Math.Max(0, caret - 1);
+        else if (key == Keys.Right) caret = Math.Min(text.Length, caret + 1);
+        else if (key == Keys.Home) caret = 0;
+        else if (key == Keys.End) caret = text.Length;
+        else if (key == Keys.Escape) { EndCandidateComposition(); return; }
+        else return;
+        SetCompositionPreview(text, caret);
+    }
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        EndCandidateComposition();
+        base.OnTextChanged(e);
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        EndCandidateComposition();
+        base.OnLostFocus(e);
+    }
+
     internal IntPtr PaintBackground(IntPtr dc)
     {
         if (BackgroundPainter == null && (Launcher == null || Launcher.Appearance == null || !Launcher.Appearance.IsCyber || Launcher.Appearance.IsRadial)) { ReleaseBrush(); return IntPtr.Zero; }
@@ -411,17 +457,42 @@ public sealed class TokcatLauncherTextBox : TextBox
 
     protected override void WndProc(ref Message message)
     {
+        // Some IMEs keep the reading string in their candidate window and send
+        // candidate notifications without WM_IME_COMPOSITION or an IMM string.
+        bool candidate = message.Msg == 0x0282 && (message.WParam.ToInt64() == 3 || message.WParam.ToInt64() == 5);
+        if (candidate && !ReadOnly && !Composing)
+        {
+            Composing = true; candidateComposition = true;
+            CompositionStart = SelectionStart; compositionSelection = SelectionLength;
+            SetCompositionPreview("", 0);
+        }
+        Keys previewKey = Keys.None;
+        if (candidateComposition && message.Msg == 0x0100)
+        {
+            int key = message.WParam.ToInt32();
+            // A processed key retains its hardware scan code on physical input.
+            if (key == 229) key = (int)MapVirtualKey((uint)((message.LParam.ToInt64() >> 16) & 255), 1);
+            previewKey = (Keys)key; compositionKeyDown = previewKey;
+        }
+        if (candidateComposition && message.Msg == 0x0101)
+        {
+            Keys key = (Keys)message.WParam.ToInt32();
+            if (key != compositionKeyDown) previewKey = key;
+            compositionKeyDown = Keys.None;
+        }
         bool composition = message.Msg == 0x010F;
         bool result = composition && (message.LParam.ToInt64() & 0x0800) != 0;
         bool preedit = composition && (!result || (message.LParam.ToInt64() & (0x0008 | 0x0080)) != 0);
         string preview = ""; int previewCaret = 0;
         if (message.Msg == 0x010D)
         {
+            candidateComposition = false; compositionKeyDown = Keys.None;
             Composing = true; CompositionStart = SelectionStart; compositionSelection = SelectionLength; CompositionText = ""; CompositionCaret = 0;
             if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
         }
         if (composition)
         {
+            candidateComposition = false; compositionKeyDown = Keys.None;
             if (!Composing) { Composing = true; CompositionStart = SelectionStart; compositionSelection = SelectionLength; }
             // A result string is inserted by the native editor below. Stop
             // overlaying its old preedit before TextChanged reports that commit.
@@ -443,6 +514,9 @@ public sealed class TokcatLauncherTextBox : TextBox
             }
         }
         base.WndProc(ref message);
+        if (previewKey != Keys.None) UpdateCandidateComposition(previewKey);
+        if (message.Msg == 0x0282 && message.WParam.ToInt64() == 4) EndCandidateComposition();
+        if (message.Msg == 0x0051) EndCandidateComposition();
         if (composition)
         {
             if (result) { CompositionStart = SelectionStart; compositionSelection = SelectionLength; }
@@ -452,6 +526,7 @@ public sealed class TokcatLauncherTextBox : TextBox
         }
         if (message.Msg == 0x010E)
         {
+            candidateComposition = false; compositionKeyDown = Keys.None;
             Composing = false; CompositionText = ""; CompositionCaret = 0;
             if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
         }
