@@ -2,35 +2,41 @@
 
 # tokcat
 
-**多 Agent 状态一眼看清，应用、命令与搜索一个快捷键直达。**
-
-<p>
-  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
-    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="tokcat 演示：顶部菜单栏状态点显示运行、等待、完成与失败，再逐字输入 chrome 展示快捷启动" width="900" />
-  </a>
-</p>
-
-<sub>菜单栏状态点 + 赛博轮盘快捷启动 · 下载高清视频</sub>
-
-原生 macOS 多 Agent 状态监控：实时任务、等待提醒、本地对话、用量趋势，以及安静贴在桌边的人形挂件。
-
-新增快捷运行框：应用搜索、实时计算、终端命令和网站搜索，一个快捷键唤出。
+通过 macOS 菜单栏或 Windows 任务栏，查看 AI 助手的任务状态、对话和用量。按下快捷键即可搜索应用、计算或运行命令。
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安装) [![Swift](https://img.shields.io/badge/Swift-native-F05138.svg)](#从源码运行) [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-**[下载应用](https://github.com/SelinLee/tokcat/releases)** · [快捷运行框](#快捷运行框) · [支持的 Agent](#支持的-agent) · [快速开始](#快速开始)
+**[安装 macOS 版](#安装-macos-版)** · **[安装 Windows 版](#安装-windows-版)**
 
 </div>
 
-## Windows 预览版
-
-[`windows/`](windows/README.zh-CN.md) 提供直接嵌入 Windows 任务栏内部的状态与指标、详情窗口和通知区域图标，可查看 Codex、Codex Work、WorkBuddy、DeepSeek Harness 和 Claude Code 会话状态，以及 OpenClaw、Kimi 的活动记录。Claude 监控需要自行启用 hooks；这是独立的早期版本，尚未覆盖 macOS 版的全部功能和 Agent。
+| | macOS 13 及以上 | Windows 10 / 11 预览版 |
+|---|---|---|
+| 查看任务 | 点击菜单栏状态点打开任务列表，也可把 toki 或 biti 挂件放在桌边 | 点击任务栏状态点打开详情窗口，或从通知区域进入 |
+| 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可通过 Everything 搜索本机文件 |
+| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows 构建包](https://github.com/SelinLee/tokcat/actions/workflows/windows-monitor.yml?query=branch%3Amain) · [Windows 使用指南](windows/README.zh-CN.md) |
 
 ## 快捷运行框
 
-> **0.7.10 新增**：[下载 macOS 新版](https://github.com/SelinLee/tokcat/releases/latest)。
+两个平台都支持用名称、拼音或首字母查找应用。试试输入 `sqrt(9)+2^3`，按回车复制结果 `11`，或输入 `example.com` 打开网站。
+
+**macOS** · 下面的演示先展示菜单栏任务状态，再用赛博轮盘启动 Chrome。点击动图可下载高清视频。要在 Mac 上试用轮盘，可[从主分支源码运行](#从源码运行)。
+
+<p>
+  <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
+    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="macOS 演示：顶部菜单栏状态点显示运行、等待、完成与失败，再逐字输入 chrome 展示快捷启动" width="900" />
+  </a>
+</p>
+
+**Windows** · 主分支的快速启动框支持应用、文件、计算、网站和 PowerShell 命令。想试用新版轮盘，可以下载[赛博轮盘开发版源码](https://github.com/SelinLee/tokcat/archive/refs/heads/codex/sync-mac-launcher-windows.zip)，解压后双击 `windows/Tokcat.cmd`。「快速启动 → 通用」提供经典、赛博悬浮和赛博轮盘三种皮肤。轮盘会在中文选词前匹配应用，最多显示三层圆弧。[开发版使用说明](https://github.com/SelinLee/tokcat/blob/codex/sync-mac-launcher-windows/windows/README.zh-CN.md)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/ui-dark.png" />
+  <img src="windows/docs/ui-light.png" alt="Windows 版 tokcat 的任务列表和详情窗口" width="900" />
+</picture>
+
+<details>
+<summary>macOS 启动器操作、示例与设置</summary>
 
 按 **Control + 空格** 唤出一条圆角输入框，开始输入后才展开匹配或结果；回车提交后立即收起。也可以点击菜单栏的放大镜打开。
 
@@ -88,7 +94,14 @@
 
 </details>
 
-## 安静贴在桌边的人形挂件
+</details>
+
+## macOS 界面导览
+
+<details>
+<summary>查看菜单栏、桌边挂件、任务与用量截图</summary>
+
+### 安静贴在桌边的人形挂件
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
@@ -108,7 +121,7 @@
 
 在「设置 → 桌边挂件」或人物右键菜单选择形象和吸附位置。在该设置页的「头顶信息」可切换为常驻模式：任务名称最多两行，超出部分以省略号结尾，tok/s 在下方单独一行；多个任务纵向排列。[桌宠行为说明](docs/DesktopCompanion.md)
 
-## 在一个窗口里跟进多个 Agent
+### 在一个窗口里跟进多个 Agent
 
 谁正在运行，谁需要回答，谁已经完成本轮回复，统一放在任务列表中。选中任务后，窗口的大部分空间用于阅读对话。
 
@@ -121,7 +134,7 @@
 - **最近工作**：按 Agent、关键词和 24 小时／7 天／30 天筛选；Codex 按轮次保留任务记录。
 - **本地对话**：阅读提问和回复，选择复制、跟随新消息，或打开独立阅读窗口。
 
-## 看一眼菜单栏，就知道任务状态
+### 看一眼菜单栏，就知道任务状态
 
 每个任务对应一个状态点，排在你选择的监控指标后面。在其他应用中工作时，也能关注多个 Agent。
 
@@ -141,7 +154,7 @@
 
 最多显示六个状态点，其余显示 `+N`。前台完成提示闪烁三秒后自动消失；系统开启「减少动态效果」时使用静态颜色。CPU、GPU、内存、网络、token 速度、费用速度和本地 Codex 额度均可选择显示。
 
-## 点击后，查看具体上下文
+### 点击后，查看具体上下文
 
 下拉面板优先展示对话标题，再显示 Agent、当前状态、耗时与等待时间。运行时间下方显示该会话最近 60 秒的输出 tok/s 估算（包含推理输出，不含输入和缓存；数据不足显示 `—`）。30 秒无新活动时显示持续时长，2 分钟后显示红色「长时间无活动」提示；这不等于任务失败，执行长工具或等待网络也可能触发。可以展开任务、打开对话或项目、将完成标为已读，或进入主窗口。
 
@@ -150,7 +163,7 @@
   <img src="docs/assets/screenshots/readme-dropdown-light.png" alt="展示任务标题、来源、状态和等待时间的多 Agent 下拉面板" width="430" />
 </picture>
 
-## 查看每项任务的监控详情
+### 查看每项任务的监控详情
 
 在「监控详情」中查看耗时、等待时间、当前阶段、观察到的工具调用、模型、可获取的本轮 tokens，以及活动时间线。也可以直接打开原始对话、项目文件夹或本地记录。
 
@@ -159,7 +172,7 @@
   <img src="docs/assets/screenshots/readme-monitor-light.png" alt="任务监控详情中的耗时、等待、工具调用、模型与活动时间线" width="600" />
 </picture>
 
-## 对比用量与费用
+### 对比用量与费用
 
 按日、周、月查看趋势，并按 **Agent、模型或中转站** 分组。展示输入／输出 tokens、费用、计费费率和各组占比；上报费用与费率估算分别标注，费率可以本地修改。
 
@@ -180,7 +193,13 @@ CC Switch 可以补充中转站归属、上报费用和计费倍率。Codex 的�
 
 </details>
 
+</details>
+
 ## 支持的 Agent
+
+Windows 可跟踪 Codex（含 Codex Work）、Claude Code、WorkBuddy 和 DeepSeek Harness 的会话，OpenClaw 和 Kimi 提供活动记录。Windows 上的 Claude Code 状态通过可选 hooks 接入。[Windows 接入说明](windows/README.zh-CN.md)
+
+下表列出 macOS 的接入情况。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-agents-dark.png" />
@@ -205,20 +224,36 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 状态以本地来源提供的信息为准。日志安静不等于完成，本轮结束不等于整个项目完成。缺少的指标保持不可用，不虚构进度百分比。
 
+## 安装
+
+### 安装 macOS 版
+
+需要 **macOS 13+**。从 [Releases](https://github.com/SelinLee/tokcat/releases) 下载 DMG 或 ZIP，将 `tokcat.app` 放进 Applications。首次打开时右键选择「打开」。当前采用 ad-hoc 签名，尚未进行 Developer ID 公证；0.7.10 安装包为 Apple Silicon 与 Intel Mac 通用构建。
+
+监控仅读取本地记录，无需 API key。用量数据库位于 `~/Library/Application Support/Tokcat/`，任务缓存及可选 Claude hooks 位于 `~/Library/Application Support/TokenCat/`。桌宠与任务监控共用状态来源，升级保留用量历史和监控设置。
+
+### 安装 Windows 版
+
+在 Windows 10 或 11 上，[下载主分支 ZIP](https://github.com/SelinLee/tokcat/archive/refs/heads/main.zip)，解压整个压缩包并双击 `windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
+
+如需只含 Windows 程序的包，登录 GitHub，打开 [Windows 构建记录](https://github.com/SelinLee/tokcat/actions/workflows/windows-monitor.yml?query=branch%3Amain)，选择主分支最近一次成功运行，在 **Artifacts** 下载 `tokcat-windows`。解压外层下载包和其中的程序 ZIP，再双击 `tokcat-windows/Tokcat.cmd`。[Windows 使用指南](windows/README.zh-CN.md)
+
 ## 快速开始
+
+**Windows** · 启动后点击任务栏状态点打开详情窗口，按 **Alt + 空格** 即可搜索应用。要监控 Claude Code，请按 Windows 指南启用 hooks 并重启已有会话。
+
+**macOS**
 
 1. 安装并打开 tokcat，照常使用各个 Agent。
 2. 有本机会话注册的 Claude Code 自动显示；如需详细生命周期事件或使用旧版客户端，在「设置 → Agent」启用 hooks，再重启已有 Claude Code 会话。
 3. 选择菜单栏指标，通过状态点关注任务；打开「任务总览」阅读对话，或「用量统计」查看趋势。
 4. 在「设置 → 桌边挂件」选择 toki／biti 和吸附位置。
 
-## 安装
-
-需要 **macOS 13+**。从 [Releases](https://github.com/SelinLee/tokcat/releases) 下载 DMG 或 ZIP，将 `tokcat.app` 放进 Applications。首次打开时右键选择「打开」。当前采用 ad-hoc 签名，尚未进行 Developer ID 公证；0.7.10 安装包为 Apple Silicon 与 Intel Mac 通用构建。
-
-监控仅读取本地记录，无需 API key。用量数据库位于 `~/Library/Application Support/Tokcat/`，任务缓存及可选 Claude hooks 位于 `~/Library/Application Support/TokenCat/`。桌宠与任务监控共用状态来源，升级保留用量历史和监控设置。
-
 ## 从源码运行
+
+**Windows** · 从仓库根目录运行 `windows\Tokcat.cmd`。使用 `powershell.exe -NoProfile -File .\windows\Package.ps1` 生成可分发的 ZIP。
+
+**macOS**
 
 ```sh
 git clone https://github.com/SelinLee/tokcat.git
@@ -232,6 +267,7 @@ swift run TokcatApp
 
 | 目录 | 用途 |
 |---|---|
+| `windows/` | Windows 任务栏监控、快速启动、设置与打包脚本 |
 | `App/` | 菜单栏、任务与对话、用量统计和设置 |
 | `App/Companion/` | 透明挂件窗口、气泡、滚动动态和吸附 |
 | `Sources/TokcatKit/` | 本地适配器、任务生命周期与历史、定价、用量持久化 |
