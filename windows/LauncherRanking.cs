@@ -109,7 +109,7 @@ public static class TokcatLauncherRanking
         return results.GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(r => r.Score).First())
             .OrderByDescending(r => r.ExactApplication ? r.Score + 150 : r.Score)
             .ThenByDescending(r => settings.Usage.Where(u => string.Equals(u.Key, r.Key, StringComparison.OrdinalIgnoreCase)).Select(u => u.LastUsed).FirstOrDefault())
-            .ThenBy(r => r.Title, StringComparer.CurrentCultureIgnoreCase).Take(7).ToArray();
+            .ThenBy(r => r.Title, StringComparer.CurrentCultureIgnoreCase).Take(settings.Skin == "radial" ? 200 : 7).ToArray();
     }
 
     static int KeywordScore(string text, TokcatLauncherShortcut entry)

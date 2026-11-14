@@ -41,9 +41,9 @@ try {
         } finally { $bitmap.Dispose() }
     }
     $window.ShowLauncherSettings()
-    foreach($skin in @('classic','cyber')) {
+    foreach($skin in @('classic','cyber','radial')) {
         $skinControl=$launcherPage.Editor.GetType().GetField('skin',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($launcherPage.Editor)
-        $skinControl.SelectedIndex=if($skin -eq 'cyber'){1}else{0}
+        $skinControl.SelectedIndex=if($skin -eq 'radial'){2}elseif($skin -eq 'cyber'){1}else{0}
         [Windows.Forms.Application]::DoEvents()
         $bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height)
         try {

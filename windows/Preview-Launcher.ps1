@@ -17,12 +17,21 @@ foreach ($theme in @('light','dark')) {
     $window=[TokcatLauncherWindow]::new($palette)
     try {
         $background.Show(); [Windows.Forms.Application]::DoEvents()
-        foreach ($skin in @('classic','cyber')) {
-            foreach ($mode in @('empty','translation','definition','calculation')) {
-                $window.Hide(); $window.Appearance.Configure($skin,$true)
+        foreach ($skin in @('classic','cyber','radial')) {
+            foreach ($mode in @('empty','applications','translation','definition','calculation')) {
+                $window.Hide(); $window.IsPreview=$false; $window.Appearance.Configure($skin,$true)
                 $window.Location=[Drawing.Point]::new($background.Left+80,$background.Top+90)
                 switch($mode) {
                     empty { $window.Query.Text=''; $window.SetResults([TokcatLauncherResult[]]@(),'') }
+                    applications {
+                        $window.Query.Text='应用'
+                        $window.SetResults([TokcatLauncherResult[]]@(
+                            [TokcatLauncherResult]@{Title='记事本';Detail='应用';Kind='application';Key='preview:notepad';RadialWeight=2;App=[TokcatLauncherApp]@{Name='记事本';Target=(Join-Path $env:WINDIR 'System32/notepad.exe')}},
+                            [TokcatLauncherResult]@{Title='计算器';Detail='应用';Kind='application';Key='preview:calculator';RadialWeight=1.6;App=[TokcatLauncherApp]@{Name='计算器';Target=(Join-Path $env:WINDIR 'System32/calc.exe')}},
+                            [TokcatLauncherResult]@{Title='翻译';Detail='查看释义';Kind='translate';Key='translate';RadialWeight=1.8},
+                            [TokcatLauncherResult]@{Title='网页搜索';Detail='百度搜索';Kind='website';Key='web-search';RadialWeight=0.25}
+                        ),'↑ ↓ ← → 按方位选择 · Enter 执行')
+                    }
                     translation {
                         $window.Query.Text='tran+hello world'
                         $settings=[TokcatLauncherSettings]::new()
@@ -31,14 +40,26 @@ foreach ($theme in @('light','dark')) {
                     definition { $window.Query.Text='tran+hello'; $window.SetDefinition("hello /həˈləʊ/`r`n你好；喂。用于问候或引起注意。`r`n示例：Hello, world!") }
                     calculation { $window.Query.Text='sqrt(9)+2^3'; $window.SetResults([TokcatLauncherResult[]]@([TokcatLauncherResult]@{Title='11';Detail='计算 · 回车复制结果';Kind='calculation';Value='11';Key='calculator:fixture'}),'Enter 复制结果 · Esc 关闭') }
                 }
+                if($skin -eq 'radial') { $window.Radial.Navigate([Windows.Forms.Keys]::Up); $window.Location=[Drawing.Point]::new($(if($mode -eq 'definition'){$background.Left+35}else{$background.Left+($background.Width-$window.Width)/2}),$background.Top+($background.Height-$window.Height)/2) }
                 $window.Appearance.Prepare(); $window.Show(); $window.Activate(); [void]$window.Query.Focus(); $window.Appearance.Presented()
                 [Windows.Forms.Application]::DoEvents()
+                if($skin -eq 'radial') {
+                    $deadline=[datetimeoffset]::UtcNow.AddMilliseconds(200)
+                    while([datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 10 }
+                    # Freeze the displayed frame while any in-flight color
+                    # sample restores capture visibility, before taking a PNG.
+                    $window.IsPreview=$true
+                    $deadline=[datetimeoffset]::UtcNow.AddMilliseconds(75)
+                    while([datetimeoffset]::UtcNow -lt $deadline) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 10 }
+                }
                 $marginX=if($skin -eq 'cyber'){$window.Appearance.MarginX}else{0}
                 $marginY=if($skin -eq 'cyber'){$window.Appearance.MarginY}else{0}
-                $image=[Drawing.Bitmap]::new($window.Width+2*$marginX,$window.Height+2*$marginY)
+                $captureBounds=[Drawing.Rectangle]::new($window.Left-$marginX,$window.Top-$marginY,$window.Width+2*$marginX,$window.Height+2*$marginY)
+                if($skin -eq 'radial' -and -not $window.Radial.DefinitionBounds.IsEmpty) { $captureBounds=[Drawing.Rectangle]::Union($captureBounds,$window.Radial.DefinitionBounds) }
+                $image=[Drawing.Bitmap]::new($captureBounds.Width,$captureBounds.Height)
                 $graphics=[Drawing.Graphics]::FromImage($image)
                 try {
-                    $graphics.CopyFromScreen([Drawing.Point]::new($window.Left-$marginX,$window.Top-$marginY),[Drawing.Point]::Empty,$image.Size)
+                    $graphics.CopyFromScreen($captureBounds.Location,[Drawing.Point]::Empty,$image.Size)
                     $path=Join-Path $OutputDirectory ($skin+'-'+$theme+'-'+$mode+'.png')
                     $image.Save($path,[Drawing.Imaging.ImageFormat]::Png); Write-Output $path
                 } finally { $graphics.Dispose(); $image.Dispose() }

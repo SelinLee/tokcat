@@ -29,16 +29,24 @@ public sealed class TokcatLauncherWindow : Form
     readonly Button webTranslation = new Button();
     readonly TokcatLauncherSurfacePanel dictionaryPanel = new TokcatLauncherSurfacePanel();
     public readonly TokcatLauncherAppearance Appearance;
+    public readonly TokcatLauncherRadial Radial;
+    public bool RadialError { get; private set; }
+    string activeDefinition;
+    bool radialApplied;
+    Point regularLocation;
+    public TokcatLauncherResult[] RadialSearchResults = new TokcatLauncherResult[0];
     public bool IsPreview { get; set; }
     public event EventHandler WebTranslationRequested;
     public float LayoutScale { get { return DeviceDpi / 96f; } }
     public int InputHeight { get { return input.Height; } }
     public bool ClassicIsLight { get { return palette[1].GetBrightness() > 0.5f; } }
-    public string DictionaryDefinition { get { return dictionaryPanel.Visible ? definition.Text : null; } }
+    public string DictionaryDefinition { get { return activeDefinition; } }
     public int DefinitionHeight { get { return dictionaryPanel.Height; } }
 
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr handle, int message, IntPtr parameter, IntPtr data);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] static extern int GetWindowLong(IntPtr handle, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] static extern int SetWindowLong(IntPtr handle, int index, int value);
 
     public TokcatLauncherWindow(Color[] palette)
     {
@@ -78,6 +86,7 @@ public sealed class TokcatLauncherWindow : Form
         placeholder.MouseDown += delegate { Query.Focus(); Query.SelectionStart = 0; };
         input.Layout += delegate
         {
+            if (Appearance != null && Appearance.IsRadial) { LayoutRadialEditor(); return; }
             Query.SetBounds(searchIcon.Width, (input.ClientSize.Height - Query.PreferredHeight) / 2,
                 Math.Max(1, input.ClientSize.Width - searchIcon.Width - (int)(16 * LayoutScale)), Query.PreferredHeight);
             placeholder.Bounds = new Rectangle(Query.Left + 2, Query.Top, Math.Max(1, Query.Width - 2), Query.Height);
@@ -109,7 +118,7 @@ public sealed class TokcatLauncherWindow : Form
         dictionaryPanel.Controls.Add(definition); dictionaryPanel.Controls.Add(webTranslation);
         Controls.Add(dictionaryPanel); Controls.Add(Results); Controls.Add(Hint); Controls.Add(input);
         KeyDown += QueryKeyDown;
-        Deactivate += delegate { if (!IsPreview) Hide(); };
+        Deactivate += delegate { if (!IsPreview) { if (Appearance != null && Appearance.IsRadial && Radial != null) Radial.NotifyDeactivated(); else Hide(); } };
         FormClosing += delegate(object sender, FormClosingEventArgs e)
         {
             if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
@@ -123,6 +132,7 @@ public sealed class TokcatLauncherWindow : Form
         // Background catalog results need a UI dispatch target before the launcher is first shown.
         CreateHandle();
         Appearance = new TokcatLauncherAppearance(this);
+        Radial = new TokcatLauncherRadial(this, icons);
         ApplyColors();
     }
 
@@ -142,6 +152,43 @@ public sealed class TokcatLauncherWindow : Form
         dictionaryPanel.BackColor = surface; definition.BackColor = surface; definition.ForeColor = text;
         webTranslation.BackColor = surface; webTranslation.ForeColor = text;
         Padding = new Padding(cyber ? 0 : Math.Max(1, (int)LayoutScale));
+        bool radial = Appearance != null && Appearance.IsRadial;
+        if (radial)
+        {
+            if (!radialApplied)
+            {
+                regularLocation = Location;
+                // Keep the native editor focusable for IME and editing while
+                // clipping its straight text, caret and system selection fill.
+                Query.Region = new Region(Rectangle.Empty);
+            }
+            TransparencyKey = TokcatLauncherRadial.TransparentKey;
+            BackColor = input.BackColor = Query.BackColor = Query.ForeColor = TransparencyKey;
+            input.Dock = DockStyle.None; searchIcon.Visible = placeholder.Visible = false;
+            Results.Visible = Hint.Visible = dictionaryPanel.Visible = false;
+            LayoutRadialEditor();
+        }
+        else if (radialApplied)
+        {
+            TransparencyKey = Color.Empty; input.Dock = DockStyle.Top; input.Height = (int)Math.Round(54 * LayoutScale);
+            var editorRegion = Query.Region; Query.Region = null; if (editorRegion != null) editorRegion.Dispose();
+            Query.Font = new Font("Microsoft YaHei UI", 16.5f); Query.TextAlign = HorizontalAlignment.Left;
+            searchIcon.Visible = true; Results.Visible = activeDefinition == null; dictionaryPanel.Visible = activeDefinition != null;
+            ClientSize = new Size((int)Math.Round(560 * LayoutScale), input.Height + (Query.TextLength > 0 ? (int)(24 * LayoutScale) : 0) + Results.Items.Count * Results.ItemHeight + Padding.Vertical);
+            Location = Constrain(regularLocation, Size);
+            Hint.Visible = Query.TextLength > 0; Hint.Height = Hint.Visible ? (int)(24 * LayoutScale) : 0;
+            UpdatePlaceholder();
+        }
+        if (radialApplied != radial && Radial != null)
+        {
+            // The wheel already uses a per-pixel composed surface. Compositing
+            // the transparent editor host again can cause a native paint loop
+            // when its owned dictionary window opens.
+            int style = GetWindowLong(Handle, -20);
+            SetWindowLong(Handle, -20, radial ? style & ~0x02000000 : style | 0x02000000);
+            radialApplied = radial; Radial.Configure();
+        }
+        if (radial && Radial != null) Radial.Invalidate();
         UpdateShape();
         Invalidate(true);
     }
@@ -167,12 +214,30 @@ public sealed class TokcatLauncherWindow : Form
         if (previous != null && previous != Region) previous.Dispose();
     }
 
-    void UpdatePlaceholder() { placeholder.Visible = Query.TextLength == 0 && !Query.Composing; }
+    void UpdatePlaceholder() { placeholder.Visible = (Appearance == null || !Appearance.IsRadial) && Query.TextLength == 0 && !Query.Composing; }
+
+    public void LayoutRadialEditor()
+    {
+        if (Radial == null || !Appearance.IsRadial) return;
+        float scale = Radial.Scale;
+        input.SetBounds((Width - (int)(166 * scale)) / 2, (int)(Height / 2 - 88 * scale), (int)(166 * scale), (int)(28 * scale));
+        Query.TextAlign = HorizontalAlignment.Center;
+        Query.SetBounds(0, Math.Max(0, (input.Height - Query.PreferredHeight) / 2), input.Width, Query.PreferredHeight);
+    }
+
+    public void SubmitRadial() { Submit(); }
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (Appearance != null && Appearance.IsCyber) Appearance.Paint(e.Graphics, ClientRectangle, Point.Empty);
+        if (Appearance != null && Appearance.IsRadial) e.Graphics.Clear(TokcatLauncherRadial.TransparentKey);
+        else if (Appearance != null && Appearance.IsCyber) Appearance.Paint(e.Graphics, ClientRectangle, Point.Empty);
         else base.OnPaintBackground(e);
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        if (Radial != null && Radial.ProcessFrameMessage(ref message)) return;
+        base.WndProc(ref message);
     }
 
     protected override CreateParams CreateParams
@@ -180,7 +245,7 @@ public sealed class TokcatLauncherWindow : Form
         get
         {
             var parameters = base.CreateParams;
-            parameters.ExStyle |= 0x02000000; // WS_EX_COMPOSITED paints the child controls together.
+            if (Appearance == null || !Appearance.IsRadial) parameters.ExStyle |= 0x02000000; // Paint classic child controls together.
             return parameters;
         }
     }
@@ -197,6 +262,17 @@ public sealed class TokcatLauncherWindow : Form
     void QueryKeyDown(object sender, KeyEventArgs e)
     {
         if (IsPreview) return;
+        if (Query.Composing) return;
+        if (Appearance.IsRadial && e.Modifiers == Keys.None && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right || e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
+        {
+            if ((Query.TextLength == 0 && e.KeyCode == Keys.Up) || (BrowsingHistory && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)))
+            {
+                if (e.KeyCode == Keys.Up && HistoryOlder != null) HistoryOlder(this, EventArgs.Empty);
+                else if (e.KeyCode == Keys.Down && HistoryNewer != null) HistoryNewer(this, EventArgs.Empty);
+            }
+            else Radial.Navigate(e.KeyCode);
+            e.Handled = true; e.SuppressKeyPress = true; return;
+        }
         if (e.KeyCode == Keys.Escape) Hide();
         else if (e.KeyCode == Keys.Enter && e.Control)
         {
@@ -250,15 +326,26 @@ public sealed class TokcatLauncherWindow : Form
     string displayedQuery;
     public void SetResults(IEnumerable<TokcatLauncherResult> results, string hint)
     {
-        dictionaryPanel.Visible = false; Results.Visible = true;
+        activeDefinition = null; RadialError = false;
+        dictionaryPanel.Visible = false; Results.Visible = !Appearance.IsRadial;
         var selected = Results.SelectedItem as TokcatLauncherResult;
-        string selectedKey = displayedQuery == Query.Text && selected != null ? selected.Key : null;
-        displayedQuery = Query.Text;
+        string selectedKey = displayedQuery == Query.DisplayText && selected != null ? selected.Key : null;
+        displayedQuery = Query.DisplayText;
+        var visible = (results ?? Enumerable.Empty<TokcatLauncherResult>()).ToArray();
+        if (Appearance.IsRadial)
+        {
+            // Three radii contain 1 + 3 + 5 choices. Reserve the small web
+            // search choice instead of letting overflow create a fourth ring.
+            var search = visible.FirstOrDefault(r => r.Key == "web-search");
+            visible = visible.Where(r => r.Key != "web-search").OrderByDescending(r => r.RadialWeight)
+                .Take(TokcatRadialLayout.MaxVisibleResults - (search == null ? 0 : 1))
+                .Concat(search == null ? new TokcatLauncherResult[0] : new[] { search }).ToArray();
+        }
         Results.BeginUpdate();
         try
         {
             Results.Items.Clear();
-            foreach (var result in results)
+            foreach (var result in visible)
             {
                 Results.Items.Add(result);
                 if (result.Kind == "application") icons.Request(result.App);
@@ -271,12 +358,15 @@ public sealed class TokcatLauncherWindow : Form
         finally { Results.EndUpdate(); }
         SetHint(hint, false);
         FitContent(Results.Items.Count * Results.ItemHeight);
+        if (Appearance.IsRadial) Results.Visible = false;
     }
 
     public void SetHint(string text, bool force)
     {
         Hint.Text = text;
-        bool show = force || Query.TextLength > 0;
+        RadialError = force;
+        if (Appearance.IsRadial) { Hint.Visible = false; Hint.Height = 0; Radial.Invalidate(); return; }
+        bool show = force || Query.DisplayText.Length > 0;
         Hint.Visible = show;
         Hint.Height = show ? (int)Math.Round(24 * LayoutScale) : 0;
         Hint.Padding = new Padding((int)(12 * LayoutScale), 0, 0, 0);
@@ -285,6 +375,15 @@ public sealed class TokcatLauncherWindow : Form
 
     public void SetDefinition(string text)
     {
+        if (Appearance.IsRadial)
+        {
+            SetResults(new[] {
+                new TokcatLauncherResult { Title = "复制释义", Detail = "本地词典", Kind = "definition", Key = "definition", RadialWeight = 1.8 },
+                new TokcatLauncherResult { Title = "网页翻译", Detail = "选择翻译方式", Kind = "web-translations", Key = "web-translations", RadialWeight = 0.8 }
+            }.Concat(RadialSearchResults), "");
+            activeDefinition = text; Radial.ShowDictionary(); return;
+        }
+        activeDefinition = text;
         Results.Items.Clear(); Results.Visible = false;
         definition.Text = text; definition.SelectionStart = 0;
         int measured = TextRenderer.MeasureText(text, definition.Font, new Size(Math.Max(1, ClientSize.Width - 48), int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
@@ -297,6 +396,7 @@ public sealed class TokcatLauncherWindow : Form
 
     void FitContent(int contentHeight)
     {
+        if (Appearance.IsRadial) { Radial.Update(true); return; }
         int wantedHeight = input.Height + Hint.Height + contentHeight + Padding.Vertical;
         Height = Math.Min(wantedHeight, Screen.FromPoint(Location).WorkingArea.Height);
         Location = Constrain(Location, Size);
@@ -311,7 +411,7 @@ public sealed class TokcatLauncherWindow : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { icons.Dispose(); if (Appearance != null) Appearance.Dispose(); }
+        if (disposing) { if (Radial != null) Radial.Dispose(); icons.Dispose(); if (Appearance != null) Appearance.Dispose(); }
         base.Dispose(disposing);
     }
 }
@@ -321,6 +421,7 @@ public sealed class TokcatLauncherResult
     public string Title, Detail, Kind, Value, Key, Input;
     public double Score;
     public bool ExactApplication;
+    public double RadialWeight = 1;
     public TokcatLauncherApp App;
     public override string ToString() { return Title + " " + Detail; }
 }
@@ -518,6 +619,7 @@ public sealed class TokcatLauncherController : IDisposable
     int dictionaryGeneration;
     string dictionaryQuery, dictionaryDefinition, dictionaryError;
     bool dictionaryPending, prefersWebTranslation;
+    string requestedTranslation;
     readonly TokcatEverythingSearch fileSearch;
     TokcatEverythingFile[] fileResults = new TokcatEverythingFile[0];
     string pendingFileQuery, completedFileQuery, fileError;
@@ -527,6 +629,7 @@ public sealed class TokcatLauncherController : IDisposable
     volatile bool disposed;
     int historyCursor = -1;
     string catalogError;
+    string observedInput;
     public readonly TokcatLauncherWindow Window;
     public event EventHandler OpenSettings;
     public event EventHandler StatusChanged;
@@ -545,18 +648,15 @@ public sealed class TokcatLauncherController : IDisposable
         Window.WebTranslationRequested += delegate { ShowWebTranslations(); };
         fileSearch.Completed += delegate(object sender, TokcatEverythingReply reply)
         {
-            if (reply.Query != Window.Query.Text.Trim()) return;
+            if (reply.Query != Window.Query.DisplayText.Trim()) return;
             completedFileQuery = reply.Query; fileResults = reply.Files; fileError = reply.Error;
             UpdateResults();
         };
         fileDebounce.Tick += delegate { fileDebounce.Stop(); if (!string.IsNullOrEmpty(pendingFileQuery)) fileSearch.Query(pendingFileQuery); };
         hotKey = new TokcatLauncherHotKey();
         hotKey.Pressed += delegate { if (Window.Visible) Window.Hide(); else Show(); };
-        Window.Query.TextChanged += delegate
-        {
-            if (!recalling) { historyCursor = -1; Window.BrowsingHistory = false; }
-            UpdateResults();
-        };
+        Window.Query.TextChanged += delegate { if (!Window.Query.Composing) InputChanged(); };
+        Window.Query.CompositionChanged += delegate { InputChanged(); };
         Window.Submitted += delegate { SubmitSelection(); };
         Window.ContainingFolderRequested += delegate { OpenContainingFolder(); };
         Window.HistoryOlder += delegate { Recall(true); };
@@ -610,6 +710,7 @@ public sealed class TokcatLauncherController : IDisposable
         Rectangle screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         Point initial = settings.X.HasValue && settings.Y.HasValue ? new Point(settings.X.Value, settings.Y.Value) : new Point(screen.Left + (screen.Width - Window.Width) / 2, screen.Top + screen.Height / 4);
         Window.Location = TokcatLauncherWindow.Constrain(initial, Window.Size);
+        if (Window.Appearance.IsRadial) Window.Radial.ResetAnchor();
         Window.PerformLayout();
         Window.Appearance.Prepare();
         Window.Show(); Window.Activate(); Window.Query.Focus();
@@ -668,19 +769,31 @@ public sealed class TokcatLauncherController : IDisposable
         fileResults = new TokcatEverythingFile[0];
     }
 
+    void InputChanged()
+    {
+        // The native TextBox.Text does not include the IME's in-progress
+        // spelling/candidate. Search the same composed string that is drawn.
+        string text = Window.Query.DisplayText;
+        if (observedInput == text) return;
+        observedInput = text;
+        if (!recalling) { historyCursor = -1; Window.BrowsingHistory = false; }
+        UpdateResults();
+    }
+
     void UpdateResults()
     {
         if (disposed) return;
-        string text = Window.Query.Text.Trim();
+        string text = Window.Query.DisplayText.Trim();
         if (!Window.Visible && text.Length > 0) return;
         string hint = "已索引 " + index.Count + " 个应用 · ↑ 历史 · Enter 执行 · Ctrl+Enter 文件位置";
         if (text.Length == 0)
         {
+            Window.RadialSearchResults = new TokcatLauncherResult[0];
             ClearDictionaryQuery();
             ClearFileQuery();
             if (scanning) hint = "正在读取应用列表…";
             else if (catalogError != null) hint = catalogError;
-            Window.SetResults(TokcatLauncherRanking.History(settings), hint);
+            Window.SetResults(Window.Appearance.IsRadial ? new TokcatLauncherResult[0] : TokcatLauncherRanking.History(settings), hint);
             return;
         }
         var translation = TokcatLauncherTranslationInput.Parse(text);
@@ -689,6 +802,10 @@ public sealed class TokcatLauncherController : IDisposable
             ClearFileQuery();
             UpdateTranslation(translation);
             return;
+        }
+        if (Window.Appearance.IsRadial && requestedTranslation == text)
+        {
+            ClearFileQuery(); UpdateTranslation(TokcatLauncherTranslationInput.Parse("tran+" + text)); return;
         }
         ClearDictionaryQuery();
         if (pendingFileQuery != text)
@@ -708,7 +825,54 @@ public sealed class TokcatLauncherController : IDisposable
             if (calculation != null && calculation.Error != null) hint = calculation.Error;
             else if (catalogError != null) hint = catalogError;
         }
-        Window.SetResults(results, hint);
+        if (Window.Appearance.IsRadial)
+        {
+            var direct = TokcatLauncherTranslationInput.Parse("tran+" + text);
+            bool allowsTranslation = direct.IsDictionaryCandidate && TokcatLauncherCalculator.Evaluate(text) == null &&
+                !results.Any(r => r.Kind == "settings" || (r.Kind == "terminal" && r.Score >= 1400) || (r.Kind == "website" && (r.Key.StartsWith("url:") || r.Score >= 1400)));
+            if (allowsTranslation) results = results.Where(r => !r.Key.StartsWith("search:")).Concat(new[] { TranslationChoice() }).ToArray();
+        }
+        PublishResults(results, hint);
+    }
+
+    static TokcatLauncherResult TranslationChoice()
+    {
+        return new TokcatLauncherResult { Title = "翻译", Detail = "查看单词释义", Kind = "translate", Key = "translate", RadialWeight = 1.8 };
+    }
+
+    void PublishResults(IEnumerable<TokcatLauncherResult> results, string hint)
+    {
+        if (!Window.Appearance.IsRadial) { Window.SetResults(results, hint); return; }
+        string query = Window.Query.DisplayText.Trim();
+        var translation = TokcatLauncherTranslationInput.Parse(query);
+        string content = translation == null ? query : translation.Text;
+        var engine = settings.DefaultSearch;
+        string searchUrl = (engine == null ? "https://www.baidu.com/s?wd={query}" : engine.Value).Replace("{query}", Uri.EscapeDataString(content));
+        Window.RadialSearchResults = query.Length == 0 || content.Length == 0 ? new TokcatLauncherResult[0] : new[] {
+            new TokcatLauncherResult { Title = "网页搜索", Detail = engine == null ? "百度搜索" : engine.Name, Kind = "website", Key = "web-search", Value = searchUrl, RadialWeight = 0.25 }
+        };
+        var primary = results.Where(r => !r.Key.StartsWith("search:") && r.Key != "web-search").ToArray();
+        if (query.Equals("setup", StringComparison.OrdinalIgnoreCase)) primary = primary.Where(r => r.Kind == "settings").Take(1).ToArray();
+        else if (query.StartsWith(">")) primary = primary.Where(r => r.Kind == "terminal").Take(1).ToArray();
+        else if (TokcatLauncherCalculator.Evaluate(query) != null) primary = primary.Where(r => r.Kind == "calculation").Take(1).ToArray();
+        else
+        {
+            var command = settings.Commands.FirstOrDefault(c => c.Enabled && c.Keyword.Equals(query, StringComparison.OrdinalIgnoreCase));
+            var web = primary.FirstOrDefault(r => r.Kind == "website" && (r.Key.StartsWith("url:") || r.Score >= 1400));
+            if (command != null) primary = primary.Where(r => r.Key == "command:" + command.Keyword).Take(1).ToArray();
+            else if (web != null) primary = new[] { web };
+        }
+        for (int i = 0; i < primary.Length; i++)
+        {
+            var item = primary[i];
+            if (item.Kind == "application" || item.Kind == "translation")
+            {
+                int count = settings.Usage.Where(u => u.Key == item.Key).Select(u => u.Count).FirstOrDefault();
+                item.RadialWeight = 2 / (1 + i * 0.25) + Math.Min(2.4, Math.Log(count + 1, 2) * 0.4);
+            }
+        }
+        Window.Radial.CancelAim();
+        Window.SetResults(primary.Concat(Window.RadialSearchResults).OrderByDescending(r => r.RadialWeight), hint);
     }
 
     void ClearDictionaryQuery()
@@ -721,6 +885,10 @@ public sealed class TokcatLauncherController : IDisposable
 
     void UpdateTranslation(TokcatLauncherTranslationInput translation)
     {
+        if (Window.Appearance.IsRadial && translation.IsDictionaryCandidate && requestedTranslation != Window.Query.DisplayText.Trim())
+        {
+            ClearDictionaryQuery(); PublishResults(new[] { TranslationChoice() }, "选择翻译查看释义"); return;
+        }
         if (dictionaryQuery != translation.Text)
         {
             ClearDictionaryQuery(); dictionaryQuery = translation.Text;
@@ -730,10 +898,10 @@ public sealed class TokcatLauncherController : IDisposable
             }
         }
         if (dictionaryDefinition != null && !prefersWebTranslation) { Window.SetDefinition(dictionaryDefinition); return; }
-        var results = dictionaryPending ? new TokcatLauncherResult[0] : settings.RankedTranslations().Select(p => p.Request(translation.Text)).Where(r => r != null).Take(5).ToArray();
+        var results = dictionaryPending ? new TokcatLauncherResult[0] : settings.RankedTranslations().Select(p => p.Request(translation.Text)).Where(r => r != null).Take(Window.Appearance.IsRadial ? 100 : 5).ToArray();
         string hint = translation.Text.Length == 0 ? "输入 tran+内容 或 tran 内容" : dictionaryPending ? "正在查询本地词典…" :
             dictionaryError ?? (results.Length == 0 ? "没有启用的网页翻译方式，请在启动器设置 → 翻译中添加。" : "翻译 · ↑↓ 选择 · Enter 打开网页 · 默认方式置顶");
-        Window.SetResults(results, hint);
+        PublishResults(results, hint);
     }
 
     void LookupDictionary()
@@ -771,7 +939,7 @@ public sealed class TokcatLauncherController : IDisposable
         {
             if (result.Value.IndexOf('"') >= 0) throw new InvalidDataException("文件位置无效。");
             Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + result.Value + "\"") { UseShellExecute = true });
-            string input = Window.Query.Text.Trim();
+            string input = Window.Query.DisplayText.Trim();
             settings.Remember(input.Length == 0 ? result.Input : input, null, result.Kind, result.Value, result.Key);
             Save(); Window.Hide();
         }
@@ -780,13 +948,19 @@ public sealed class TokcatLauncherController : IDisposable
 
     public void SubmitSelection()
     {
+        var radialResult = Window.Results.SelectedItem as TokcatLauncherResult;
+        if (Window.Appearance.IsRadial && radialResult != null)
+        {
+            if (radialResult.Kind == "translate") { requestedTranslation = Window.Query.DisplayText.Trim(); UpdateResults(); Window.Query.Focus(); return; }
+            if (radialResult.Kind == "web-translations") { ShowWebTranslations(); return; }
+        }
         string definition = Window.DictionaryDefinition;
-        if (definition != null)
+        if (definition != null && (!Window.Appearance.IsRadial || (radialResult != null && radialResult.Kind == "definition")))
         {
             try
             {
                 Clipboard.SetText(definition);
-                string text = Window.Query.Text.Trim();
+                string text = Window.Query.DisplayText.Trim();
                 settings.Remember(text, null, "fill", text, "dictionary:" + dictionaryQuery); Save(); Window.Hide();
             }
             catch (Exception error) { Window.SetHint("无法复制释义 · " + error.Message, true); }
@@ -794,7 +968,7 @@ public sealed class TokcatLauncherController : IDisposable
         }
         var result = Window.Results.SelectedItem as TokcatLauncherResult;
         if (result == null) return;
-        string input = Window.Query.Text.Trim();
+        string input = Window.Query.DisplayText.Trim();
         if (result.Kind == "fill")
         {
             Window.Query.Text = result.Value;
@@ -884,11 +1058,26 @@ public sealed class TokcatLauncherController : IDisposable
 
     public TokcatLauncherSettingsPage CreateSettingsPage()
     {
-        var page = new TokcatLauncherSettingsPage(palette, delegate { return settings.Copy(); });
-        page.OpenLauncherRequested += delegate { Show(); };
+        Func<TokcatLauncherSettings> read = delegate { return settings.Copy(); };
+        var page = new TokcatLauncherSettingsPage(palette, delegate {
+            return Window.InvokeRequired ? (TokcatLauncherSettings)Window.Invoke(read) : read();
+        });
+        page.OpenLauncherRequested += delegate {
+            if (Window.InvokeRequired) Window.BeginInvoke((Action)Show);
+            else Show();
+        };
         page.SaveRequested += delegate
         {
-            ApplyConfiguration(page.Editor.Settings, page.Editor.ClearsHistory);
+            var draft = page.Editor.Settings.Copy();
+            bool clear = page.Editor.ClearsHistory;
+            Action apply = delegate { ApplyConfiguration(draft, clear); };
+            if (Window.InvokeRequired)
+            {
+                try { Window.Invoke(apply); }
+                catch (System.Reflection.TargetInvocationException error)
+                { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException).Throw(); }
+            }
+            else apply();
             page.AcceptSaved();
         };
         if (!configurationValid) page.Enabled = false;
@@ -906,12 +1095,83 @@ public sealed class TokcatLauncherController : IDisposable
     }
 }
 
+// Own the editor, IME, global shortcut, search callbacks and rendering on the
+// same STA. Dashboard snapshot processing can then run independently of input.
+public sealed class TokcatLauncherHost : IDisposable
+{
+    readonly Thread thread;
+    readonly Control dashboard;
+    readonly TokcatLauncherController controller;
+    readonly Control dispatcher;
+    volatile bool closing;
+    public event EventHandler StatusChanged, OpenSettings;
+    public string Status { get { return controller.Status; } }
+
+    public TokcatLauncherHost(Control dashboard, string path, Color[] palette, bool enableHotKey)
+    {
+        this.dashboard = dashboard;
+        var dashboardHandle = dashboard.Handle;
+        TokcatLauncherController started = null;
+        Control dispatch = null;
+        Exception failure = null;
+        using (var ready = new ManualResetEventSlim(false))
+        {
+            thread = new Thread(delegate()
+            {
+                try
+                {
+                    dispatch = new Control();
+                    var dispatchHandle = dispatch.Handle;
+                    started = new TokcatLauncherController(path, palette, enableHotKey);
+                    var editorHandle = started.Window.Handle;
+                    started.StatusChanged += delegate { NotifyDashboard(StatusChanged); };
+                    started.OpenSettings += delegate { NotifyDashboard(OpenSettings); };
+                }
+                catch (Exception error) { failure = error; }
+                finally { ready.Set(); }
+                try { if (failure == null) Application.Run(); }
+                finally
+                {
+                    if (started != null) started.Dispose();
+                    if (dispatch != null) dispatch.Dispose();
+                }
+            });
+            thread.Name = "tokcat launcher input";
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            ready.Wait();
+        }
+        if (failure != null) throw new InvalidOperationException("Unable to start the launcher", failure);
+        controller = started;
+        dispatcher = dispatch;
+    }
+    void NotifyDashboard(EventHandler handler)
+    {
+        if (closing || handler == null) return;
+        try { dashboard.BeginInvoke((Action)delegate { if (!closing) handler(this, EventArgs.Empty); }); }
+        catch (InvalidOperationException) { if (!dashboard.Disposing && !dashboard.IsDisposed && !closing) throw; }
+    }
+    public void Show() { if (!closing) dispatcher.BeginInvoke((Action)controller.Show); }
+    public TokcatLauncherSettingsPage CreateSettingsPage() { return controller.CreateSettingsPage(); }
+    public void Dispose()
+    {
+        if (closing) return;
+        closing = true;
+        if (thread.IsAlive)
+        {
+            dispatcher.BeginInvoke((Action)Application.ExitThread);
+            thread.Join();
+        }
+    }
+}
+
 public sealed class TokcatLauncherSettingsWindow : Form
 {
     public TokcatLauncherSettings Settings { get; private set; }
     public bool ClearsHistory { get; private set; }
     public bool Embedded { get; private set; }
-    public string PreviewSkin { get { return skin.SelectedIndex == 1 ? "cyber" : "classic"; } }
+    public string PreviewSkin { get { return skin.SelectedIndex == 2 ? "radial" : skin.SelectedIndex == 1 ? "cyber" : "classic"; } }
     public bool PreviewAutomaticText { get { return automaticText.Checked; } }
     public event EventHandler AppearanceChanged;
     public event EventHandler SaveRequested;
@@ -957,13 +1217,13 @@ public sealed class TokcatLauncherSettingsWindow : Form
             shortcut.Text = TokcatLauncherController.FormatShortcut(modifiers, key);
         };
         var skinCaption = new Label { Text = "启动器皮肤", Location = new Point(24, 26), AutoSize = true };
-        skin.DropDownStyle = ComboBoxStyle.DropDownList; skin.Items.AddRange(new object[] { "经典", "赛博悬浮" });
-        skin.SelectedIndex = settings.Skin == "cyber" ? 1 : 0; skin.SetBounds(150, 22, 224, 30); skin.AccessibleName = "启动器皮肤";
+        skin.DropDownStyle = ComboBoxStyle.DropDownList; skin.Items.AddRange(new object[] { "经典", "赛博悬浮", "赛博轮盘" });
+        skin.SelectedIndex = settings.Skin == "radial" ? 2 : settings.Skin == "cyber" ? 1 : 0; skin.SetBounds(150, 22, 224, 30); skin.AccessibleName = "启动器皮肤";
         automaticText.Text = "赛博皮肤：根据背景自动调整字色（仅打开时在内存采样）";
         automaticText.Checked = settings.AutoTextColor; automaticText.SetBounds(24, 66, 660, 30);
         skin.SelectedIndexChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
         automaticText.CheckedChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
-        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n输入 tran+内容 翻译，> 后跟终端命令，setup 打开监控设置\n按 ↑ 调出最近 50 条输入；拖动放大镜或空白处保存位置\n赛博悬浮在内存中模糊背景，不保存画面；高对比度使用系统配色", Location = new Point(24, 246), Size = new Size(650, 100) };
+        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n中文输入法组字即时匹配；tran+翻译，>命令，setup 打开设置\n按 ↑ 调出历史；经典／赛博悬浮可拖动背景保存位置\n轮盘最多三层，跟随鼠标；方向键固定，悬停、点击或回车选择\n按住 Ctrl 指向，松开执行；Ctrl+滚轮阅读释义；Esc 收起", Location = new Point(24, 246), Size = new Size(650, 108) };
         var clear = new Button { Text = "清空历史与使用权重", Location = new Point(24, 360), Size = new Size(200, 32) };
         clear.Click += delegate { settings.History.Clear(); settings.Usage.Clear(); ClearsHistory = true; clear.Text = "保存后清空历史与权重"; };
         general.Controls.AddRange(new Control[] { enabled, caption, shortcut, skinCaption, skin, automaticText, hint, clear });
@@ -987,7 +1247,7 @@ public sealed class TokcatLauncherSettingsWindow : Form
             try
             {
                 settings.Enabled = enabled.Checked; settings.Modifiers = modifiers; settings.Key = key;
-                settings.Skin = skin.SelectedIndex == 1 ? "cyber" : "classic"; settings.AutoTextColor = automaticText.Checked;
+                settings.Skin = PreviewSkin; settings.AutoTextColor = automaticText.Checked;
                 var selectedSearch = searchEngine.SelectedItem as SearchChoice;
                 settings.PreferredSearchKeyword = selectedSearch == null ? null : selectedSearch.Keyword;
                 settings.DictionaryPath = dictionaryPath.Text.Trim(); settings.Translations = ReadTranslations();

@@ -87,6 +87,7 @@ public sealed class TokcatLauncherPreviewScene : Panel
         DoubleBuffered = true;
         Launcher = new TokcatLauncherWindow(palette) { IsPreview = true, TopLevel = false, TopMost = false, ShowInTaskbar = false };
         Launcher.Query.ReadOnly = true; Launcher.Query.TabStop = false; Launcher.Results.TabStop = false;
+        Launcher.Radial.FrameChanged += delegate { RebuildBackground(); };
         Controls.Add(Launcher); Launcher.Show();
         Layout += delegate { RebuildBackground(); };
     }
@@ -134,7 +135,9 @@ public sealed class TokcatLauncherPreviewScene : Panel
                 using (var accent = new SolidBrush(Color.FromArgb(45, light ? Color.White : Color.FromArgb(88, 140, 164))))
                     graphics.FillEllipse(accent, ClientSize.Width / 2, -100, 600, 500);
             }
-            Launcher.Location = new Point(Math.Max(8, (ClientSize.Width - Launcher.Width) / 2), Math.Max(8, (ClientSize.Height - Launcher.Height) / 2));
+            Launcher.Visible = !Launcher.Appearance.IsRadial;
+            if (Launcher.Appearance.IsRadial) Launcher.Radial.Motion.Finish();
+            Launcher.Location = new Point((ClientSize.Width - Launcher.Width) / 2, (ClientSize.Height - Launcher.Height) / 2);
             int x = Launcher.Appearance.MarginX, y = Launcher.Appearance.MarginY;
             using (var source = new Bitmap(Launcher.Width + 2 * x, Launcher.Height + 2 * y))
             using (var graphics = Graphics.FromImage(source))
@@ -154,6 +157,15 @@ public sealed class TokcatLauncherPreviewScene : Panel
         if (wallpaper != null) e.Graphics.DrawImageUnscaled(wallpaper, 0, 0);
         else base.OnPaintBackground(e);
         if (margins != null) e.Graphics.DrawImageUnscaled(margins, Launcher.Left - Launcher.Appearance.MarginX, Launcher.Top - Launcher.Appearance.MarginY);
+        if (Launcher.Appearance.IsRadial)
+        {
+            using (var frame = Launcher.Radial.Render())
+            {
+                float scale = Math.Min(1f, Math.Min((ClientSize.Width - 16f) / frame.Width, (ClientSize.Height - 16f) / frame.Height));
+                int width = (int)(frame.Width * scale), height = (int)(frame.Height * scale);
+                e.Graphics.DrawImage(frame, new Rectangle((ClientSize.Width - width) / 2, (ClientSize.Height - height) / 2, width, height));
+            }
+        }
     }
 
     protected override void Dispose(bool disposing)

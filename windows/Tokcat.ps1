@@ -38,7 +38,7 @@ $form = New-Object TokcatMainWindow
 $form.ShowInTaskbar = $true
 $launcherPalette = [Drawing.Color[]]@([TokcatUi]::Background,[TokcatUi]::Surface,[TokcatUi]::Text,[TokcatUi]::Secondary,[TokcatUi]::Selection)
 $launcherPath = Join-Path $env:LOCALAPPDATA 'Tokcat\launcher.json'
-$launcher = [TokcatLauncherController]::new($launcherPath,$launcherPalette,(-not $SmokeTest))
+$launcher = [TokcatLauncherHost]::new($form,$launcherPath,$launcherPalette,(-not $SmokeTest))
 $launcherPage = $launcher.CreateSettingsPage()
 $form.LauncherSettingsHost.Controls.Add($launcherPage)
 $form.LauncherStatus.Text = $launcher.Status
@@ -388,6 +388,19 @@ $instanceTimer.Add_Tick({ if ($instance.Event.WaitOne(0)) { $form.Show(); $form.
 Set-TrayIcon @('unknown') 'tokcat: 正在读取 Codex 会话'
 $form.Add_Shown({ Update-SystemDisplay; Update-Sessions; if ($script:stripEnabled) { Set-StatusStrip $true $false } else { $stripButton.Text = '显示任务栏' }; $timer.Start(); $metricsTimer.Start(); $snapshotPoll.Start(); $instanceTimer.Start(); if ($ShowLauncherSettings) { $form.ShowLauncherSettings() } elseif (-not $SmokeTest) { $form.Hide() } })
 if ($SmokeTest) {
+    $testController = $launcher.GetType().GetField('controller',[Reflection.BindingFlags]'Instance,NonPublic').GetValue($launcher)
+    $testWindow = $testController.Window
+    function Invoke-LauncherCheck($Target, [string]$Method, [type]$Signature, [object[]]$Arguments = @()) {
+        $operation = [Delegate]::CreateDelegate($Signature,$Target,$Method)
+        $call = $testWindow.BeginInvoke($operation,$Arguments)
+        $timeout = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $call.IsCompleted) {
+            if ($timeout.ElapsedMilliseconds -ge 3000) { throw 'Launcher input thread did not respond.' }
+            [Windows.Forms.Application]::DoEvents()
+            [Threading.Thread]::Sleep(1)
+        }
+        return $testWindow.EndInvoke($call)
+    }
     $smokeTimer = New-Object Windows.Forms.Timer
     $smokeTimer.Interval = 1000
     $script:smokeDeadline = [datetimeoffset]::UtcNow.AddSeconds(30)
@@ -409,14 +422,16 @@ if ($SmokeTest) {
         $form.ShowSettings($false)
         if (@($list.Items | Where-Object { $_.SubItems.Count -gt 1 -and $_.SubItems[1].Text -eq 'Codex' }).Count -eq 0) { $script:smokeError = 'Fixture session was not shown in the window.' }
         $form.LauncherButton.PerformClick()
-        if (-not $form.LauncherSettingsHost.Visible -or $launcher.Window.Visible -or -not $launcherPage.Preview.Launcher.Visible) { $script:smokeError = 'The launcher sidebar did not open its embedded preview and settings.' }
+        if (-not $form.LauncherSettingsHost.Visible -or (Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $launcherPage.Preview.Launcher.Visible) { $script:smokeError = 'The launcher sidebar did not open its embedded preview and settings.' }
         $launcherPage.OpenLauncher.PerformClick()
-        if (-not $launcher.Window.Visible -or -not $launcher.Window.Query.IsHandleCreated) { $script:smokeError = 'The launcher preview page did not open the real launcher.' }
-        $launcher.Window.Query.Text = 'sqrt(9)+2^3'
-        if ($launcher.Window.Results.Items.Count -ne 1 -or $launcher.Window.Results.Items[0].Value -ne '11') { $script:smokeError = 'Quick launcher did not calculate through the packaged entry point.' }
-        $launcher.Window.Query.Text = 'setup'
-        $launcher.SubmitSelection()
-        if ($launcher.Window.Visible -or -not $stripButton.Visible) { $script:smokeError = 'Launcher setup did not open the settings page.' }
+        if (-not (Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $testWindow.Query.IsHandleCreated) { $script:smokeError = 'The launcher preview page did not open the real launcher.' }
+        Invoke-LauncherCheck $testWindow.Query set_Text ([Action[string]]) @('sqrt(9)+2^3')
+        $answer = Invoke-LauncherCheck $testWindow.Results get_SelectedItem ([Func[object]])
+        if ($answer.Value -ne '11') { $script:smokeError = 'Quick launcher did not calculate through the packaged entry point.' }
+        Invoke-LauncherCheck $testWindow.Query set_Text ([Action[string]]) @('setup')
+        Invoke-LauncherCheck $testController SubmitSelection ([Action])
+        [Windows.Forms.Application]::DoEvents()
+        if ((Invoke-LauncherCheck $testWindow get_Visible ([Func[bool]])) -or -not $stripButton.Visible) { $script:smokeError = 'Launcher setup did not open the settings page.' }
         $form.ShowSettings($false)
         $form.Search.Text = 'no-matching-task-fixture-83c12'
         if ($list.Items.Count -ne 0) { $script:smokeError = 'Search did not filter the visible task list.' }

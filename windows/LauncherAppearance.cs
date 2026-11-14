@@ -12,17 +12,26 @@ public sealed class TokcatLauncherAppearance : IDisposable
     readonly TokcatLauncherWindow window;
     readonly TokcatLauncherBackdrop halo = new TokcatLauncherBackdrop();
     readonly Timer timer = new Timer { Interval = 450 };
+    readonly TokcatRadialBackdropCapture radialCapture = new TokcatRadialBackdropCapture();
+    TokcatRadialBackdropCapture.Frame radialFrame;
+    IntPtr[] radialHandles = new IntPtr[0];
+    bool radialCapturing;
+    Color fogTarget;
+    double fogRed, fogGreen, fogBlue;
+    long fogUpdatedAt;
     Bitmap backdrop;
     bool cyber, automatic, excluded;
     bool transparency = true;
     bool? light;
     public bool IsCyber { get { return cyber; } }
+    public bool IsRadial { get; private set; }
     public bool IsLight { get { return light ?? window.ClassicIsLight; } }
-    public int MarginX { get { return (int)Math.Round(16 * window.LayoutScale); } }
-    public int MarginY { get { return (int)Math.Round(26 * window.LayoutScale); } }
+    public int MarginX { get { return IsRadial ? 0 : (int)Math.Round(16 * window.LayoutScale); } }
+    public int MarginY { get { return IsRadial ? 0 : (int)Math.Round(26 * window.LayoutScale); } }
     public Color Foreground { get { return IsLight ? Color.FromArgb(10, 36, 43) : Color.FromArgb(232, 255, 245); } }
     public Color Secondary { get { return IsLight ? Color.FromArgb(31, 64, 69) : Color.FromArgb(196, 240, 224); } }
     public Color Accent { get { return IsLight ? Color.FromArgb(5, 77, 74) : Color.FromArgb(120, 255, 209); } }
+    public Color Pink { get { return IsLight ? Color.FromArgb(143, 26, 99) : Color.FromArgb(255, 148, 204); } }
     public Color Surface { get; private set; }
     public int BackgroundRevision { get; private set; }
 
@@ -36,22 +45,24 @@ public sealed class TokcatLauncherAppearance : IDisposable
         timer.Tick += delegate { Capture(); };
         window.VisibleChanged += delegate
         {
-            if (!window.Visible) { timer.Stop(); halo.Hide(); ReleaseImage(); SetWindowDisplayAffinity(window.Handle, 0); excluded = false; }
+            if (!window.Visible) { timer.Stop(); StopRadialCapture(); halo.Hide(); ReleaseImage(); SetWindowDisplayAffinity(window.Handle, 0); excluded = false; }
         };
         window.LocationChanged += delegate { if (window.Visible && cyber) halo.Hide(); };
-        window.ResizeEnd += delegate { if (window.Visible && cyber && excluded) Capture(); };
-        window.SizeChanged += delegate { if (window.Visible && cyber && excluded) Capture(); };
+        window.ResizeEnd += delegate { if (window.Visible && cyber && !IsRadial && excluded) Capture(); };
+        window.SizeChanged += delegate { if (window.Visible && cyber && !IsRadial && excluded) Capture(); };
     }
 
     public void Configure(string skin, bool autoTextColor)
     {
-        timer.Stop(); halo.Hide(); ReleaseImage();
+        timer.Stop(); StopRadialCapture(); halo.Hide(); ReleaseImage();
         SetWindowDisplayAffinity(window.Handle, 0); excluded = false;
-        cyber = skin == "cyber" && !SystemInformation.HighContrast;
+        IsRadial = skin == "radial" && !SystemInformation.HighContrast;
+        cyber = (skin == "cyber" || IsRadial) && !SystemInformation.HighContrast;
         automatic = autoTextColor;
         light = null;
         transparency = Convert.ToInt32(Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "EnableTransparency", 1)) != 0;
         Surface = IsLight ? Color.FromArgb(235, 248, 244) : Color.FromArgb(20, 32, 38);
+        fogTarget = Surface; fogRed = Surface.R; fogGreen = Surface.G; fogBlue = Surface.B; fogUpdatedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         window.ApplyColors();
     }
 
@@ -65,12 +76,22 @@ public sealed class TokcatLauncherAppearance : IDisposable
         excluded = int.TryParse(Convert.ToString(raw), out build) && build >= 19041 &&
             SetWindowDisplayAffinity(window.Handle, 0x11) && SetWindowDisplayAffinity(halo.Handle, 0x11);
         SetWindowDisplayAffinity(window.Handle, 0); SetWindowDisplayAffinity(halo.Handle, 0);
+        if (IsRadial) excluded = excluded && window.Radial.SetCaptureAffinity(0x11);
+        if (IsRadial) window.Radial.SetCaptureAffinity(0);
+        if (IsRadial && excluded && transparency)
+        {
+            radialHandles = window.Radial.CaptureHandles;
+            radialCapture.Begin(); radialCapturing = true;
+            QueueRadialCapture(true); return;
+        }
+        if (IsRadial) return;
         Capture();
     }
 
     public void Presented()
     {
         if (!cyber || window.IsPreview) return;
+        if (IsRadial) { window.Radial.Present(); return; }
         ShowHalo();
         if (excluded && transparency) timer.Start();
     }
@@ -81,6 +102,48 @@ public sealed class TokcatLauncherAppearance : IDisposable
         light = brightness >= cutoff;
     }
 
+    void QueueRadialCapture(bool force)
+    {
+        if (!radialCapturing) return;
+        radialCapture.Enqueue(window.Bounds, SystemInformation.VirtualScreen, Surface, radialHandles, force);
+    }
+
+    public bool PollRadialBackground()
+    {
+        if (!IsRadial || window.IsPreview || !window.Visible || !radialCapturing) return false;
+        QueueRadialCapture(false);
+        var next = radialCapture.TakeLatest();
+        bool before = IsLight;
+        if (next != null)
+        {
+            if (radialFrame != null) radialFrame.Dispose(); radialFrame = next;
+            if (automatic) UpdateBrightness(next.Luminance);
+            Color tint = IsLight ? Color.FromArgb(239,252,248) : Color.FromArgb(12,24,30);
+            fogTarget = Color.FromArgb((next.Color.R * 105 + tint.R * 150) / 255, (next.Color.G * 105 + tint.G * 150) / 255, (next.Color.B * 105 + tint.B * 150) / 255);
+        }
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double elapsed = Math.Min(0.1, (now - fogUpdatedAt) / (double)System.Diagnostics.Stopwatch.Frequency); fogUpdatedAt = now;
+        double step = 1 - Math.Exp(-elapsed / 0.12);
+        fogRed += (fogTarget.R - fogRed) * step; fogGreen += (fogTarget.G - fogGreen) * step; fogBlue += (fogTarget.B - fogBlue) * step;
+        Color color = Color.FromArgb((int)Math.Round(fogRed), (int)Math.Round(fogGreen), (int)Math.Round(fogBlue));
+        bool changed = Surface != color;
+        if (changed) { Surface = color; BackgroundRevision++; }
+        if (before != IsLight) window.ApplyColors();
+        return changed || before != IsLight;
+    }
+
+    void StopRadialCapture()
+    {
+        radialCapturing = false; radialCapture.Stop();
+        foreach (var handle in radialHandles) SetWindowDisplayAffinity(handle, 0);
+        radialHandles = new IntPtr[0];
+    }
+
+    public void PaintDesktop(Graphics graphics, Rectangle target, Rectangle screen)
+    {
+        using (var brush = new SolidBrush(Surface)) graphics.FillRectangle(brush, target);
+    }
+
     void Capture()
     {
         if (!cyber || window.IsPreview || !transparency || window.IsDisposed || (window.Visible && !excluded)) return;
@@ -88,7 +151,7 @@ public sealed class TokcatLauncherAppearance : IDisposable
         {
             if (window.Visible)
             {
-                if (!SetWindowDisplayAffinity(window.Handle, 0x11) || !SetWindowDisplayAffinity(halo.Handle, 0x11)) { timer.Stop(); return; }
+                if (!SetWindowDisplayAffinity(window.Handle, 0x11) || !SetWindowDisplayAffinity(halo.Handle, 0x11) || (IsRadial && !window.Radial.SetCaptureAffinity(0x11))) { timer.Stop(); return; }
                 DwmFlush();
             }
             var rectangle = new Rectangle(window.Left - MarginX, window.Top - MarginY,
@@ -111,15 +174,17 @@ public sealed class TokcatLauncherAppearance : IDisposable
             if (!(error is System.ComponentModel.Win32Exception) && !(error is ExternalException) && !(error is ArgumentException)) throw;
             timer.Stop(); halo.Hide(); ReleaseImage(); window.ApplyColors();
         }
-        finally { SetWindowDisplayAffinity(window.Handle, 0); SetWindowDisplayAffinity(halo.Handle, 0); }
+        finally { SetWindowDisplayAffinity(window.Handle, 0); SetWindowDisplayAffinity(halo.Handle, 0); if (IsRadial) window.Radial.SetCaptureAffinity(0); }
     }
 
     void RenderSource(Bitmap source)
     {
         double brightness = 0;
         int samples = 0;
-        for (int x = MarginX; x < source.Width - MarginX; x += 20)
-            for (int y = MarginY; y < source.Height - MarginY; y += 20)
+        var sample = IsRadial ? new Rectangle((int)(source.Width / 2 - 80 * window.Radial.Scale), (int)(source.Height / 2 - 84 * window.Radial.Scale), (int)(160 * window.Radial.Scale), (int)(20 * window.Radial.Scale)) : new Rectangle(MarginX, MarginY, source.Width - 2 * MarginX, source.Height - 2 * MarginY);
+        sample.Intersect(new Rectangle(Point.Empty, source.Size));
+        for (int x = sample.Left; x < sample.Right; x += 10)
+            for (int y = sample.Top; y < sample.Bottom; y += 10)
             {
                 Color c = source.GetPixel(x, y);
                 brightness += 0.2126 * Linear(c.R) + 0.7152 * Linear(c.G) + 0.0722 * Linear(c.B); samples++;
@@ -136,13 +201,22 @@ public sealed class TokcatLauncherAppearance : IDisposable
                 using (var tint = new SolidBrush(Color.FromArgb(150, IsLight ? Color.FromArgb(239, 252, 248) : Color.FromArgb(12, 24, 30)))) g.FillRectangle(tint, 0, 0, next.Width, next.Height);
             }
             ReleaseImage(); backdrop = next;
-            Surface = backdrop.GetPixel(backdrop.Width / 2, Math.Min(backdrop.Height - 1, MarginY + window.InputHeight / 2));
+            Surface = Color.FromArgb(255, backdrop.GetPixel(backdrop.Width / 2, Math.Min(backdrop.Height - 1, IsRadial ? Math.Max(0, backdrop.Height / 2 - (int)(74 * window.Radial.Scale)) : MarginY + window.InputHeight / 2)));
         }
     }
 
     public void UsePreviewBackground(Bitmap source)
     {
         if (!window.IsPreview || !cyber || !transparency) return;
+        if (IsRadial)
+        {
+            Color color = TokcatRadialBackdropCapture.Average(source);
+            var sample = new TokcatRadialBackdropCapture.Frame(color, new Rectangle(Point.Empty, source.Size));
+            if (automatic) UpdateBrightness(sample.Luminance);
+            Color tint = IsLight ? Color.FromArgb(239,252,248) : Color.FromArgb(12,24,30);
+            Surface = Color.FromArgb((color.R * 105 + tint.R * 150) / 255, (color.G * 105 + tint.G * 150) / 255, (color.B * 105 + tint.B * 150) / 255);
+            ReleaseImage(); window.ApplyColors(); return;
+        }
         RenderSource(source); window.ApplyColors();
     }
 
@@ -150,6 +224,10 @@ public sealed class TokcatLauncherAppearance : IDisposable
 
     public void Paint(Graphics graphics, Rectangle target, Point origin)
     {
+        if (IsRadial && radialFrame != null)
+        {
+            PaintDesktop(graphics, target, new Rectangle(window.Left + origin.X, window.Top + origin.Y, target.Width, target.Height)); return;
+        }
         using (var brush = new SolidBrush(Surface)) graphics.FillRectangle(brush, target);
         if (backdrop != null) graphics.DrawImage(backdrop, target,
             new Rectangle(origin.X + MarginX, origin.Y + MarginY, target.Width, target.Height), GraphicsUnit.Pixel);
@@ -157,6 +235,7 @@ public sealed class TokcatLauncherAppearance : IDisposable
 
     void ShowHalo()
     {
+        if (IsRadial) { window.Radial.Invalidate(); return; }
         if (backdrop == null) return;
         using (var feather = CreateFeatheredMargins())
             halo.Update(feather, new Point(window.Left - MarginX, window.Top - MarginY), window.Handle);
@@ -164,7 +243,7 @@ public sealed class TokcatLauncherAppearance : IDisposable
 
     public Bitmap CreateFeatheredMargins()
     {
-        if (!cyber || backdrop == null) return null;
+        if (!cyber || IsRadial || backdrop == null) return null;
         var feather = new Bitmap(backdrop.Width, backdrop.Height, PixelFormat.Format32bppArgb);
         for (int y = 0; y < feather.Height; y++)
             for (int x = 0; x < feather.Width; x++)
@@ -178,8 +257,8 @@ public sealed class TokcatLauncherAppearance : IDisposable
         return feather;
     }
 
-    void ReleaseImage() { BackgroundRevision++; if (backdrop != null) { backdrop.Dispose(); backdrop = null; } }
-    public void Dispose() { timer.Stop(); timer.Dispose(); halo.Dispose(); ReleaseImage(); }
+    void ReleaseImage() { BackgroundRevision++; if (backdrop != null) { backdrop.Dispose(); backdrop = null; } if (radialFrame != null) { radialFrame.Dispose(); radialFrame = null; } }
+    public void Dispose() { timer.Stop(); timer.Dispose(); StopRadialCapture(); radialCapture.Dispose(); halo.Dispose(); ReleaseImage(); }
 }
 
 sealed class TokcatLauncherBackdrop : Form
@@ -230,7 +309,8 @@ class TokcatLauncherSurfacePanel : Panel
     }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (Launcher != null && Launcher.Appearance != null && Launcher.Appearance.IsCyber)
+        if (Launcher != null && Launcher.Appearance != null && Launcher.Appearance.IsRadial) e.Graphics.Clear(TokcatLauncherRadial.TransparentKey);
+        else if (Launcher != null && Launcher.Appearance != null && Launcher.Appearance.IsCyber)
             Launcher.Appearance.Paint(e.Graphics, ClientRectangle, Location);
         else base.OnPaintBackground(e);
     }
@@ -241,7 +321,7 @@ sealed class TokcatLauncherInputPanel : TokcatLauncherSurfacePanel
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (Launcher == null || Launcher.Appearance == null || !Launcher.Appearance.IsCyber) return;
+        if (Launcher == null || Launcher.Appearance == null || !Launcher.Appearance.IsCyber || Launcher.Appearance.IsRadial) return;
         int inset = (int)(14 * Launcher.LayoutScale);
         using (var line = new LinearGradientBrush(new Rectangle(inset, Height - 2, Math.Max(1, Width - 2 * inset), 2), Launcher.Appearance.Accent, Color.Transparent, 0f))
             e.Graphics.FillRectangle(line, inset, Height - 2, Width - 2 * inset, Math.Max(1, (int)Launcher.LayoutScale));
@@ -254,7 +334,22 @@ public sealed class TokcatLauncherTextBox : TextBox
 {
     public TokcatLauncherWindow Launcher;
     public bool Composing { get; private set; }
+    public string CompositionText { get; private set; }
+    public int CompositionStart { get; private set; }
+    public int CompositionCaret { get; private set; }
+    int compositionSelection;
+    public string DisplayText
+    {
+        get
+        {
+            if (!Composing || string.IsNullOrEmpty(CompositionText)) return Text;
+            int start = Math.Min(TextLength, CompositionStart);
+            return Text.Substring(0, start) + CompositionText + Text.Substring(Math.Min(TextLength, start + compositionSelection));
+        }
+    }
     public event EventHandler CompositionChanged;
+    public Action<Graphics, Rectangle, Point> BackgroundPainter;
+    public int BackgroundVersion;
     IntPtr backgroundBrush, backgroundBitmap;
     int backgroundRevision = -1;
     Point backgroundOrigin;
@@ -265,16 +360,23 @@ public sealed class TokcatLauncherTextBox : TextBox
     [DllImport("gdi32.dll")] static extern int SetBkMode(IntPtr dc, int mode);
     [DllImport("gdi32.dll")] static extern int SetTextColor(IntPtr dc, int color);
     [DllImport("gdi32.dll")] static extern bool SetBrushOrgEx(IntPtr dc, int x, int y, IntPtr previous);
+    [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr handle);
+    [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr handle, IntPtr context);
+    [DllImport("imm32.dll", EntryPoint = "ImmGetCompositionStringW")] static extern int ImmGetCompositionString(IntPtr context, uint index, byte[] buffer, int length);
 
     IntPtr BackgroundBrush()
     {
-        var origin = Launcher.PointToClient(PointToScreen(Point.Empty));
-        int revision = Launcher.Appearance.BackgroundRevision;
+        var origin = BackgroundPainter != null ? Parent.PointToClient(PointToScreen(Point.Empty)) : Launcher.PointToClient(PointToScreen(Point.Empty));
+        int revision = BackgroundPainter != null ? BackgroundVersion : Launcher.Appearance.BackgroundRevision;
         if (backgroundBrush != IntPtr.Zero && backgroundRevision == revision && backgroundOrigin == origin && backgroundSize == ClientSize) return backgroundBrush;
         ReleaseBrush();
         using (var image = new Bitmap(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height)))
         {
-            using (var graphics = Graphics.FromImage(image)) Launcher.Appearance.Paint(graphics, new Rectangle(Point.Empty, image.Size), origin);
+            using (var graphics = Graphics.FromImage(image))
+            {
+                if (BackgroundPainter != null) BackgroundPainter(graphics, new Rectangle(Point.Empty, image.Size), origin);
+                else Launcher.Appearance.Paint(graphics, new Rectangle(Point.Empty, image.Size), origin);
+            }
             backgroundBitmap = image.GetHbitmap(); backgroundBrush = CreatePatternBrush(backgroundBitmap);
         }
         backgroundRevision = revision; backgroundOrigin = origin; backgroundSize = ClientSize;
@@ -286,10 +388,18 @@ public sealed class TokcatLauncherTextBox : TextBox
         if (backgroundBrush != IntPtr.Zero) { DeleteObject(backgroundBrush); backgroundBrush = IntPtr.Zero; }
         if (backgroundBitmap != IntPtr.Zero) { DeleteObject(backgroundBitmap); backgroundBitmap = IntPtr.Zero; }
     }
+    public void ReleaseBackground() { ReleaseBrush(); }
+
+    void SetCompositionPreview(string text, int caret)
+    {
+        CompositionText = text ?? "";
+        CompositionCaret = Math.Max(0, Math.Min(CompositionText.Length, caret));
+        if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
+    }
 
     internal IntPtr PaintBackground(IntPtr dc)
     {
-        if (Launcher == null || Launcher.Appearance == null || !Launcher.Appearance.IsCyber) { ReleaseBrush(); return IntPtr.Zero; }
+        if (BackgroundPainter == null && (Launcher == null || Launcher.Appearance == null || !Launcher.Appearance.IsCyber || Launcher.Appearance.IsRadial)) { ReleaseBrush(); return IntPtr.Zero; }
         IntPtr brush = BackgroundBrush();
         if (brush != IntPtr.Zero)
         {
@@ -301,12 +411,50 @@ public sealed class TokcatLauncherTextBox : TextBox
 
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg == 0x010D || message.Msg == 0x010E)
+        bool composition = message.Msg == 0x010F;
+        bool result = composition && (message.LParam.ToInt64() & 0x0800) != 0;
+        bool preedit = composition && (!result || (message.LParam.ToInt64() & (0x0008 | 0x0080)) != 0);
+        string preview = ""; int previewCaret = 0;
+        if (message.Msg == 0x010D)
         {
-            Composing = message.Msg == 0x010D;
+            Composing = true; CompositionStart = SelectionStart; compositionSelection = SelectionLength; CompositionText = ""; CompositionCaret = 0;
             if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
         }
+        if (composition)
+        {
+            if (!Composing) { Composing = true; CompositionStart = SelectionStart; compositionSelection = SelectionLength; }
+            // A result string is inserted by the native editor below. Stop
+            // overlaying its old preedit before TextChanged reports that commit.
+            if (result) { CompositionText = ""; CompositionCaret = 0; }
+            if (preedit)
+            {
+                IntPtr context = ImmGetContext(Handle);
+                try
+                {
+                    int length = context == IntPtr.Zero ? 0 : ImmGetCompositionString(context, 8, null, 0);
+                    if (length > 0 && length <= 32768)
+                    {
+                        var bytes = new byte[length]; ImmGetCompositionString(context, 8, bytes, bytes.Length);
+                        preview = System.Text.Encoding.Unicode.GetString(bytes);
+                        previewCaret = ImmGetCompositionString(context, 128, null, 0);
+                    }
+                }
+                finally { if (context != IntPtr.Zero) ImmReleaseContext(Handle, context); }
+            }
+        }
         base.WndProc(ref message);
+        if (composition)
+        {
+            if (result) { CompositionStart = SelectionStart; compositionSelection = SelectionLength; }
+            // Notify only after native editing and IMM context release; a
+            // partial commit can then search its committed prefix + new preedit.
+            SetCompositionPreview(preview, previewCaret);
+        }
+        if (message.Msg == 0x010E)
+        {
+            Composing = false; CompositionText = ""; CompositionCaret = 0;
+            if (CompositionChanged != null) CompositionChanged(this, EventArgs.Empty);
+        }
     }
     protected override void OnHandleDestroyed(EventArgs e) { ReleaseBrush(); base.OnHandleDestroyed(e); }
     protected override void Dispose(bool disposing) { if (disposing) ReleaseBrush(); base.Dispose(disposing); }
