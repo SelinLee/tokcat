@@ -49,6 +49,26 @@ try {
     $indexField.SetValue($controller,[TokcatLauncherIndex]::new($apps))
     $controller.Show();$window=$controller.Window;$editor=$window.Query
     $previewMethod=$editor.GetType().GetMethod('SetCompositionPreview',[Reflection.BindingFlags]'Instance,NonPublic')
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]5,[IntPtr]1)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr]229,[IntPtr](0x11 -shl 16))
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr]229,[IntPtr](0x12 -shl 16))
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]87,[IntPtr]::Zero)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]69,[IntPtr]::Zero)
+    Assert-Input ($editor.Composing -and $editor.DisplayText -eq 'we' -and $editor.Text -eq '') (
+        "Overlapping key presses must not repeat spelling on release. Observed '$($editor.DisplayText)'."
+    )
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]4,[IntPtr]1)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]5,[IntPtr]1)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr]87,[IntPtr]::Zero)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr]87,[IntPtr]::Zero)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0101,[IntPtr]229,[IntPtr](0x11 -shl 16))
+    Assert-Input ($editor.DisplayText -eq 'ww') 'Key repeat must count on key-down, including when the IME translates the key-up.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]4,[IntPtr]1)
+    foreach($letter in 'wewe'.ToCharArray()) {
+        [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0102,[IntPtr][int]$letter,[IntPtr]::Zero)
+    }
+    Assert-Input ($editor.Text -eq 'wewe') 'Plain English typing must keep deliberately repeated text.'
+    $editor.Clear()
     # Sogou's floating reading window can send only candidate notifications and
     # processed keys. Exercise that path without injecting a composition string.
     [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0282,[IntPtr]5,[IntPtr]1)

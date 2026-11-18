@@ -6,7 +6,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[下载 macOS 版](https://github.com/SelinLee/tokcat/releases/latest)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip)**
+**[下载 macOS 版](https://github.com/SelinLee/tokcat/releases/latest)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18.1/tokcat-windows-2026.11.18.1.zip)**
 
 </div>
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | 查看任务 | 点击菜单栏状态点打开任务列表，也可把 toki 或 biti 挂件放在桌边 | 点击任务栏状态点打开详情窗口，或从通知区域进入 |
 | 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可切换赛博轮盘，也可通过 Everything 搜索本机文件 |
-| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip) · [Windows 安装说明](#安装-windows-版) |
+| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18.1/tokcat-windows-2026.11.18.1.zip) · [Windows 安装说明](#安装-windows-版) |
 
 ## Windows 任务栏
 
@@ -240,9 +240,9 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 ### 安装 Windows 版
 
-在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
+在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18.1/tokcat-windows-2026.11.18.1.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
 
-**Windows 2026.11.18** 支持自定义任务栏双行指标，并保留赛博轮盘和搜狗悬浮候选框即时匹配。 [更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.18) · [Windows 使用指南](windows/README.zh-CN.md)
+**Windows 2026.11.18.1** 修复了开启输入法时，在快速启动框里连续按键导致字符重复的问题。 [更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.18.1) · [Windows 使用指南](windows/README.zh-CN.md)
 
 ## 快速开始
 
