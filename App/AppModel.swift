@@ -152,9 +152,11 @@ final class AppModel: ObservableObject {
                 self.latestSource = latest.source
             }
             // Seed throughput from recent history so the menu bar isn't empty on launch.
-            let recent = allEvents.suffix(40)
-            throughputTracker.record(events: Array(recent))
-            let rates = throughputTracker.rates()
+            let now = Date()
+            let cutoff = now.addingTimeInterval(-throughputTracker.windowSeconds)
+            let recent = allEvents.reversed().prefix { $0.timestamp >= cutoff }
+            throughputTracker.record(events: Array(recent), now: now)
+            let rates = throughputTracker.rates(now: now)
             liveMetrics.setRates(tokensPerSecond: rates.tokensPerSecond, usdPerSecond: rates.usdPerSecond)
         }
     }
@@ -320,10 +322,10 @@ final class AppModel: ObservableObject {
             rescheduleNetworkTimer(resetSampling: false)
         }
         if oldValue.showNetwork != settings.showNetwork
-            || oldValue.menuBarShowNetwork != settings.menuBarShowNetwork {
+            || oldValue.showsMenuBarNetwork != settings.showsMenuBarNetwork {
             rescheduleNetworkTimer(resetSampling: true)
         }
-        if oldValue.menuBarShowCodexUsage != settings.menuBarShowCodexUsage
+        if oldValue.showsMenuBarCodexUsage != settings.showsMenuBarCodexUsage
             || oldValue.showCodexUsageSummary != settings.showCodexUsageSummary {
             rescheduleCodexUsageTimer()
         }
@@ -378,7 +380,7 @@ final class AppModel: ObservableObject {
         if resetSampling {
             systemMetricsMonitor.resetNetworkSampling()
         }
-        guard settings.showNetwork || settings.menuBarShowNetwork else { return }
+        guard settings.showNetwork || settings.showsMenuBarNetwork else { return }
 
         let interval = settings.clampedMenuBarRefreshIntervalSeconds
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
@@ -392,7 +394,7 @@ final class AppModel: ObservableObject {
 
     @MainActor
     private func refreshNetworkMetrics() {
-        guard settings.showNetwork || settings.menuBarShowNetwork else { return }
+        guard settings.showNetwork || settings.showsMenuBarNetwork else { return }
         let now = Date()
         let rates = systemMetricsMonitor.sampleNetwork(now: now)
         var metrics = liveMetrics.systemMetrics
@@ -406,7 +408,7 @@ final class AppModel: ObservableObject {
 
     /// Whether the Codex usage readout is wanted anywhere in the UI.
     private var isCodexUsageEnabled: Bool {
-        settings.menuBarShowCodexUsage || settings.showCodexUsageSummary
+        settings.showsMenuBarCodexUsage || settings.showCodexUsageSummary
     }
 
     private static var codexDesktopIsRunning: Bool {
@@ -508,13 +510,13 @@ final class AppModel: ObservableObject {
     private func metricsSampleOptions() -> SystemMetricsSampleOptions {
         let s = settings
         return SystemMetricsSampleOptions(
-            cpu: s.showCPU || s.menuBarShowCPU,
-            gpu: s.showGPU || s.menuBarShowGPU,
-            memory: s.showMemory || s.menuBarShowMemory,
+            cpu: s.showCPU || s.showsMenuBarMetric(.cpu),
+            gpu: s.showGPU || s.showsMenuBarMetric(.gpu),
+            memory: s.showMemory || s.showsMenuBarMetric(.memory),
             // Network is sampled by its own faster timer so the readout stays
             // live even while the general poll adaptively backs off when idle.
             network: false,
-            thermal: s.showThermal || s.menuBarShowThermal
+            thermal: s.showThermal || s.showsMenuBarMetric(.thermal)
         )
     }
 

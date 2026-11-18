@@ -117,18 +117,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showThermal: Bool
     public var showGPU: Bool
 
-    /// Metrics shown to the right of the menu bar cat icon.
-    /// Order is fixed: CPU → GPU → Memory → Network → TokenRate → CodexUsage → Thermal.
-    public var menuBarShowCPU: Bool
-    public var menuBarShowMemory: Bool
-    public var menuBarShowNetwork: Bool
-    /// Dual-line token throughput + spend rate (`tok 10.2k/s` over `$ 0.04/m`).
-    public var menuBarShowTokenRate: Bool
-    /// Dual-line Codex rate-limit remaining (`5h 21%` over `wk 20%`).
-    /// Reads local session quota records only while the Codex desktop client runs.
-    public var menuBarShowCodexUsage: Bool
-    public var menuBarShowThermal: Bool
-    public var menuBarShowGPU: Bool
+    public var menuBarMetricColumns: [MenuBarMetricColumn]
 
     /// Codex 5-hour / weekly remaining block in the menu bar dropdown panel.
     public var showCodexUsageSummary: Bool
@@ -205,6 +194,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public static let menuBarRefreshRange: ClosedRange<Double> = 0.5...10.0
     public static let defaultMenuBarRefreshInterval: Double = 1.0
 
+    public static let defaultMenuBarMetricColumns: [MenuBarMetricColumn] = [
+        .init(top: .tokenRate, bottom: .codexWeekly)
+    ]
+
     public init(
         compactAIMenuBar: Bool = true,
         notifyAgentEvents: Bool = false,
@@ -213,13 +206,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showNetwork: Bool = true,
         showThermal: Bool = true,
         showGPU: Bool = true,
-        menuBarShowCPU: Bool = true,
-        menuBarShowMemory: Bool = false,
-        menuBarShowNetwork: Bool = false,
-        menuBarShowTokenRate: Bool = true,
-        menuBarShowCodexUsage: Bool = true,
-        menuBarShowThermal: Bool = false,
-        menuBarShowGPU: Bool = false,
+        menuBarMetricColumns: [MenuBarMetricColumn] = AppSettings.defaultMenuBarMetricColumns,
         menuBarShowCatIcon: Bool = true,
         menuBarCatIconScale: Double = AppSettings.defaultCatIconScale,
         menuBarIconStyle: MenuBarIconStyle = .rainTokcat,
@@ -250,13 +237,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showNetwork = showNetwork
         self.showThermal = showThermal
         self.showGPU = showGPU
-        self.menuBarShowCPU = menuBarShowCPU
-        self.menuBarShowMemory = menuBarShowMemory
-        self.menuBarShowNetwork = menuBarShowNetwork
-        self.menuBarShowTokenRate = menuBarShowTokenRate
-        self.menuBarShowCodexUsage = menuBarShowCodexUsage
-        self.menuBarShowThermal = menuBarShowThermal
-        self.menuBarShowGPU = menuBarShowGPU
+        self.menuBarMetricColumns = menuBarMetricColumns
         self.menuBarShowCatIcon = menuBarShowCatIcon
         self.menuBarCatIconScale = menuBarCatIconScale
         self.menuBarIconStyle = menuBarIconStyle
@@ -370,8 +351,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     public var showsAnyMenuBarMetric: Bool {
-        menuBarShowCPU || menuBarShowGPU || menuBarShowMemory || menuBarShowNetwork
-            || menuBarShowTokenRate || menuBarShowCodexUsage || menuBarShowThermal
+        menuBarMetricColumns.contains { !$0.isEmpty }
+    }
+
+    public func showsMenuBarMetric(_ metric: MenuBarMetric) -> Bool {
+        menuBarMetricColumns.contains { $0.top == metric || $0.bottom == metric }
+    }
+
+    public var showsMenuBarNetwork: Bool {
+        showsMenuBarMetric(.networkUpload) || showsMenuBarMetric(.networkDownload)
+    }
+
+    public var showsMenuBarCodexUsage: Bool {
+        showsMenuBarMetric(.codexFiveHour) || showsMenuBarMetric(.codexWeekly)
     }
 
     public var showsAnyMenuBarContent: Bool {
@@ -384,6 +376,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case compactAIMenuBar, notifyAgentEvents
         case applicationLauncherEnabled, applicationLauncherShortcut, applicationLauncherSkin
         case showCPU, showMemory, showNetwork, showThermal, showGPU
+        case menuBarMetricColumns
         case menuBarShowCPU, menuBarShowMemory, menuBarShowNetwork, menuBarShowTokenRate, menuBarShowThermal, menuBarShowGPU
         case menuBarShowCodexUsage
         case menuBarShowCatIcon, menuBarCatIconScale, menuBarCatIconScaleVersion, menuBarIconStyle, menuBarTextScale, menuBarVerticalOffset
@@ -441,38 +434,50 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarTextScale = try container.decodeIfPresent(Double.self, forKey: .menuBarTextScale) ?? AppSettings.defaultTextScale
         menuBarVerticalOffset = try container.decodeIfPresent(Double.self, forKey: .menuBarVerticalOffset) ?? AppSettings.defaultVerticalOffset
 
-        if container.contains(.menuBarShowCPU)
-            || container.contains(.menuBarShowMemory)
-            || container.contains(.menuBarShowNetwork)
-            || container.contains(.menuBarShowTokenRate)
-            || container.contains(.menuBarShowThermal)
-        {
-            menuBarShowCPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCPU) ?? false
-            menuBarShowMemory = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowMemory) ?? false
-            menuBarShowNetwork = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowNetwork) ?? false
-            // New metric defaults on for upgrades so users immediately see tok/$ rates.
-            menuBarShowTokenRate = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowTokenRate) ?? true
-            // Codex usage also defaults on; it stays invisible unless the Codex desktop client is running.
-            menuBarShowCodexUsage = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCodexUsage) ?? true
-            menuBarShowThermal = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowThermal) ?? false
-            menuBarShowGPU = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowGPU) ?? false
-        } else if let legacy = try container.decodeIfPresent(String.self, forKey: .menuBarAccessory) {
-            menuBarShowCPU = legacy == "cpu"
-            menuBarShowMemory = legacy == "memory"
-            menuBarShowNetwork = legacy == "network"
-            menuBarShowTokenRate = false
-            menuBarShowCodexUsage = true
-            menuBarShowThermal = legacy == "thermal"
-            menuBarShowGPU = false
+        if let columns = try container.decodeIfPresent([MenuBarMetricColumn].self, forKey: .menuBarMetricColumns) {
+            menuBarMetricColumns = columns
         } else {
-            menuBarShowCPU = true
-            menuBarShowMemory = false
-            menuBarShowNetwork = false
-            menuBarShowTokenRate = true
-            menuBarShowCodexUsage = true
-            menuBarShowThermal = false
-            menuBarShowGPU = false
+            menuBarMetricColumns = try Self.migrateMenuBarMetricColumns(from: container)
         }
+    }
+
+    private static func migrateMenuBarMetricColumns(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [MenuBarMetricColumn] {
+        let toggleKeys: [CodingKeys] = [.menuBarShowCPU, .menuBarShowGPU, .menuBarShowMemory,
+            .menuBarShowNetwork, .menuBarShowTokenRate, .menuBarShowCodexUsage, .menuBarShowThermal]
+        guard toggleKeys.contains(where: container.contains) else {
+            guard let accessory = try container.decodeIfPresent(String.self, forKey: .menuBarAccessory) else {
+                return defaultMenuBarMetricColumns
+            }
+            let quota = MenuBarMetricColumn(top: .codexFiveHour, bottom: .codexWeekly)
+            switch accessory {
+            case "cpu": return [.init(top: .cpu), quota]
+            case "memory": return [.init(top: .memory), quota]
+            case "network": return [.init(top: .networkUpload, bottom: .networkDownload), quota]
+            case "thermal": return [quota, .init(top: .thermal)]
+            default: return [quota]
+            }
+        }
+
+        let showToken = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowTokenRate) ?? true
+        let showQuota = try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCodexUsage) ?? true
+        var columns: [MenuBarMetricColumn] = []
+        if showToken && showQuota {
+            columns = defaultMenuBarMetricColumns + [.init(top: .costRate, bottom: .codexFiveHour)]
+        } else if showToken {
+            columns.append(.init(top: .tokenRate, bottom: .costRate))
+        } else if showQuota {
+            columns.append(.init(top: .codexFiveHour, bottom: .codexWeekly))
+        }
+        if try container.decodeIfPresent(Bool.self, forKey: .menuBarShowCPU) == true { columns.append(.init(top: .cpu)) }
+        if try container.decodeIfPresent(Bool.self, forKey: .menuBarShowGPU) == true { columns.append(.init(top: .gpu)) }
+        if try container.decodeIfPresent(Bool.self, forKey: .menuBarShowMemory) == true { columns.append(.init(top: .memory)) }
+        if try container.decodeIfPresent(Bool.self, forKey: .menuBarShowNetwork) == true {
+            columns.append(.init(top: .networkUpload, bottom: .networkDownload))
+        }
+        if try container.decodeIfPresent(Bool.self, forKey: .menuBarShowThermal) == true { columns.append(.init(top: .thermal)) }
+        return columns
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -484,13 +489,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try container.encode(showNetwork, forKey: .showNetwork)
         try container.encode(showThermal, forKey: .showThermal)
         try container.encode(showGPU, forKey: .showGPU)
-        try container.encode(menuBarShowCPU, forKey: .menuBarShowCPU)
-        try container.encode(menuBarShowMemory, forKey: .menuBarShowMemory)
-        try container.encode(menuBarShowNetwork, forKey: .menuBarShowNetwork)
-        try container.encode(menuBarShowTokenRate, forKey: .menuBarShowTokenRate)
-        try container.encode(menuBarShowCodexUsage, forKey: .menuBarShowCodexUsage)
-        try container.encode(menuBarShowThermal, forKey: .menuBarShowThermal)
-        try container.encode(menuBarShowGPU, forKey: .menuBarShowGPU)
+        try container.encode(menuBarMetricColumns, forKey: .menuBarMetricColumns)
         try container.encode(menuBarShowCatIcon, forKey: .menuBarShowCatIcon)
         try container.encode(menuBarCatIconScale, forKey: .menuBarCatIconScale)
         try container.encode(2, forKey: .menuBarCatIconScaleVersion)

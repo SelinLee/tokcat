@@ -228,7 +228,7 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 ### 安装 macOS 版
 
-需要 **macOS 13+**。从 [Releases](https://github.com/SelinLee/tokcat/releases) 下载 DMG 或 ZIP，将 `tokcat.app` 放进 Applications。首次打开时右键选择「打开」。当前采用 ad-hoc 签名，尚未进行 Developer ID 公证；0.7.10 安装包为 Apple Silicon 与 Intel Mac 通用构建。
+需要 **macOS 13+**。从 [Releases](https://github.com/SelinLee/tokcat/releases) 下载 DMG 或 ZIP，将 `tokcat.app` 放进 Applications。首次打开时右键选择「打开」。当前采用 ad-hoc 签名，尚未进行 Developer ID 公证；安装包为 Apple Silicon 与 Intel Mac 通用构建。
 
 监控仅读取本地记录，无需 API key。用量数据库位于 `~/Library/Application Support/Tokcat/`，任务缓存及可选 Claude hooks 位于 `~/Library/Application Support/TokenCat/`。桌宠与任务监控共用状态来源，升级保留用量历史和监控设置。
 
@@ -246,7 +246,7 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 1. 安装并打开 tokcat，照常使用各个 Agent。
 2. 有本机会话注册的 Claude Code 自动显示；如需详细生命周期事件或使用旧版客户端，在「设置 → Agent」启用 hooks，再重启已有 Claude Code 会话。
-3. 选择菜单栏指标，通过状态点关注任务；打开「任务总览」阅读对话，或「用量统计」查看趋势。
+3. 在「设置 → 菜单栏 → 图标旁指标」添加多列，逐列设置上下两行。默认上排汇总所有已启用 Agent 检测到的对话，按输入、输出和缓存用量显示总速率（如 `75000 tok/s`），下排显示 Codex 本周剩余额度。通过状态点关注任务，或打开「任务总览」阅读对话、「用量统计」查看趋势。
 4. 在「设置 → 桌边挂件」选择 toki／biti 和吸附位置。
 
 ## 从源码运行

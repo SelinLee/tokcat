@@ -219,10 +219,10 @@ final class CodexUsageMonitorTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = AppSettingsStore(defaults: defaults)
-        XCTAssertTrue(store.load().menuBarShowCodexUsage)
+        XCTAssertTrue(store.load().showsMenuBarCodexUsage)
         XCTAssertTrue(store.load().showCodexUsageSummary)
         var settings = AppSettings.default
-        settings.menuBarShowCodexUsage = false
+        settings.menuBarMetricColumns = [.init(top: .tokenRate)]
         settings.showCodexUsageSummary = false
         store.save(settings)
         XCTAssertEqual(store.load(), settings)

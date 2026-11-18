@@ -98,7 +98,7 @@ struct MenuBarContentView: View {
             }
 
             HStack(spacing: 6) {
-                compactMetric(title: "用量吞吐", value: formatTokPerSec(live.tokensPerSecond))
+                compactMetric(title: "所有 Agent 总速率", value: MetricsFormatting.tokenRateLine(live.tokensPerSecond))
                 compactMetric(title: "费用/分", value: formatUSDPerMinute(live.usdPerSecond))
                 compactMetric(
                     title: "今日",
@@ -476,17 +476,6 @@ struct MenuBarContentView: View {
     private func sourcePrefix(for source: AgentSource?) -> String {
         guard let source else { return "" }
         return source.displayName + " · "
-    }
-
-    private func formatTokPerSec(_ value: Double) -> String {
-        if value <= 0 { return "—" }
-        if value >= 100 {
-            return String(format: "%.0f/s", value)
-        }
-        if value >= 10 {
-            return String(format: "%.1f/s", value)
-        }
-        return String(format: "%.2f/s", value)
     }
 
     private func shortSourceName(_ source: AgentSource) -> String {

@@ -155,8 +155,7 @@ struct MenuBarCatIconView: View {
 // MARK: - Full menu-bar status image (icon + metrics)
 
 /// Renders the entire menu-bar label as one template NSImage.
-/// Metric text size follows `settings.menuBarTextScale`; network uses a
-/// smaller base size and tight dual-line packing so both lines stay visible.
+/// All metric columns share the same two row positions.
 enum MenuBarStatusRenderer {
     static let baseIconPointSize: CGFloat = 13
     private static let scale: CGFloat = 2
@@ -188,24 +187,30 @@ enum MenuBarStatusRenderer {
         if key == cachedKey, let cachedImage {
             return cachedImage
         }
-        let iconPointSize = settings.menuBarShowCatIcon
-            ? CGFloat(settings.menuBarCatIconPointSize)
-            : 0
         let pointHeight = MetricsFormatting.menuBarPointHeight(settings: settings)
-        let pointWidth = MetricsFormatting.menuBarFixedWidth(
-            settings: settings,
-            iconSize: iconPointSize,
-            activity: activity,
-            codexUsage: codexUsage
-        )
+        let iconSide = settings.menuBarShowCatIcon ? min(CGFloat(settings.menuBarCatIconPointSize), pointHeight - 2) : 0
+        let iconWidth = iconSide + iconBadgeWidth(settings: settings)
+        let font = MetricsFormatting.menuBarMetricFont(textScale: settings.clampedTextScale, scale: scale)
+        func row(_ metric: MenuBarMetric?) -> (text: String, width: CGFloat, reserved: CGFloat) {
+            let text = MetricsFormatting.menuBarReadout(metric, metrics: metrics, tokensPerSecond: tokensPerSecond,
+                usdPerSecond: usdPerSecond, codexUsage: codexUsage) ?? ""
+            let width = MetricsFormatting.measure(text, font: font).width
+            return (text, width, max(width, MetricsFormatting.menuBarMetricWidth(metric, font: font)))
+        }
+        let columns = settings.menuBarMetricColumns.filter { !$0.isEmpty }.map { column in
+            let top = row(column.top)
+            let bottom = row(column.bottom)
+            return (top: top, bottom: bottom, width: max(top.reserved, bottom.reserved))
+        }
+        let gap = cellGapPoints * scale
+        let metricsStart = iconWidth * scale + (settings.menuBarShowCatIcon && !columns.isEmpty ? gap : 0)
+        let metricsWidth = columns.reduce(0) { $0 + $1.width } + CGFloat(max(0, columns.count - 1)) * gap
+        let minimumWidth = settings.menuBarShowCatIcon ? 0 : 12 * scale
         let pixelSize = NSSize(
-            width: ceil(max(pointWidth, 1) * scale),
+            width: ceil(max(metricsStart + metricsWidth + 2 * scale, minimumWidth)),
             height: ceil(pointHeight * scale)
         )
 
-        let textScale = settings.clampedTextScale
-        let primaryPoint = MetricsFormatting.primaryPointSize(textScale: textScale)
-        let networkPoint = MetricsFormatting.networkPointSize(textScale: textScale)
         // Positive offset moves content up (bottom-left coords => add to y).
         let yOffset = CGFloat(settings.clampedVerticalOffset) * scale
 
@@ -213,105 +218,36 @@ enum MenuBarStatusRenderer {
             NSColor.black.setFill()
             NSColor.black.setStroke()
 
-            var cursorX: CGFloat = 0
-
             if settings.menuBarShowCatIcon {
-                let iconSide = min(iconPointSize * scale, rect.height - 2 * scale)
-                // tokcat expression reserves horizontal room for floating glyphs.
-                let iconWidth: CGFloat
-                if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
-                    iconWidth = iconSide + MenuBarCatExpression.badgePointWidth * scale
-                } else {
-                    iconWidth = iconSide
-                }
                 let iconRect = NSRect(
                     x: 0,
-                    y: (rect.height - iconSide) * 0.5 + yOffset,
-                    width: iconWidth,
-                    height: iconSide
+                    y: (rect.height - iconSide * scale) * 0.5 + yOffset,
+                    width: iconWidth * scale,
+                    height: iconSide * scale
                 )
                 MenuBarIconLibrary.draw(
                     style: settings.menuBarIconStyle,
                     in: iconRect,
                     activity: activity
                 )
-                cursorX = iconWidth + 4 * scale
             }
 
-            let cells = MetricsFormatting.menuBarMetricCells(
-                settings: settings,
-                metrics: metrics,
-                tokensPerSecond: tokensPerSecond,
-                usdPerSecond: usdPerSecond,
-                codexUsage: codexUsage
-            )
-            guard !cells.isEmpty else { return true }
-
-            let primaryFont = MetricsFormatting.menuBarFont(pointSize: primaryPoint, scale: scale)
-            let networkFont = MetricsFormatting.menuBarFont(pointSize: networkPoint, scale: scale)
-            let primaryAttrs = textAttributes(font: primaryFont)
-            let networkAttrs = textAttributes(font: networkFont)
-            let gap = cellGapPoints * scale
-
-            for (index, cell) in cells.enumerated() {
-                let cellWidth = cell.pointWidth(primaryFont: primaryFont, networkFont: networkFont)
-
-                switch cell {
-                case .text(let text, _):
-                    let baseline = verticalCenteredBaseline(in: rect.height, font: primaryFont) + yOffset
-                    (text as NSString).draw(
-                        at: NSPoint(x: cursorX, y: baseline),
-                        withAttributes: primaryAttrs
-                    )
-
-                case .network(let upload, let download):
-                    drawDualLine(
-                        top: upload,
-                        bottom: download,
-                        atX: cursorX,
-                        cellWidth: cellWidth,
-                        rectHeight: rect.height,
-                        font: networkFont,
-                        attrs: networkAttrs,
-                        yOffset: yOffset,
-                        leading: true
-                    )
-
-                case .dualLine(let top, let bottom, _, _):
-                    drawDualLine(
-                        top: top,
-                        bottom: bottom,
-                        atX: cursorX,
-                        cellWidth: cellWidth,
-                        rectHeight: rect.height,
-                        font: networkFont,
-                        attrs: networkAttrs,
-                        yOffset: yOffset
-                    )
-
-                case .codexUsage(let top, let bottom):
-                    drawCodexRows(
-                        top: top,
-                        bottom: bottom,
-                        atX: cursorX,
-                        rectHeight: rect.height,
-                        font: networkFont,
-                        attrs: networkAttrs,
-                        yOffset: yOffset
-                    )
+            let baselines = dualLineBaselines(rectHeight: rect.height, font: font, yOffset: yOffset)
+            let attrs = textAttributes(font: font)
+            var cursorX = metricsStart
+            for column in columns {
+                for (row, baseline) in [(column.top, baselines.top), (column.bottom, baselines.bottom)] where !row.text.isEmpty {
+                    let origin = NSPoint(x: cursorX + (column.width - row.width) / 2, y: baseline)
+                    (row.text as NSString).draw(at: origin, withAttributes: attrs)
                 }
-
-                cursorX += cellWidth
-                if index < cells.count - 1 {
-                    cursorX += gap
-                }
+                cursorX += column.width + gap
             }
 
             return true
         }
 
         image.isTemplate = true
-        image.size = NSSize(width: pointWidth, height: pointHeight)
+        image.size = NSSize(width: pixelSize.width / scale, height: pointHeight)
         cachedKey = key
         cachedImage = image
         return image
@@ -330,10 +266,8 @@ enum MenuBarStatusRenderer {
         let sy = CGFloat(bitmap.pixelsHigh) / image.size.height
         var textX: CGFloat = 0
         if settings.menuBarShowCatIcon {
-            textX = min(CGFloat(settings.menuBarCatIconPointSize), image.size.height - 2) + 4
-            if settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat {
-                textX += MenuBarCatExpression.badgePointWidth
-            }
+            textX = min(CGFloat(settings.menuBarCatIconPointSize), image.size.height - 2)
+                + iconBadgeWidth(settings: settings) + cellGapPoints
         }
         let startX = min(bitmap.pixelsWide, max(0, Int(ceil(textX * sx))))
         var first = bitmap.pixelsHigh
@@ -353,6 +287,12 @@ enum MenuBarStatusRenderer {
         return measuredTextBounds
     }
 
+    private static func iconBadgeWidth(settings: AppSettings) -> CGFloat {
+        guard settings.menuBarShowCatIcon else { return 0 }
+        return settings.menuBarIconStyle == .tokcat || settings.menuBarIconStyle == .rainTokcat
+            ? MenuBarCatExpression.badgePointWidth : 0
+    }
+
     private static func cacheKey(
         settings: AppSettings,
         metrics: SystemMetrics,
@@ -363,10 +303,11 @@ enum MenuBarStatusRenderer {
     ) -> String {
         // Quantize live numbers so tiny jitter does not thrash redraw.
         let cpu = Int(metrics.cpuPercent.rounded())
+        let gpu = Int(metrics.gpuPercent.rounded())
         let mem = Int(metrics.memoryUsedPercent.rounded())
         let up = Int((metrics.networkOutBytesPerSecond / 1024).rounded())
         let down = Int((metrics.networkInBytesPerSecond / 1024).rounded())
-        let tok = Int((tokensPerSecond * 10).rounded())
+        let tok = MetricsFormatting.tokenRateLine(tokensPerSecond)
         let usd = Int((usdPerSecond * 1_000_000).rounded())
         let phase = Int((activity.phase * 10).rounded())
         let intensity = Int((activity.intensity * 20).rounded())
@@ -378,20 +319,17 @@ enum MenuBarStatusRenderer {
         } else {
             codexKey = "-"
         }
+        let layoutKey = settings.menuBarMetricColumns.map {
+            "\($0.top?.rawValue ?? "-"):\($0.bottom?.rawValue ?? "-")"
+        }.joined(separator: ",")
         return [
             settings.menuBarShowCatIcon ? "1" : "0",
             settings.menuBarIconStyle.rawValue,
             String(format: "%.2f", settings.clampedCatIconScale),
             String(format: "%.2f", settings.clampedTextScale),
             String(format: "%.2f", settings.clampedVerticalOffset),
-            settings.menuBarShowCPU ? "c1" : "c0",
-            settings.menuBarShowGPU ? "g1" : "g0",
-            settings.menuBarShowMemory ? "m1" : "m0",
-            settings.menuBarShowNetwork ? "n1" : "n0",
-            settings.menuBarShowTokenRate ? "t1" : "t0",
-            settings.menuBarShowCodexUsage ? "x1" : "x0",
-            settings.menuBarShowThermal ? "h1" : "h0",
-            "\(cpu)", "\(mem)", "\(up)", "\(down)",
+            layoutKey,
+            "\(cpu)", "\(gpu)", "\(mem)", "\(up)", "\(down)",
             metrics.thermalState.rawValue,
             "\(tok)", "\(usd)",
             activity.mode.rawValue, "\(intensity)", "\(phase)", "\(completion)",
@@ -410,76 +348,6 @@ enum MenuBarStatusRenderer {
         ]
     }
 
-
-    private static func drawDualLine(
-        top: String,
-        bottom: String,
-        atX cursorX: CGFloat,
-        cellWidth: CGFloat,
-        rectHeight: CGFloat,
-        font: NSFont,
-        attrs: [NSAttributedString.Key: Any],
-        yOffset: CGFloat,
-        leading: Bool = false
-    ) {
-        let baselines = dualLineBaselines(rectHeight: rectHeight, font: font, yOffset: yOffset)
-
-        // Network arrows stay at the cell's left edge when kb/s changes to mb/s.
-        // Other dual-line metrics keep their existing right alignment.
-        let topWidth = MetricsFormatting.measure(top, font: font).width
-        let bottomWidth = MetricsFormatting.measure(bottom, font: font).width
-        let topX = cursorX + (leading ? 0 : max(0, cellWidth - topWidth))
-        let bottomX = cursorX + (leading ? 0 : max(0, cellWidth - bottomWidth))
-
-        (top as NSString).draw(
-            at: NSPoint(x: topX, y: baselines.top),
-            withAttributes: attrs
-        )
-        (bottom as NSString).draw(
-            at: NSPoint(x: bottomX, y: baselines.bottom),
-            withAttributes: attrs
-        )
-    }
-
-    /// Two-row Codex cell: a fixed label column and a fixed value column, each
-    /// **centred** on its own axis. That keeps `5h` / `wk` on a shared centre
-    /// line and keeps the numbers centred too — including the `--` placeholder
-    /// that Pro plans get in place of the 5-hour window, which is what made a
-    /// per-row right-alignment look ragged.
-    private static func drawCodexRows(
-        top: CodexMenuBarRow,
-        bottom: CodexMenuBarRow,
-        atX cursorX: CGFloat,
-        rectHeight: CGFloat,
-        font: NSFont,
-        attrs: [NSAttributedString.Key: Any],
-        yOffset: CGFloat
-    ) {
-        let baselines = dualLineBaselines(rectHeight: rectHeight, font: font, yOffset: yOffset)
-
-        func draw(_ row: CodexMenuBarRow, baseline: CGFloat) {
-            // Same column rects for both rows → the two labels share a centre
-            // line and so do the two values, even when one of them is the `--`
-            // placeholder a Pro plan gets instead of a 5-hour window.
-            let offsets = MetricsFormatting.codexRowOffsets(
-                label: row.label,
-                value: row.value,
-                font: font
-            )
-            (row.label as NSString).draw(
-                at: NSPoint(x: cursorX + offsets.label, y: baseline),
-                withAttributes: attrs
-            )
-            (row.value as NSString).draw(
-                at: NSPoint(x: cursorX + offsets.value, y: baseline),
-                withAttributes: attrs
-            )
-        }
-
-        draw(top, baseline: baselines.top)
-        draw(bottom, baseline: baselines.bottom)
-    }
-
     /// Vertical block placement shared by all dual-row cells: the pair is
     /// centred in the strip and the rows are packed with a tight interline.
     private static func dualLineBaselines(
@@ -496,13 +364,5 @@ enum MenuBarStatusRenderer {
         let bottomBaseline = blockBottom + descent
         let topBaseline = bottomBaseline + lineBox + interline
         return (top: topBaseline, bottom: bottomBaseline)
-    }
-
-    private static func verticalCenteredBaseline(in height: CGFloat, font: NSFont) -> CGFloat {
-        let ascent = font.ascender
-        let descent = abs(font.descender)
-        let box = ascent + descent
-        let bottom = max(0, (height - box) * 0.5)
-        return bottom + descent
     }
 }

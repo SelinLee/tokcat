@@ -69,11 +69,11 @@ enum AgentSessionPreview {
                 .environment(\.colorScheme, dark ? .dark : .light)
                 try snapshotPanel(workPanel, to: directory.appendingPathComponent("work-\(scenario)-\(name).png"))
             }
-            var settings = AppSettings()
-            settings.menuBarShowCPU = true
-            settings.menuBarShowTokenRate = true
-            settings.menuBarShowNetwork = true
-            settings.menuBarShowCodexUsage = false
+            let settings = AppSettings(menuBarMetricColumns: [
+                .init(top: .cpu),
+                .init(top: .networkUpload, bottom: .networkDownload),
+                .init(top: .tokenRate, bottom: .costRate)
+            ])
             let icon = MenuBarStatusRenderer.image(settings: settings,
                 metrics: SystemMetrics(cpuPercent: 24, networkInBytesPerSecond: 1_250_000, networkOutBytesPerSecond: 32_768),
                 tokensPerSecond: 42, usdPerSecond: 0.001)

@@ -13,8 +13,8 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.desktopCompanionAppearance, .toki)
         XCTAssertEqual(settings.desktopPetDockPosition, .screenLeft)
         XCTAssertEqual(settings.pollIntervalSeconds, 5)
-        XCTAssertFalse(settings.menuBarShowCPU)
-        XCTAssertTrue(settings.menuBarShowNetwork)
+        XCTAssertFalse(settings.showsMenuBarMetric(.cpu))
+        XCTAssertTrue(settings.showsMenuBarNetwork)
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
         for key in ["desktopPetSkin", "customPetModelFileName", "showPetSummary", "enablePetSoundEffects"] {
             XCTAssertNil(saved[key])
@@ -31,8 +31,12 @@ final class AppSettingsTests: XCTestCase {
         var settings = AppSettings.default
         settings.showCPU = false
         settings.showNetwork = false
-        settings.menuBarShowCPU = true
-        settings.menuBarShowMemory = true
+        settings.menuBarMetricColumns = [
+            .init(top: .codexWeekly, bottom: .tokenRate),
+            .init(bottom: .memory),
+            .init(top: .cpu, bottom: .networkDownload),
+            .init()
+        ]
         settings.menuBarShowCatIcon = false
         settings.menuBarCatIconScale = 0.75
         settings.menuBarIconStyle = .lineCPU
@@ -199,10 +203,7 @@ final class AppSettingsTests: XCTestCase {
         defaults.set(legacyJSON, forKey: AppSettingsStore.defaultsKey)
 
         let loaded = AppSettingsStore(defaults: defaults).load()
-        XCTAssertFalse(loaded.menuBarShowCPU)
-        XCTAssertTrue(loaded.menuBarShowMemory)
-        XCTAssertFalse(loaded.menuBarShowNetwork)
-        XCTAssertFalse(loaded.menuBarShowThermal)
+        XCTAssertEqual(loaded.menuBarMetricColumns, [.init(top: .memory), .init(top: .codexFiveHour, bottom: .codexWeekly)])
         // New fields get defaults when absent.
         XCTAssertEqual(loaded.applicationLauncherSkin, .classic)
         XCTAssertTrue(loaded.menuBarShowCatIcon)
@@ -239,12 +240,45 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettings.default.menuBarVerticalOffset, -2.5, accuracy: 0.0001)
     }
 
-    func testDefaultShowsCPUOnMenuBar() {
-        XCTAssertTrue(AppSettings.default.menuBarShowCPU)
-        XCTAssertFalse(AppSettings.default.menuBarShowMemory)
-        XCTAssertTrue(AppSettings.default.menuBarShowTokenRate)
+    func testDefaultShowsTokenRateAboveWeeklyQuota() {
+        XCTAssertEqual(AppSettings.default.menuBarMetricColumns, [.init(top: .tokenRate, bottom: .codexWeekly)])
         XCTAssertTrue(AppSettings.default.menuBarShowCatIcon)
         XCTAssertTrue(AppSettings.default.showDesktopPet)
+    }
+
+    func testLegacyGroupedMenuBarMetricsMigrateToIndependentRows() throws {
+        let legacy = Data("""
+            {"menuBarShowTokenRate":true, "menuBarShowCodexUsage":true,
+             "menuBarShowCPU":true, "menuBarShowNetwork":true, "menuBarShowThermal":false}
+            """.utf8)
+        let settings = try JSONDecoder().decode(AppSettings.self, from: legacy)
+        XCTAssertEqual(settings.menuBarMetricColumns, [
+            .init(top: .tokenRate, bottom: .codexWeekly),
+            .init(top: .costRate, bottom: .codexFiveHour),
+            .init(top: .cpu),
+            .init(top: .networkUpload, bottom: .networkDownload)
+        ])
+    }
+
+    func testExplicitEmptyMenuBarLayoutOverridesLegacyFlags() throws {
+        let data = Data(#"{"menuBarMetricColumns":[],"menuBarShowCatIcon":false,"menuBarShowTokenRate":true}"#.utf8)
+        let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+        XCTAssertEqual(settings.menuBarMetricColumns, [])
+        XCTAssertFalse(settings.showsAnyMenuBarContent)
+        let roundTrip = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(roundTrip, settings)
+    }
+
+    func testOnlyConfiguredRowsEnableMenuBarSampling() {
+        var settings = AppSettings(menuBarMetricColumns: [.init(bottom: .networkDownload), .init(top: .codexFiveHour)])
+        XCTAssertTrue(settings.showsMenuBarNetwork)
+        XCTAssertTrue(settings.showsMenuBarCodexUsage)
+        XCTAssertFalse(settings.showsMenuBarMetric(.networkUpload))
+        XCTAssertFalse(settings.showsMenuBarMetric(.codexWeekly))
+        settings.menuBarMetricColumns = [.init()]
+        XCTAssertFalse(settings.showsAnyMenuBarMetric)
+        XCTAssertFalse(settings.showsMenuBarNetwork)
+        XCTAssertFalse(settings.showsMenuBarCodexUsage)
     }
 
     func testProviderPricingMigrationImportsBotcf() throws {

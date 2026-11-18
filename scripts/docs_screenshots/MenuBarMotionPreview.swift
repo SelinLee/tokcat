@@ -19,12 +19,7 @@ enum MenuBarMotionPreview {
             (.completed, "Completed", "Green · a reply is ready.", 33),
             (.failed, "Failed", "Red · a task needs attention.", 33)
         ]
-        var settings = AppSettings()
-        settings.menuBarShowCPU = false
-        settings.menuBarShowCatIcon = false
-        settings.menuBarShowTokenRate = true
-        settings.menuBarShowCodexUsage = false
-        settings.menuBarShowNetwork = false
+        let settings = AppSettings(menuBarShowCatIcon: false)
         let quota = CodexUsageSnapshot(weekly: .init(kind: .weekly, usedPercent: 62,
             windowSeconds: 604_800, resetAfterSeconds: 86_400), fetchedAt: base)
         var frameIndex = 0
@@ -53,7 +48,8 @@ enum MenuBarMotionPreview {
                     context.cgContext.scaleBy(x: 1.8, y: 1.8)
                     appearance.performAsCurrentDrawingAppearance {
                         drawBackdrop()
-                        let metrics = metricImage(settings: settings, tokensPerSecond: 42, quota: quota)
+                        let metrics = MenuBarStatusRenderer.image(settings: settings, metrics: SystemMetrics(),
+                            tokensPerSecond: 42, codexUsage: quota)
                         let strip = SessionMenuBarRenderer.image(icon: metrics, sessions: tasks, phase: t,
                             reduceMotion: false, now: now, textBounds: MenuBarStatusRenderer.textVerticalBounds(in: metrics, settings: settings))
                         let dot = SessionMenuBarRenderer.image(icon: nil, sessions: [focus], phase: t, reduceMotion: false, now: now)
@@ -100,24 +96,6 @@ enum MenuBarMotionPreview {
         try JSONSerialization.data(withJSONObject: ["tokensPerSecond": 42, "weeklyRemainingPercent": 38, "showsCatIcon": false],
             options: [.prettyPrinted, .sortedKeys]).write(to: directory.appendingPathComponent("display-metrics.json"))
         print("Rendered \(frameIndex) native menu-bar frames: running pulse, input/approval flash, completed and failed.")
-    }
-
-    /// Keep only the requested sample readings, using the production formatters.
-    /// This compact two-row documentation cell contains no CPU, spend, or icon.
-    private static func metricImage(settings: AppSettings, tokensPerSecond: Double, quota: CodexUsageSnapshot) -> NSImage {
-        let rows = [MetricsFormatting.tokenRateLine(tokensPerSecond),
-                    CodexUsageFormatting.menuBarRows(quota)!.bottom.text]
-        let font = MetricsFormatting.menuBarFont(pointSize: MetricsFormatting.networkPointSize(textScale: settings.clampedTextScale))
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
-        let sizes = rows.map { ($0 as NSString).size(withAttributes: attributes) }
-        let size = NSSize(width: ceil(sizes.map(\.width).max()! + 6), height: MetricsFormatting.menuBarPointHeight(settings: settings))
-        return NSImage(size: size, flipped: false) { rect in
-            for index in rows.indices {
-                let y = index == 0 ? rect.midY + 0.25 : rect.midY - sizes[index].height - 0.25
-                (rows[index] as NSString).draw(at: CGPoint(x: (rect.width - sizes[index].width) / 2, y: y), withAttributes: attributes)
-            }
-            return true
-        }
     }
 
     private static func label(_ text: String, at point: CGPoint, size: CGFloat, weight: NSFont.Weight = .regular,

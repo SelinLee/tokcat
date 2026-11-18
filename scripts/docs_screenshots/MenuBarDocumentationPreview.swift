@@ -19,11 +19,11 @@ enum MenuBarDocumentationPreview {
                 timestamp: now, kind: state))
             return value
         }
-        var settings = AppSettings()
-        settings.menuBarShowCPU = true
-        settings.menuBarShowNetwork = true
-        settings.menuBarShowTokenRate = true
-        settings.menuBarShowCodexUsage = true
+        let settings = AppSettings(menuBarMetricColumns: AppSettings.defaultMenuBarMetricColumns + [
+            .init(top: .costRate, bottom: .codexFiveHour),
+            .init(top: .cpu),
+            .init(top: .networkUpload, bottom: .networkDownload)
+        ])
         let quota = CodexUsageSnapshot(
             fiveHour: .init(kind: .fiveHour, usedPercent: 28, windowSeconds: 18_000, resetAfterSeconds: 3_600),
             weekly: .init(kind: .weekly, usedPercent: 62, windowSeconds: 604_800, resetAfterSeconds: 86_400),

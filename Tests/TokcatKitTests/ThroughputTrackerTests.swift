@@ -2,6 +2,19 @@ import XCTest
 @testable import TokcatKit
 
 final class ThroughputTrackerTests: XCTestCase {
+    func testAggregateRateIncludesUsageAcrossAgentsInTheSameWindow() {
+        let now = Date()
+        let events = [
+            TokenEvent(timestamp: now.addingTimeInterval(-2), source: .codexCLI, model: "a",
+                       inputTokens: 100, outputTokens: 50, cacheReadTokens: 90_000, costUSD: 0),
+            TokenEvent(timestamp: now, source: .claudeCode, model: "b",
+                       inputTokens: 20_000, outputTokens: 850, cacheWriteTokens: 39_000, costUSD: 0)
+        ]
+        var tracker = ThroughputTracker()
+        tracker.record(events: events, now: now)
+        XCTAssertEqual(tracker.tokensPerSecond(now: now), 75_000)
+    }
+
     func testTokensPerSecondUsesWindow() {
         var tracker = ThroughputTracker(windowSeconds: 10, idleZeroSeconds: 30)
         let now = Date()

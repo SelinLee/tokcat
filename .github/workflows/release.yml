@@ -91,7 +91,7 @@ jobs:
             gh release upload "$tag" release-assets/* --clobber
           else
             gh release create "$tag" release-assets/* --draft --target "$GITHUB_SHA" \
-              --title "tokcat $VERSION · 快捷运行框、计算器与网站搜索" \
+              --title "tokcat $VERSION · macOS" \
               --notes-file ".github/releases/$tag.md"
           fi
           gh release edit "$tag" --draft=false --latest

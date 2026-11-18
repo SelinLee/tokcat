@@ -164,29 +164,57 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("CPU %", isOn: binding(\.menuBarShowCPU))
-                Toggle("GPU %", isOn: binding(\.menuBarShowGPU))
-                Toggle("内存 %", isOn: binding(\.menuBarShowMemory))
-                Toggle("网速（上↑ / 下↓，kb/s·mb/s）", isOn: binding(\.menuBarShowNetwork))
-                Toggle("Token 速率（tok 10.2k/s · $ 0.04/m）", isOn: binding(\.menuBarShowTokenRate))
-                Toggle("Codex 剩余用量（5h 21% · wk 20%）", isOn: binding(\.menuBarShowCodexUsage))
-                Toggle("温度压力", isOn: binding(\.menuBarShowThermal))
+                ForEach(settings.menuBarMetricColumns.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("第 \(index + 1) 列").font(.headline)
+                            Spacer()
+                            Button {
+                                let columns = binding(\.menuBarMetricColumns)
+                                guard columns.wrappedValue.indices.contains(index) else { return }
+                                columns.wrappedValue.remove(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("移除第 \(index + 1) 列")
+                            .help("移除此列")
+                        }
+                        menuBarMetricPicker("上排", column: index, row: \.top)
+                        menuBarMetricPicker("下排", column: index, row: \.bottom)
+                    }
+                }
+
+                HStack {
+                    Button {
+                        binding(\.menuBarMetricColumns).wrappedValue.append(.init())
+                    } label: {
+                        Label("添加一列", systemImage: "plus")
+                    }
+                    Spacer()
+                    Button("恢复默认布局") {
+                        binding(\.menuBarMetricColumns).wrappedValue = AppSettings.defaultMenuBarMetricColumns
+                    }
+                    .disabled(settings.menuBarMetricColumns == AppSettings.defaultMenuBarMetricColumns)
+                }
 
                 LabeledContent("预览") {
-                    Image(nsImage: MenuBarStatusRenderer.image(
-                        settings: settings,
-                        metrics: model.systemMetrics,
-                        tokensPerSecond: model.tokensPerSecond,
-                        usdPerSecond: model.usdPerSecond,
-                        activity: model.menuBarActivity,
-                        codexUsage: codexUsage
-                    ))
-                    .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
+                    ScrollView(.horizontal) {
+                        Image(nsImage: MenuBarStatusRenderer.image(
+                            settings: settings,
+                            metrics: model.systemMetrics,
+                            tokensPerSecond: model.tokensPerSecond,
+                            usdPerSecond: model.usdPerSecond,
+                            activity: model.menuBarActivity,
+                            codexUsage: codexUsage
+                        ))
+                        .renderingMode(settings.menuBarIconStyle == .rainTokcat ? .original : .template)
+                    }
                 }
             } header: {
                 Text("图标旁指标")
             } footer: {
-                Text("可多选；指标横向并排、宽度固定。网速为上行在上、下行在下。Codex 额度仅在客户端运行时显示，读取本地会话记录。")
+                Text("各列从左到右排列；上下行可独立选择或留空。Codex 限额仅在客户端运行且有本地记录时显示。")
             }
 
             Section {
@@ -206,6 +234,26 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(8)
+    }
+
+    private func menuBarMetricPicker(
+        _ title: String,
+        column index: Int,
+        row: WritableKeyPath<MenuBarMetricColumn, MenuBarMetric?>
+    ) -> some View {
+        let columns = binding(\.menuBarMetricColumns)
+        return Picker(title, selection: Binding<MenuBarMetric?>(
+            get: { columns.wrappedValue.indices.contains(index) ? columns.wrappedValue[index][keyPath: row] : nil },
+            set: { metric in
+                guard columns.wrappedValue.indices.contains(index) else { return }
+                columns.wrappedValue[index][keyPath: row] = metric
+            }
+        )) {
+            Text("留空").tag(nil as MenuBarMetric?)
+            ForEach(MenuBarMetric.allCases, id: \.self) { metric in
+                Text(metric.menuBarDisplayName).tag(Optional(metric))
+            }
+        }
     }
 
     private var metricsTab: some View {
@@ -280,7 +328,7 @@ struct SettingsView: View {
                     Button("读取本地记录") {
                         model.refreshCodexUsageNow()
                     }
-                    .disabled(!isCodexClientRunning || !(settings.menuBarShowCodexUsage || settings.showCodexUsageSummary))
+                    .disabled(!isCodexClientRunning || !(settings.showsMenuBarCodexUsage || settings.showCodexUsageSummary))
                     .controlSize(.small)
                 }
             }
@@ -292,7 +340,7 @@ struct SettingsView: View {
     }
 
     private var codexUsageStatusLine: String {
-        guard settings.menuBarShowCodexUsage || settings.showCodexUsageSummary else { return "已关闭" }
+        guard settings.showsMenuBarCodexUsage || settings.showCodexUsageSummary else { return "已关闭" }
         guard isCodexClientRunning else { return "客户端未运行" }
         guard let usage = codexUsage else { return "等待首次读取" }
         guard usage.hasUsage else { return usage.errorMessage ?? "等待客户端写入记录" }
@@ -401,8 +449,8 @@ struct SettingsView: View {
                     Text("尚未捕获到 token 事件")
                         .foregroundStyle(.secondary)
                 }
-                LabeledContent("实时速度") {
-                    Text(formatTokPerSec(model.tokensPerSecond))
+                LabeledContent("所有 Agent 总速率") {
+                    Text(MetricsFormatting.tokenRateLine(model.tokensPerSecond))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -541,13 +589,6 @@ struct SettingsView: View {
         ModelNameFormatting.shortDisplayName(model)
     }
 
-    private func formatTokPerSec(_ value: Double) -> String {
-        if value <= 0 { return "— tok/s" }
-        if value >= 100 { return String(format: "%.0f tok/s", value) }
-        if value >= 10 { return String(format: "%.1f tok/s", value) }
-        return String(format: "%.2f tok/s", value)
-    }
-
     private func formatUSD(_ value: Double) -> String {
         value.formatted(.currency(code: "USD"))
     }
@@ -563,6 +604,23 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+}
+
+private extension MenuBarMetric {
+    var menuBarDisplayName: String {
+        switch self {
+        case .tokenRate: return "所有 Agent 总速率（tok/s）"
+        case .codexWeekly: return "Codex 周限额（剩余 %）"
+        case .codexFiveHour: return "Codex 5 小时限额（剩余 %）"
+        case .costRate: return "费用速率（$/时间）"
+        case .cpu: return "CPU %"
+        case .gpu: return "GPU %"
+        case .memory: return "内存 %"
+        case .networkUpload: return "上传网速 ↑"
+        case .networkDownload: return "下载网速 ↓"
+        case .thermal: return "温度压力"
+        }
     }
 }
 
