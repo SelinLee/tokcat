@@ -195,7 +195,7 @@ enum MenuBarStatusRenderer {
             let text = MetricsFormatting.menuBarReadout(metric, metrics: metrics, tokensPerSecond: tokensPerSecond,
                 usdPerSecond: usdPerSecond, codexUsage: codexUsage) ?? ""
             let width = MetricsFormatting.measure(text, font: font).width
-            return (text, width, max(width, MetricsFormatting.menuBarMetricWidth(metric, font: font)))
+            return (text, width, MetricsFormatting.menuBarMetricWidth(metric, font: font))
         }
         let columns = settings.menuBarMetricColumns.filter { !$0.isEmpty }.map { column in
             let top = row(column.top)
@@ -237,8 +237,16 @@ enum MenuBarStatusRenderer {
             var cursorX = metricsStart
             for column in columns {
                 for (row, baseline) in [(column.top, baselines.top), (column.bottom, baselines.bottom)] where !row.text.isEmpty {
-                    let origin = NSPoint(x: cursorX + (column.width - row.width) / 2, y: baseline)
-                    (row.text as NSString).draw(at: origin, withAttributes: attrs)
+                    if row.width <= column.width {
+                        let origin = NSPoint(x: cursorX + (column.width - row.width) / 2, y: baseline)
+                        (row.text as NSString).draw(at: origin, withAttributes: attrs)
+                    } else if let context = NSGraphicsContext.current?.cgContext {
+                        context.saveGState()
+                        context.translateBy(x: cursorX, y: baseline)
+                        context.scaleBy(x: column.width / row.width, y: 1)
+                        (row.text as NSString).draw(at: .zero, withAttributes: attrs)
+                        context.restoreGState()
+                    }
                 }
                 cursorX += column.width + gap
             }
