@@ -449,7 +449,7 @@ struct SettingsView: View {
                     Text("尚未捕获到 token 事件")
                         .foregroundStyle(.secondary)
                 }
-                LabeledContent("所有 Agent 总速率") {
+                LabeledContent("所有 Agent 输出总速率") {
                     Text(MetricsFormatting.tokenRateLine(model.tokensPerSecond))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -610,7 +610,7 @@ struct SettingsView: View {
 private extension MenuBarMetric {
     var menuBarDisplayName: String {
         switch self {
-        case .tokenRate: return "所有 Agent 总速率（tok/s）"
+        case .tokenRate: return "所有 Agent 输出总速率（tok/s）"
         case .codexWeekly: return "Codex 周限额（剩余 %）"
         case .codexFiveHour: return "Codex 5 小时限额（剩余 %）"
         case .costRate: return "费用速率（$/时间）"

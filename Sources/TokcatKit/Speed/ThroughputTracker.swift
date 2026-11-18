@@ -11,7 +11,7 @@ public struct ThroughputTracker: Sendable {
     public var windowSeconds: TimeInterval
     /// After this much silence since the newest sample, reported rate is zero.
     public var idleZeroSeconds: TimeInterval
-    private var samples: [(timestamp: Date, tokens: Int, costUSD: Double)]
+    private var samples: [(timestamp: Date, outputTokens: Int, costUSD: Double)]
 
     public init(
         windowSeconds: TimeInterval = 12,
@@ -24,10 +24,10 @@ public struct ThroughputTracker: Sendable {
 
     public mutating func record(events: [TokenEvent], now: Date = Date()) {
         for event in events {
-            let tokens = max(0, event.outputTokens + event.inputTokens + event.cachedTokens)
+            let outputTokens = max(0, event.outputTokens)
             let cost = max(0, event.costUSD)
-            guard tokens > 0 || cost > 0 else { continue }
-            samples.append((timestamp: event.timestamp, tokens: tokens, costUSD: cost))
+            guard outputTokens > 0 || event.inputTokens > 0 || event.cachedTokens > 0 || cost > 0 else { continue }
+            samples.append((timestamp: event.timestamp, outputTokens: outputTokens, costUSD: cost))
         }
         prune(now: now)
     }
@@ -42,25 +42,35 @@ public struct ThroughputTracker: Sendable {
 
     public mutating func rates(now: Date = Date()) -> (tokensPerSecond: Double, usdPerSecond: Double) {
         prune(now: now)
-        guard !samples.isEmpty else { return (0, 0) }
+        var output = RateWindow()
+        var spend = RateWindow()
+        for sample in samples {
+            if sample.outputTokens > 0 {
+                output.add(Double(sample.outputTokens), at: sample.timestamp)
+            }
+            spend.add(sample.costUSD, at: sample.timestamp)
+        }
+        return (
+            output.rate(at: now, windowSeconds: windowSeconds, idleZeroSeconds: idleZeroSeconds),
+            spend.rate(at: now, windowSeconds: windowSeconds, idleZeroSeconds: idleZeroSeconds)
+        )
+    }
 
-        let latest = samples.lazy.map(\.timestamp).max() ?? now
-        let idle = now.timeIntervalSince(latest)
-        // Stopped working: drop immediately instead of slowly diluting over a long window.
-        if idle >= idleZeroSeconds {
-            return (0, 0)
+    private struct RateWindow {
+        var earliest = Date.distantFuture
+        var latest = Date.distantPast
+        var total = 0.0
+
+        mutating func add(_ value: Double, at timestamp: Date) {
+            earliest = min(earliest, timestamp)
+            latest = max(latest, timestamp)
+            total += value
         }
 
-        let totalTokens = samples.reduce(0) { $0 + $1.tokens }
-        let totalCost = samples.reduce(0.0) { $0 + $1.costUSD }
-        let earliest = samples.lazy.map(\.timestamp).min() ?? now
-        let span = max(now.timeIntervalSince(earliest), 1)
-        // Prefer fixed window length once we have full-window coverage.
-        let denominator = max(min(span, windowSeconds), 1)
-        return (
-            Double(totalTokens) / denominator,
-            totalCost / denominator
-        )
+        func rate(at now: Date, windowSeconds: TimeInterval, idleZeroSeconds: TimeInterval) -> Double {
+            guard total > 0, now.timeIntervalSince(latest) < idleZeroSeconds else { return 0 }
+            return total / max(1, min(now.timeIntervalSince(earliest), windowSeconds))
+        }
     }
 
     public mutating func outputTokensPerSecond(now: Date = Date()) -> Double {

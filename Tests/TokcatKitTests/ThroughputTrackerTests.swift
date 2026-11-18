@@ -2,7 +2,7 @@ import XCTest
 @testable import TokcatKit
 
 final class ThroughputTrackerTests: XCTestCase {
-    func testAggregateRateIncludesUsageAcrossAgentsInTheSameWindow() {
+    func testAggregateRateIncludesOnlyOutputAcrossAgentsInTheSameWindow() {
         let now = Date()
         let events = [
             TokenEvent(timestamp: now.addingTimeInterval(-2), source: .codexCLI, model: "a",
@@ -12,7 +12,27 @@ final class ThroughputTrackerTests: XCTestCase {
         ]
         var tracker = ThroughputTracker()
         tracker.record(events: events, now: now)
-        XCTAssertEqual(tracker.tokensPerSecond(now: now), 75_000)
+        XCTAssertEqual(tracker.tokensPerSecond(now: now), 450)
+    }
+
+    func testInputAndCacheDoNotProduceOutputOrKeepItsRateAlive() {
+        var tracker = ThroughputTracker()
+        let start = Date()
+        let prompt = TokenEvent(timestamp: start, source: .codexCLI, model: "m", inputTokens: 30_000,
+                                outputTokens: 0, cacheReadTokens: 90_000, costUSD: 0.2)
+        tracker.record(events: [prompt], now: start)
+        XCTAssertEqual(tracker.tokensPerSecond(now: start), 0)
+        let later = start.addingTimeInterval(2)
+        let reply = TokenEvent(timestamp: later, source: .claudeCode, model: "m", inputTokens: 0,
+                               outputTokens: 80, costUSD: 0.1)
+        tracker.record(events: [reply], now: later)
+        XCTAssertEqual(tracker.tokensPerSecond(now: later), 80)
+        var anotherPrompt = prompt
+        anotherPrompt.timestamp = later.addingTimeInterval(3)
+        tracker.record(events: [anotherPrompt], now: anotherPrompt.timestamp)
+        let rates = tracker.rates(now: anotherPrompt.timestamp)
+        XCTAssertEqual(rates.tokensPerSecond, 0)
+        XCTAssertEqual(rates.usdPerSecond, 0.1, accuracy: 0.0001)
     }
 
     func testTokensPerSecondUsesWindow() {
@@ -24,8 +44,7 @@ final class ThroughputTrackerTests: XCTestCase {
         ]
         tracker.record(events: events, now: now)
         let tps = tracker.tokensPerSecond(now: now)
-        // 200 tokens over ~5s span
-        XCTAssertEqual(tps, 40, accuracy: 0.1)
+        XCTAssertEqual(tps, 30, accuracy: 0.1)
     }
 
     func testTracksTokenAndCostRates() {
@@ -53,8 +72,7 @@ final class ThroughputTrackerTests: XCTestCase {
         ]
         tracker.record(events: events, now: now)
         let rates = tracker.rates(now: now)
-        // 300 tokens over ~2s span → 150 tok/s
-        XCTAssertEqual(rates.tokensPerSecond, 150, accuracy: 0.001)
+        XCTAssertEqual(rates.tokensPerSecond, 75, accuracy: 0.001)
         XCTAssertEqual(rates.usdPerSecond, 0.015, accuracy: 0.0001)
     }
 

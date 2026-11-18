@@ -246,7 +246,7 @@ The **Windows 2026.11.14.1** release includes live matching while composing piny
 
 1. Install and open tokcat, then use your agents as usual.
 2. Claude Code sessions with a local registry appear automatically. For detailed lifecycle events or older clients without a registry, enable hooks in **Settings → Agent**, then restart existing Claude Code sessions.
-3. Under **Settings → Menu Bar**, add metric columns and choose their top and bottom rows independently. By default the top row shows the total input, output, and cache token rate across conversations detected by all enabled agents (for example, `75000 tok/s`). The bottom row shows the remaining weekly Codex quota. Watch the task dots, open **Tasks** for conversations, or **Usage** for trends.
+3. Under **Settings → Menu Bar**, add metric columns and choose their top and bottom rows independently. By default the top row shows the combined output token rate across conversations detected by all enabled agents (for example, `75000 tok/s`). The bottom row shows the remaining weekly Codex quota. Watch the task dots, open **Tasks** for conversations, or **Usage** for trends.
 4. Choose toki / biti and an attachment in **Settings → Desktop companion**.
 
 ## Build from source

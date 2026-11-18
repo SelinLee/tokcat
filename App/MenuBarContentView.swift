@@ -98,7 +98,7 @@ struct MenuBarContentView: View {
             }
 
             HStack(spacing: 6) {
-                compactMetric(title: "所有 Agent 总速率", value: MetricsFormatting.tokenRateLine(live.tokensPerSecond))
+                compactMetric(title: "总输出速率", value: MetricsFormatting.tokenRateLine(live.tokensPerSecond))
                 compactMetric(title: "费用/分", value: formatUSDPerMinute(live.usdPerSecond))
                 compactMetric(
                     title: "今日",
