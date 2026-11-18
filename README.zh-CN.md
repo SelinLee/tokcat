@@ -6,7 +6,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[安装 macOS 版](#安装-macos-版)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
+**[下载 macOS 版](https://github.com/SelinLee/tokcat/releases/latest)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
 
 </div>
 
@@ -136,12 +136,14 @@
 
 ### 看一眼菜单栏，就知道任务状态
 
-每个任务对应一个状态点，排在你选择的监控指标后面。在其他应用中工作时，也能关注多个 Agent。
+macOS 菜单栏默认上排显示所有已启用 Agent 的输出总速率（`tok/s`），下排显示 Codex 本周剩余额度（`wk`）。在「设置 → 菜单栏 → 图标旁指标」可以增减列数，并独立选择每列的上下两排。两排文字居中，列宽固定，读数变化时右侧指标和任务状态点的位置保持稳定。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
-  <img src="docs/assets/screenshots/readme-menubar-light.png" alt="菜单栏中的任务状态点、token 速度、费用速度、系统指标与 Codex 额度" width="1040" />
+  <img src="docs/assets/screenshots/readme-menubar-light.png" alt="菜单栏上排显示 209 tok/s，下排显示 Codex 本周剩余 38%，旁边是网速和任务状态点。" width="1040" />
 </picture>
+
+`tok/s` 表示平均每秒输出的 token 数。Token 数是整数，平均速率可以有小数。例如 2 秒内输出 5 个 token，平均就是 2.5 tok/s。
 
 | 状态点 | 含义 |
 |---|---|
@@ -246,7 +248,7 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 1. 安装并打开 tokcat，照常使用各个 Agent。
 2. 有本机会话注册的 Claude Code 自动显示；如需详细生命周期事件或使用旧版客户端，在「设置 → Agent」启用 hooks，再重启已有 Claude Code 会话。
-3. 在「设置 → 菜单栏 → 图标旁指标」添加多列，逐列设置上下两行。默认上排汇总所有已启用 Agent 检测到的对话，只按输出 token 计算总速率（如 `75000 tok/s`），下排显示 Codex 本周剩余额度。通过状态点关注任务，或打开「任务总览」阅读对话、「用量统计」查看趋势。
+3. 在「设置 → 菜单栏 → 图标旁指标」选择要显示的指标。点击菜单栏查看各项任务，也可以打开「任务总览」阅读对话，或打开「用量统计」查看趋势。
 4. 在「设置 → 桌边挂件」选择 toki／biti 和吸附位置。
 
 ## 从源码运行

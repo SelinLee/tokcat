@@ -20,12 +20,9 @@ enum MenuBarDocumentationPreview {
             return value
         }
         let settings = AppSettings(menuBarMetricColumns: AppSettings.defaultMenuBarMetricColumns + [
-            .init(top: .costRate, bottom: .codexFiveHour),
-            .init(top: .cpu),
             .init(top: .networkUpload, bottom: .networkDownload)
         ])
         let quota = CodexUsageSnapshot(
-            fiveHour: .init(kind: .fiveHour, usedPercent: 28, windowSeconds: 18_000, resetAfterSeconds: 3_600),
             weekly: .init(kind: .weekly, usedPercent: 62, windowSeconds: 604_800, resetAfterSeconds: 86_400),
             fetchedAt: now)
         for dark in [false, true] {
@@ -34,8 +31,8 @@ enum MenuBarDocumentationPreview {
             var strip = NSImage()
             appearance.performAsCurrentDrawingAppearance {
                 let metrics = MenuBarStatusRenderer.image(settings: settings,
-                    metrics: SystemMetrics(cpuPercent: 24, networkInBytesPerSecond: 1_250_000, networkOutBytesPerSecond: 32_768),
-                    tokensPerSecond: 42, usdPerSecond: 0.001,
+                    metrics: SystemMetrics(networkInBytesPerSecond: 1_250_000, networkOutBytesPerSecond: 32_768),
+                    tokensPerSecond: 209.2,
                     activity: .init(mode: .working, intensity: 0.5, phase: 0, completionProgress: 0), codexUsage: quota)
                 strip = SessionMenuBarRenderer.image(icon: metrics, sessions: tasks, phase: 0,
                     reduceMotion: false, now: now,
@@ -57,9 +54,9 @@ enum MenuBarDocumentationPreview {
                 .padding(.vertical, 24)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
                 HStack(spacing: 0) {
-                    caption("System & network", "CPU, memory, GPU, traffic")
-                    caption("AI usage", "Tokens and spend rate")
-                    caption("Codex quota", "5-hour and weekly limits")
+                    caption("Output rate", "Combined across agents")
+                    caption("Weekly quota", "Codex allowance remaining")
+                    caption("Network", "Upload and download")
                     caption("Task status", "One dot per task")
                 }
             }

@@ -6,7 +6,7 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[Install for macOS](#install-for-macos)** · **[Download Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
+**[Download for macOS](https://github.com/SelinLee/tokcat/releases/latest)** · **[Download Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
 
 </div>
 
@@ -136,12 +136,14 @@ See who is running, who needs an answer, and whose reply is ready. The shared ta
 
 ### Glance at the menu bar
 
-One status dot per task, next to the metrics you choose. Keep several agents in sight while working in another app.
+The default macOS menu-bar column shows the combined output rate in `tok/s` above the remaining weekly Codex quota (`wk`). In **Settings → Menu Bar**, add or remove columns and select each row independently. Both rows are centered, and their column stays the same width as the readings change.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-menubar-dark.png" />
-  <img src="docs/assets/screenshots/readme-menubar-light.png" alt="Task status dots, token throughput, spend rate, system metrics and Codex quota" width="1040" />
+  <img src="docs/assets/screenshots/readme-menubar-light.png" alt="The menu bar shows 209 tok/s above 38% weekly Codex quota remaining, next to network speeds and task status dots." width="1040" />
 </picture>
+
+`tok/s` measures average output tokens per second. Counts are whole numbers, but rates can be fractional: five tokens over two seconds average 2.5 tok/s.
 
 | Indicator | Meaning |
 |---|---|
@@ -246,7 +248,7 @@ The **Windows 2026.11.14.1** release includes live matching while composing piny
 
 1. Install and open tokcat, then use your agents as usual.
 2. Claude Code sessions with a local registry appear automatically. For detailed lifecycle events or older clients without a registry, enable hooks in **Settings → Agent**, then restart existing Claude Code sessions.
-3. Under **Settings → Menu Bar**, add metric columns and choose their top and bottom rows independently. By default the top row shows the combined output token rate across conversations detected by all enabled agents (for example, `75000 tok/s`). The bottom row shows the remaining weekly Codex quota. Watch the task dots, open **Tasks** for conversations, or **Usage** for trends.
+3. Choose your metrics under **Settings → Menu Bar**. Click the menu bar to see individual tasks, open **Tasks** to read conversations, or open **Usage** for trends.
 4. Choose toki / biti and an attachment in **Settings → Desktop companion**.
 
 ## Build from source
