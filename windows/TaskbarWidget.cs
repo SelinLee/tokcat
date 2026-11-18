@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -37,9 +38,19 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     Layout latest;
     volatile bool enabled, disposed;
     bool started;
-    sealed class Column { public string Top, Bottom, Reserve; public bool Network; public Column(string top,string bottom,string reserve=null,bool network=false) { Top=top??""; Bottom=bottom??""; Reserve=reserve; Network=network; } }
+    sealed class Readout {
+        public readonly string Text, Sample;
+        public readonly bool Network;
+        public Readout(string text, string sample = null, bool network = false) {
+            Text = text ?? ""; Sample = sample ?? Text; Network = network;
+        }
+    }
+    sealed class Column {
+        public readonly Readout Top, Bottom;
+        public Column(Readout top, Readout bottom) { Top = top; Bottom = bottom; }
+    }
     readonly Color transparent = Color.FromArgb(1,0,1);
-    Column[] columns = new Column[] { new Column("tokcat","") };
+    Column[] columns = { new Column(new Readout("tokcat"), new Readout("")) };
     Bitmap textBitmap;
     readonly Bitmap measureBitmap = new Bitmap(1,1);
     readonly Graphics measureGraphics;
@@ -77,20 +88,38 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         else { timer.Stop(); if (Handle != IntPtr.Zero) ShowWindow(Handle, 0); Status = "Hidden"; }
     }
     public void SetContent(string[] dots, string line1, string line2) {
-        states = dots ?? new string[0]; columns=new Column[] { new Column(line1,line2) }; ContentChanged();
+        states = dots ?? new string[0]; columns = new Column[] { new Column(new Readout(line1), new Readout(line2)) }; ContentChanged();
     }
     public void SetDotDimming(bool[] values) {
         dimmed=values??new bool[0];
         if(Handle!=IntPtr.Zero) InvalidateRect(Handle,IntPtr.Zero,false);
     }
-    public void SetMetrics(string[] dots,string speed,string quota,string upload,string download,string cpu,string gpu,string memory) {
-        states=dots??new string[0]; var values=new List<Column>();
-        string quotaSample=System.Text.RegularExpressions.Regex.Replace(quota??"",@"\d+(?:\.\d+)?(?=%)","100");
-        values.Add(new Column(speed,quota,quotaSample));
-        if(!string.IsNullOrEmpty(cpu)) values.Add(new Column("CPU",cpu)); if(!string.IsNullOrEmpty(gpu)) values.Add(new Column("GPU",gpu)); if(!string.IsNullOrEmpty(memory)) values.Add(new Column("MEM",memory));
-        values.Add(new Column("\u2191: "+upload,"\u2193: "+download,null,true)); columns=values.ToArray(); ContentChanged();
+    public void SetMetricColumns(string[] dots, string[] rows, IDictionary values) {
+        states = dots ?? new string[0];
+        var next = new List<Column>();
+        for (int index = 0; index + 1 < rows.Length; index += 2) {
+            var top = MetricReadout(rows[index], values);
+            var bottom = MetricReadout(rows[index + 1], values);
+            if (top.Sample.Length != 0 || bottom.Sample.Length != 0) next.Add(new Column(top, bottom));
+        }
+        columns = next.ToArray();
+        ContentChanged();
     }
-    string ContentCaption() { var values=new List<string>(); foreach(var c in columns) values.Add(c.Top+" / "+c.Bottom); return "tokcat: "+string.Join(" | ",values.ToArray()); }
+    static Readout MetricReadout(string key, IDictionary values) {
+        var value = key == null ? "" : Convert.ToString(values[key]);
+        switch (key) {
+            case "Output": return new Readout(value, "999999 tok/s");
+            case "Weekly": return new Readout("wk " + value, "wk 100%");
+            case "FiveHour": return new Readout("5h " + value, "5h 100%");
+            case "Cpu": return new Readout("CPU " + value, "CPU 100%");
+            case "Gpu": return new Readout("GPU " + value, "GPU 100%");
+            case "Memory": return new Readout("MEM " + value, "MEM 100%");
+            case "Upload": return new Readout("\u2191: " + value, null, true);
+            case "Download": return new Readout("\u2193: " + value, null, true);
+            default: return new Readout("");
+        }
+    }
+    string ContentCaption() { var values=new List<string>(); foreach(var c in columns) values.Add(c.Top.Text+" / "+c.Bottom.Text); return "tokcat: "+string.Join(" | ",values.ToArray()); }
     void ContentChanged() {
         if (Handle != IntPtr.Zero) { SetWindowText(Handle,ContentCaption()); InvalidateRect(Handle, IntPtr.Zero, false); }
         if(enabled) RefreshAttachment();
@@ -101,10 +130,23 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
     int NetworkSpace(Font font) { return Math.Max(Measure(" ",font),(int)Math.Ceiling(font.Size/4)); }
     int NetworkNumberWidth(Font font) { return Math.Max(Measure("99.9",font),Measure("1023",font)); }
     int NetworkUnitWidth(Font font) { return Math.Max(Measure("K/s",font),Math.Max(Measure("M/s",font),Measure("G/s",font))); }
-    int ColumnWidth(Column c,Font font) {
-        if(c.Network) return NetworkLabelWidth(font)+2*NetworkSpace(font)+NetworkNumberWidth(font)+NetworkUnitWidth(font);
-        int width=Math.Max(Measure(c.Reserve,font),Math.Max(Measure(c.Top,font),Measure(c.Bottom,font)));
-        return c.Reserve!=null?Math.Max(width,Measure("9999.9 tok/s",font)):width;
+    int NetworkWidth(Font font) { return NetworkLabelWidth(font)+2*NetworkSpace(font)+NetworkNumberWidth(font)+NetworkUnitWidth(font); }
+    int RowWidth(Readout row, Font font) { return row.Network ? NetworkWidth(font) : Measure(row.Sample, font); }
+    int ColumnWidth(Column column, Font font) { return Math.Max(RowWidth(column.Top, font), RowWidth(column.Bottom, font)); }
+    void DrawReadout(Graphics graphics, Readout row, Font font, Rectangle bounds, Color foreground, Color background, TextFormatFlags flags) {
+        if (row.Text.Length == 0) return;
+        if (row.Network) {
+            int width = NetworkWidth(font);
+            DrawNetworkLine(graphics, row.Text, font, new Rectangle(bounds.Left + (bounds.Width - width) / 2, bounds.Top, width, bounds.Height), foreground, background, flags);
+            return;
+        }
+        flags |= TextFormatFlags.HorizontalCenter;
+        int measured = Measure(row.Text, font);
+        if (measured <= bounds.Width) TextRenderer.DrawText(graphics, row.Text, font, bounds, foreground, background, flags);
+        else {
+            using (var fitted = new Font(font.FontFamily, Math.Max(1f, font.Size * (bounds.Width - 2) / measured), font.Style, font.Unit))
+                TextRenderer.DrawText(graphics, row.Text, fitted, bounds, foreground, background, flags);
+        }
     }
     void DrawNetworkLine(Graphics g,string text,Font font,Rectangle rect,Color foreground,Color background,TextFormatFlags flags) {
         int label=NetworkLabelWidth(font),space=NetworkSpace(font),number=NetworkNumberWidth(font),unit=NetworkUnitWidth(font);
@@ -216,11 +258,22 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
         if (m.Msg == 0x0021) { m.Result=new IntPtr(3); return; } // MA_NOACTIVATE
         base.WndProc(ref m);
     }
-    public Bitmap RenderPreview(uint dpi) { var bitmap=new Bitmap(PreferredWidth(dpi),(int)(48*(dpi==0?96:dpi)/96.0)); using(var graphics=Graphics.FromImage(bitmap)) Paint(graphics,bitmap.Size,dpi); bitmap.MakeTransparent(transparent); return bitmap; }
-    void Paint(Graphics g, Size bounds, uint dpi) {
+    static bool UseLightTheme() {
+        try {
+            using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                return key!=null && Convert.ToInt32(key.GetValue("SystemUsesLightTheme",0))!=0;
+        } catch { return false; }
+    }
+    public Bitmap RenderPreview(uint dpi) { return RenderPreview(dpi, UseLightTheme()); }
+    public Bitmap RenderPreview(uint dpi, bool light) {
+        var bitmap = new Bitmap(PreferredWidth(dpi), (int)(48*(dpi==0?96:dpi)/96.0));
+        using(var graphics = Graphics.FromImage(bitmap)) Paint(graphics, bitmap.Size, dpi, light);
+        bitmap.MakeTransparent(transparent);
+        return bitmap;
+    }
+    void Paint(Graphics g, Size bounds, uint dpi, bool? previewTheme = null) {
         if (bounds.IsEmpty) return; float scale=(dpi==0?96:dpi)/96f;
-        bool light=false;
-        try { using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) light=key!=null && Convert.ToInt32(key.GetValue("SystemUsesLightTheme",0))!=0; } catch {}
+        bool light = previewTheme ?? UseLightTheme();
         var background=transparent; var foreground=light?Color.FromArgb(20,20,20):Color.White;
         int left=DotsWidth(scale)+(int)(4*scale), padding=(int)(3*scale); int half=bounds.Height/2;
         string signature=ContentCaption()+"|"+bounds+"|"+dpi+"|"+left+"|"+light;
@@ -232,8 +285,8 @@ public sealed class TokcatTaskbarWidget : NativeWindow, IDisposable {
                 foreach(var c in columns) {
                     int width=ColumnWidth(c,font);
                     var upper=new Rectangle(left,padding,width,half-padding); var lower=new Rectangle(left,half,width,half-padding);
-                    if(c.Network) { DrawNetworkLine(textGraphics,c.Top,font,upper,foreground,background,flags); DrawNetworkLine(textGraphics,c.Bottom,font,lower,foreground,background,flags); }
-                    else { TextRenderer.DrawText(textGraphics,c.Top,font,upper,foreground,background,flags); TextRenderer.DrawText(textGraphics,c.Bottom,font,lower,foreground,background,flags); }
+                    DrawReadout(textGraphics,c.Top,font,upper,foreground,background,flags);
+                    DrawReadout(textGraphics,c.Bottom,font,lower,foreground,background,flags);
                     left+=width+(int)(4*scale);
                 }
             }

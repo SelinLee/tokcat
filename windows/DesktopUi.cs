@@ -215,6 +215,7 @@ public sealed class TokcatMainWindow : Form
     public readonly Label LauncherStatus = TokcatUi.Label("快速启动", 9, TokcatUi.Secondary);
     public readonly Panel LauncherSettingsHost = new Panel { Dock = DockStyle.Fill, Visible = false };
     public readonly Button StripButton = TokcatUi.Button("隐藏任务栏", "taskbar", false);
+    public readonly Button TaskbarLayoutButton = TokcatUi.Button("编辑指标布局", "settings", false);
     public readonly Button QuitButton = TokcatUi.Button("退出 tokcat", "exit", false);
     public readonly Button RefreshButton = TokcatUi.Button("立即刷新", "refresh", false);
     public readonly Button ConversationButton = TokcatUi.Button("阅读对话", "conversation", true);
@@ -323,6 +324,7 @@ public sealed class TokcatMainWindow : Form
             checks[i].Text = labels[i]; checks[i].Size = new Size(600, 36); checks[i].ForeColor = TokcatUi.Text;
             checks[i].AccessibleName = labels[i]; stack.Controls.Add(checks[i]);
         }
+        TaskbarLayoutButton.Width = 160; stack.Controls.Add(TaskbarLayoutButton);
         StripButton.Width = 160; stack.Controls.Add(StripButton);
         Label help = TokcatUi.Label("监控仅读取本地记录，无需 API 密钥。\n关闭主窗口后继续在任务栏运行；退出程序请使用左下角按钮。\n外观随启动时的 Windows 应用主题；GPU 仅在开启后采样。", 9, TokcatUi.Secondary);
         help.Size = new Size(600, 94); help.Margin = new Padding(0, 24, 0, 0); stack.Controls.Add(help);
@@ -376,5 +378,99 @@ public sealed class TokcatMainWindow : Form
         selectionMeta.Text = selected ? metadata : "选中后可阅读对话、打开项目或标记已读。";
         selectionTitle.ForeColor = TokcatUi.Text;
         ConversationButton.Enabled = ProjectButton.Enabled = RecordButton.Enabled = ReadButton.Enabled = selected;
+    }
+}
+
+public sealed class TokcatTaskbarLayoutDialog : Form
+{
+    sealed class MetricChoice
+    {
+        public string Key { get; private set; }
+        public string Label { get; private set; }
+        public MetricChoice(string key, string label) { Key = key; Label = label; }
+    }
+
+    static readonly MetricChoice[] Choices = {
+        new MetricChoice("", "留空"), new MetricChoice("Output", "总输出速率 · tok/s"),
+        new MetricChoice("Weekly", "Codex 本周剩余额度"), new MetricChoice("FiveHour", "Codex 5 小时剩余额度"),
+        new MetricChoice("Upload", "上传网速"), new MetricChoice("Download", "下载网速"),
+        new MetricChoice("Cpu", "CPU"), new MetricChoice("Gpu", "GPU"), new MetricChoice("Memory", "内存")
+    };
+    readonly DataGridView columns = new DataGridView();
+    public string[] SelectedRows { get; private set; }
+
+    public TokcatTaskbarLayoutDialog(string[] rows)
+    {
+        TokcatUi.StyleWindow(this);
+        Text = "任务栏指标布局";
+        ClientSize = new Size(550, 370); FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false; MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterParent; ShowInTaskbar = false;
+        Padding = new Padding(16);
+        Label hint = TokcatUi.Label("从第一列向右排列。每列的上排、下排可独立选择。", 10, TokcatUi.Secondary);
+        hint.Dock = DockStyle.Top; hint.Height = 36;
+
+        columns.Dock = DockStyle.Fill;
+        columns.BackgroundColor = TokcatUi.Surface; columns.GridColor = TokcatUi.Border;
+        columns.DefaultCellStyle.BackColor = TokcatUi.Surface; columns.DefaultCellStyle.ForeColor = TokcatUi.Text;
+        columns.ColumnHeadersDefaultCellStyle.BackColor = TokcatUi.Background;
+        columns.ColumnHeadersDefaultCellStyle.ForeColor = TokcatUi.Text;
+        columns.EnableHeadersVisualStyles = false; columns.RowTemplate.Height = 32;
+        columns.AllowUserToAddRows = false; columns.AllowUserToDeleteRows = false;
+        columns.AllowUserToResizeRows = false; columns.RowHeadersWidth = 48;
+        columns.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        columns.MultiSelect = false; columns.SelectionMode = DataGridViewSelectionMode.CellSelect;
+        columns.EditMode = DataGridViewEditMode.EditOnEnter;
+        columns.AccessibleName = "任务栏指标列";
+        foreach (string label in new[] { "上排", "下排" })
+            columns.Columns.Add(new DataGridViewComboBoxColumn {
+                HeaderText = label, ValueMember = "Key", DisplayMember = "Label", DataSource = (MetricChoice[])Choices.Clone(),
+                FlatStyle = FlatStyle.Flat, SortMode = DataGridViewColumnSortMode.NotSortable
+            });
+        for (int index = 0; index + 1 < rows.Length; index += 2) columns.Rows.Add(rows[index], rows[index + 1]);
+        Renumber();
+
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 49, Padding = new Padding(0, 10, 0, 0), WrapContents = false };
+        var add = TokcatUi.Button("添加列", null, false); add.Width = 80;
+        var remove = TokcatUi.Button("移除列", null, false); remove.Width = 80;
+        var defaults = TokcatUi.Button("恢复默认", null, false); defaults.Width = 100;
+        var save = TokcatUi.Button("保存", null, true); save.Width = 80;
+        var cancel = TokcatUi.Button("取消", null, false); cancel.Width = 76; cancel.DialogResult = DialogResult.Cancel;
+        footer.Controls.AddRange(new Control[] { add, remove, defaults, save, cancel });
+        add.Click += delegate {
+            columns.EndEdit();
+            int index = columns.Rows.Add("", "");
+            Renumber();
+            columns.CurrentCell = columns.Rows[index].Cells[0];
+        };
+        remove.Click += delegate {
+            var row = columns.CurrentRow;
+            if (row == null) return;
+            columns.EndEdit();
+            columns.Rows.Remove(row);
+            Renumber();
+        };
+        defaults.Click += delegate {
+            columns.EndEdit();
+            columns.Rows.Clear(); columns.Rows.Add("Output", "Weekly"); columns.Rows.Add("Upload", "Download");
+            Renumber();
+        };
+        save.Click += delegate {
+            columns.EndEdit();
+            var output = new System.Collections.Generic.List<string>();
+            foreach (DataGridViewRow row in columns.Rows) {
+                string top = Convert.ToString(row.Cells[0].Value), bottom = Convert.ToString(row.Cells[1].Value);
+                if (top.Length != 0 || bottom.Length != 0) { output.Add(top); output.Add(bottom); }
+            }
+            SelectedRows = output.ToArray();
+            DialogResult = DialogResult.OK;
+        };
+        CancelButton = cancel;
+        Controls.Add(columns); Controls.Add(footer); Controls.Add(hint);
+    }
+
+    void Renumber()
+    {
+        foreach (DataGridViewRow row in columns.Rows) row.HeaderCell.Value = (row.Index + 1).ToString();
     }
 }

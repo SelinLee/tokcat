@@ -412,17 +412,50 @@ function Format-TaskbarNetworkRate($BytesPerSecond) {
     return ('{0:0.#} {1}' -f $value,$unit)
 }
 
-function Read-TaskbarMetricsPreference([string]$Path) {
-    if (-not [IO.File]::Exists($Path)) { return [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false } }
-    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
-    if ((Get-Field $doc 'version') -ne 1) { throw 'Taskbar metric settings have an unsupported format.' }
-    foreach ($name in @('Cpu','Gpu','Memory')) { if ((Get-Field $doc $name) -isnot [bool]) { throw 'Taskbar metric settings must be boolean.' } }
-    return [pscustomobject]@{ Cpu=$doc.Cpu; Gpu=$doc.Gpu; Memory=$doc.Memory }
+function Get-DefaultTaskbarMetricColumns {
+    [pscustomobject]@{ Top='Output'; Bottom='Weekly' }
+    [pscustomobject]@{ Top='Upload'; Bottom='Download' }
 }
 
-function Write-TaskbarMetricsPreference([string]$Path, [bool]$Cpu, [bool]$Gpu, [bool]$Memory) {
+function New-TaskbarMetricsPreference([object[]]$Columns) {
+    $available = @('', 'Output', 'Weekly', 'FiveHour', 'Upload', 'Download', 'Cpu', 'Gpu', 'Memory')
+    $rows = @()
+    $validated = @(foreach ($column in $Columns) {
+        $top = Get-Field $column 'Top'; $bottom = Get-Field $column 'Bottom'
+        if ($top -isnot [string] -or $bottom -isnot [string] -or $top -cnotin $available -or $bottom -cnotin $available) {
+            throw 'Unknown taskbar metric.'
+        }
+        $rows += @($top, $bottom)
+        [pscustomobject]@{ Top=$top; Bottom=$bottom }
+    })
+    return [pscustomobject]@{ Columns=$validated; Cpu='Cpu' -in $rows; Gpu='Gpu' -in $rows; Memory='Memory' -in $rows }
+}
+
+function Read-TaskbarMetricsPreference([string]$Path) {
+    $defaults = @(Get-DefaultTaskbarMetricColumns)
+    if (-not [IO.File]::Exists($Path)) { return (New-TaskbarMetricsPreference $defaults) }
+    $doc = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json -ErrorAction Stop
+    switch (Get-Field $doc 'version') {
+        1 {
+            foreach ($name in @('Cpu','Gpu','Memory')) {
+                $enabled = Get-Field $doc $name
+                if ($enabled -isnot [bool]) { throw 'Taskbar metric settings must be boolean.' }
+                if ($enabled) { $defaults += [pscustomobject]@{ Top=$name; Bottom='' } }
+            }
+            return (New-TaskbarMetricsPreference $defaults)
+        }
+        2 {
+            if ($doc.Columns -isnot [array]) { throw 'Taskbar columns must be an array.' }
+            return (New-TaskbarMetricsPreference $doc.Columns)
+        }
+        default { throw 'Taskbar metric settings have an unsupported format.' }
+    }
+}
+
+function Write-TaskbarMetricsPreference([string]$Path, [object[]]$Columns) {
+    $value = New-TaskbarMetricsPreference $Columns
     $directory = [IO.Path]::GetDirectoryName($Path); [IO.Directory]::CreateDirectory($directory) | Out-Null
-    $json = [pscustomobject]@{ version=1; Cpu=$Cpu; Gpu=$Gpu; Memory=$Memory } | ConvertTo-Json
+    $json = [pscustomobject]@{ version=2; Columns=$value.Columns } | ConvertTo-Json -Depth 4
     $tmp = Join-Path $directory ('.metrics-' + [guid]::NewGuid().ToString('N') + '.tmp')
     try {
         [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
@@ -492,13 +525,20 @@ function Get-CodexQuota([string]$CodexHome) {
     return $latest
 }
 
+function Format-CodexQuotaWindow($Window, [datetimeoffset]$Now) {
+    if ($Window -and ($null -eq $Window.ResetAt -or $Window.ResetAt -gt $Now)) { return "$($Window.Remaining)%" }
+    return '—'
+}
+
 function Format-CodexQuota($Snapshot, [datetimeoffset]$Now) {
-    $short = '—'; $week = '—'
-    if ($Snapshot) {
-        if ($Snapshot.FiveHour -and ($null -eq $Snapshot.FiveHour.ResetAt -or $Snapshot.FiveHour.ResetAt -gt $Now)) { $short = "$($Snapshot.FiveHour.Remaining)%" }
-        if ($Snapshot.Weekly -and ($null -eq $Snapshot.Weekly.ResetAt -or $Snapshot.Weekly.ResetAt -gt $Now)) { $week = "$($Snapshot.Weekly.Remaining)%" }
-    }
-    return "5h $short / 周 $week"
+    return "5h $(Format-CodexQuotaWindow (Get-Field $Snapshot 'FiveHour') $Now) / 周 $(Format-CodexQuotaWindow (Get-Field $Snapshot 'Weekly') $Now)"
+}
+
+function Format-TaskbarOutputRate([hashtable]$Rates) {
+    $total = 0.0
+    foreach ($rate in $Rates.Values) { $total += $rate }
+    $pattern = if ($total -ge 100 -or $total -eq 0) { '0' } elseif ($total -ge 10) { '0.0' } else { '0.00' }
+    return ($total.ToString($pattern, [Globalization.CultureInfo]::InvariantCulture) + ' tok/s')
 }
 
 # Persist only reminder identifiers and state revisions, never conversation text.

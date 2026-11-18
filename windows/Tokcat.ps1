@@ -54,6 +54,8 @@ $usageMenu = $menu.Items.Add('用量统计')
 $notificationMenu = $menu.Items.Add('启用状态通知')
 $stripMenu = $menu.Items.Add('显示任务栏监控')
 $metricsMenu = $menu.Items.Add('任务栏指标')
+$layoutMenu = $metricsMenu.DropDownItems.Add('编辑指标布局…')
+[void]$metricsMenu.DropDownItems.Add('-')
 $cpuMenu = $metricsMenu.DropDownItems.Add('CPU'); $cpuMenu.Tag = 'Cpu'
 $gpuMenu = $metricsMenu.DropDownItems.Add('GPU'); $gpuMenu.Tag = 'Gpu'
 $memoryMenu = $metricsMenu.DropDownItems.Add('内存'); $memoryMenu.Tag = 'Memory'
@@ -65,7 +67,7 @@ $script:quitting = $false; $script:scanning = $false
 $script:smokeError = $null
 $script:dshBaseline = @{}; $script:dshUsagePath = Join-Path $env:LOCALAPPDATA 'Tokcat\dsh-usage.jsonl'; $script:dshUsageError = $false
 $script:metricsPreferencePath = Join-Path $env:LOCALAPPDATA 'Tokcat\taskbar-metrics.json'; $script:metricsPreferenceError = $false
-try { $script:taskbarMetrics = Read-TaskbarMetricsPreference $script:metricsPreferencePath } catch { $script:taskbarMetrics = [pscustomobject]@{ Cpu=$false; Gpu=$false; Memory=$false }; $script:metricsPreferenceError = $true }
+try { $script:taskbarMetrics = Read-TaskbarMetricsPreference $script:metricsPreferencePath } catch { $script:taskbarMetrics = New-TaskbarMetricsPreference @(Get-DefaultTaskbarMetricColumns); $script:metricsPreferenceError = $true }
 $cpuMenu.Checked = $script:taskbarMetrics.Cpu; $gpuMenu.Checked = $script:taskbarMetrics.Gpu; $memoryMenu.Checked = $script:taskbarMetrics.Memory
 $script:gpuSampler = $null
 if ($script:taskbarMetrics.Gpu -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
@@ -88,7 +90,7 @@ $taskbarWidget = New-Object TokcatTaskbarWidget
 $taskbarWidget.Menu = $menu
 $script:snapshotReader = New-AgentSnapshotReader $PSScriptRoot
 $script:latestMetrics = [TokcatSystemMetrics]::Sample()
-$script:taskbarDots = @('unknown'); $script:taskbarTokenSpeed = '—'; $script:taskbarQuota = '—'; $script:agentReadError = $false
+$script:taskbarDots = @('unknown'); $script:taskbarQuota = $null; $script:agentReadError = $false
 $listMenu = New-Object Windows.Forms.ContextMenuStrip
 $markRead = $listMenu.Items.Add('标记所选任务已读')
 $openRaw = $listMenu.Items.Add('打开原始记录')
@@ -220,8 +222,17 @@ function Update-SystemDisplay([bool]$Sample = $true) {
     $gpuValue = if ($script:gpuSampler) { $script:gpuSampler.Read() } else { $null }
     $gpu = if ($script:taskbarMetrics.Gpu -and $null -ne $gpuValue) { '{0:N0}%' -f $gpuValue } elseif ($script:taskbarMetrics.Gpu) { '—' } else { $null }
     $memory = if ($script:taskbarMetrics.Memory -and $null -ne $metrics.MemoryPercent) { '{0:N0}%' -f $metrics.MemoryPercent } elseif ($script:taskbarMetrics.Memory) { '—' } else { $null }
-    $speed = if ($script:agentReadError) { '读取失败' } else { "$($script:taskbarTokenSpeed) tok/s" }
-    $taskbarWidget.SetMetrics($script:taskbarDots, $speed, $script:taskbarQuota, (Format-TaskbarNetworkRate $metrics.NetworkUp), (Format-TaskbarNetworkRate $metrics.NetworkDown), $cpu, $gpu, $memory)
+    $now = [datetimeoffset]::UtcNow
+    $rows = [string[]]@($script:taskbarMetrics.Columns | ForEach-Object { $_.Top; $_.Bottom })
+    $values = @{
+        Output = if ($script:agentReadError) { '读取失败' } else { Format-TaskbarOutputRate $script:latestRates }
+        Weekly = Format-CodexQuotaWindow (Get-Field $script:taskbarQuota 'Weekly') $now
+        FiveHour = Format-CodexQuotaWindow (Get-Field $script:taskbarQuota 'FiveHour') $now
+        Upload = Format-TaskbarNetworkRate $metrics.NetworkUp
+        Download = Format-TaskbarNetworkRate $metrics.NetworkDown
+        Cpu = $cpu; Gpu = $gpu; Memory = $memory
+    }
+    $taskbarWidget.SetMetricColumns($script:taskbarDots, $rows, $values)
 }
 
 function Save-CurrentReminders {
@@ -288,8 +299,7 @@ function Update-Sessions($Snapshot = $null) {
         $downShort = Format-NetworkRateShort $metrics.NetworkDown; $upShort = Format-NetworkRateShort $metrics.NetworkUp
         $summary = "运行$($counts.running) 等$($counts.waiting + $counts.approval) $quotaText CPU$cpu GPU$gpu 内存$memory ↓$downShort ↑$upShort"
         $script:traySummary = $summary
-        $tokenSpeed = if ($rates.Count -gt 0) { '{0:N1}' -f (($rates.Values | Measure-Object -Sum).Sum) } else { '—' }
-        $script:taskbarTokenSpeed = $tokenSpeed; $script:taskbarQuota = $quotaText
+        $script:taskbarQuota = $quota
         Update-AgentDots
         Set-TrayIcon $script:taskbarDots $summary
         Update-SystemDisplay $false
@@ -339,17 +349,46 @@ $toggleStrip = { Set-StatusStrip (-not $script:stripEnabled) }
 $stripMenu.Add_Click($toggleStrip); $stripButton.Add_Click($toggleStrip)
 $showMain = { $form.Show(); $form.WindowState = 'Normal'; $form.Activate() }
 $taskbarWidget.Add_Clicked($showMain)
-$toggleMetric = {
-    param($sender,$event)
-    $value = [pscustomobject]@{ Cpu=$script:taskbarMetrics.Cpu; Gpu=$script:taskbarMetrics.Gpu; Memory=$script:taskbarMetrics.Memory }
-    $key = [string]$sender.Tag; $value.$key = -not $value.$key
-    try { Write-TaskbarMetricsPreference $script:metricsPreferencePath $value.Cpu $value.Gpu $value.Memory; $script:metricsPreferenceError = $false } catch { $script:metricsPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form,'无法保存任务栏指标设置。','tokcat'); return }
+function Save-TaskbarColumns([object[]]$Columns) {
+    try {
+        $value = New-TaskbarMetricsPreference $Columns
+        Write-TaskbarMetricsPreference $script:metricsPreferencePath $value.Columns
+        $script:metricsPreferenceError = $false
+    } catch { $script:metricsPreferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form,'无法保存任务栏指标设置。','tokcat'); return }
     $script:taskbarMetrics = $value; $cpuMenu.Checked = $value.Cpu; $gpuMenu.Checked = $value.Gpu; $memoryMenu.Checked = $value.Memory
     Sync-DesktopPreferences
     if ($value.Gpu -and -not $script:gpuSampler -and -not $SmokeTest) { $script:gpuSampler = New-Object TokcatGpuMetrics; $script:gpuSampler.Start() }
     elseif (-not $value.Gpu -and $script:gpuSampler) { $script:gpuSampler.Stop(); $script:gpuSampler = $null }
-    Update-Sessions
+    Update-SystemDisplay $false
 }
+$toggleMetric = {
+    param($sender,$event)
+    $key = [string]$sender.Tag
+    $columns = @($script:taskbarMetrics.Columns)
+    if ($script:taskbarMetrics.$key) {
+        $columns = @(foreach ($column in $columns) {
+            $top = if ($column.Top -eq $key) { '' } else { $column.Top }
+            $bottom = if ($column.Bottom -eq $key) { '' } else { $column.Bottom }
+            if ($top -or $bottom) { [pscustomobject]@{ Top=$top; Bottom=$bottom } }
+        })
+    } else { $columns += [pscustomobject]@{ Top=$key; Bottom='' } }
+    Save-TaskbarColumns $columns
+}
+$editMetricLayout = {
+    $rows = [string[]]@($script:taskbarMetrics.Columns | ForEach-Object { $_.Top; $_.Bottom })
+    $dialog = [TokcatTaskbarLayoutDialog]::new($rows)
+    try {
+        $result = if ($form.Visible) { $dialog.ShowDialog($form) } else { $dialog.StartPosition = 'CenterScreen'; $dialog.ShowDialog() }
+        if ($result -eq [Windows.Forms.DialogResult]::OK) {
+            $selected = $dialog.SelectedRows
+            $columns = @(for ($index = 0; $index -lt $selected.Length; $index += 2) {
+                [pscustomobject]@{ Top=$selected[$index]; Bottom=$selected[$index + 1] }
+            })
+            Save-TaskbarColumns $columns
+        }
+    } finally { $dialog.Dispose() }
+}
+$layoutMenu.Add_Click($editMetricLayout); $form.TaskbarLayoutButton.Add_Click($editMetricLayout)
 $cpuMenu.Add_Click($toggleMetric); $gpuMenu.Add_Click($toggleMetric); $memoryMenu.Add_Click($toggleMetric)
 $quitButton.Add_Click({ $script:quitting = $true; $form.Close() })
 $notificationMenu.Add_Click({ try { $enabled = -not $notificationMenu.Checked; Write-NotificationPreference $script:preferencePath $enabled; $notificationMenu.Checked = $enabled; $script:preferenceError = $false } catch { $script:preferenceError = $true; [void][Windows.Forms.MessageBox]::Show($form, '无法保存通知设置。', 'tokcat') }; Sync-DesktopPreferences })

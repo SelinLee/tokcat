@@ -6,7 +6,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[下载 macOS 版](https://github.com/SelinLee/tokcat/releases/latest)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
+**[下载 macOS 版](https://github.com/SelinLee/tokcat/releases/latest)** · **[直接下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip)**
 
 </div>
 
@@ -14,7 +14,16 @@
 |---|---|---|
 | 查看任务 | 点击菜单栏状态点打开任务列表，也可把 toki 或 biti 挂件放在桌边 | 点击任务栏状态点打开详情窗口，或从通知区域进入 |
 | 快捷启动 | **Control + 空格** 打开启动器，可搜索应用和运行终端命令 | **Alt + 空格** 打开启动器，可切换赛博轮盘，也可通过 Everything 搜索本机文件 |
-| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip) · [Windows 安装说明](#安装-windows-版) |
+| 获取方式 | [macOS 发布包](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip) · [Windows 安装说明](#安装-windows-版) |
+
+## Windows 任务栏
+
+任务状态点旁默认上排显示总输出速率（`tok/s`），下排显示 Codex 本周剩余额度（`wk`）。在「设置 → 编辑指标布局」可增减列数、独立选择每列的上下两排。读数更新时列宽固定，点击任务栏即可打开详情。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/taskbar-dark.png" />
+  <img src="windows/docs/taskbar-light.png" alt="Windows 任务栏状态点、上排 209 tok/s、下排周额度 38% 和上下行网速。" width="900" />
+</picture>
 
 ## 快捷运行框
 
@@ -29,11 +38,6 @@
 </p>
 
 **Windows** · 在「快速启动 → 通用」选择「赛博轮盘」并保存，再按 **Alt + 空格** 唤出。输入拼音时，轮盘会在选词前匹配应用。继续输入或退格，结果会在最多三层圆弧内连续重排。同一设置页也可选择「经典」和「赛博悬浮」。[Windows 快速启动指南](windows/README.zh-CN.md#快速启动框)
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/ui-dark.png" />
-  <img src="windows/docs/ui-light.png" alt="Windows 版 tokcat 的任务列表和详情窗口" width="900" />
-</picture>
 
 <details>
 <summary>macOS 启动器操作、示例与设置</summary>
@@ -236,9 +240,9 @@ Claude Code 有本机会话注册时自动识别运行状态；可选 hooks 补�
 
 ### 安装 Windows 版
 
-在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
+在 Windows 10 或 11 上，[下载 Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip)，完整解压后双击 `tokcat-windows/Tokcat.cmd`。系统自带的 Windows PowerShell 5.1 即可运行。
 
-**Windows 2026.11.14.1** 支持搜狗悬浮候选框中的拼音即时匹配，输入、退格时可在选字前更新结果，并包含赛博轮盘和停稳闪烁修复。在「快速启动 → 通用」选择「赛博轮盘」并保存，按 **Alt + 空格** 即可使用。[更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.14.1) · [Windows 使用指南](windows/README.zh-CN.md)
+**Windows 2026.11.18** 支持自定义任务栏双行指标，并保留赛博轮盘和搜狗悬浮候选框即时匹配。 [更新说明与 SHA-256 校验文件](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.18) · [Windows 使用指南](windows/README.zh-CN.md)
 
 ## 快速开始
 

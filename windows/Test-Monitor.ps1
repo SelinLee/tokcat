@@ -26,10 +26,26 @@ try {
     Assert-Equal (Format-TaskbarNetworkRate (455*1024)) '455 K/s' 'taskbar network separates units from values'
     Assert-Equal (Format-TaskbarNetworkRate (8.6*1024)) '8.6 K/s' 'taskbar network keeps one fractional digit'
     Assert-Equal (Format-TaskbarNetworkRate 1073741824) '1 G/s' 'taskbar network scales large values into the reserved field'
-    Write-TaskbarMetricsPreference $metricPath $true $false $true
+    Assert-Equal $metricDefaults.Columns[0].Top 'Output' 'taskbar defaults to output on the first row'
+    Assert-Equal $metricDefaults.Columns[0].Bottom 'Weekly' 'weekly quota uses its own row'
+    [IO.File]::WriteAllText($metricPath, '{"version":1,"Cpu":true,"Gpu":false,"Memory":true}')
+    $legacyMetrics = Read-TaskbarMetricsPreference $metricPath
+    Assert-Equal $legacyMetrics.Cpu $true 'legacy CPU selection is migrated'
+    Assert-Equal $legacyMetrics.Columns[3].Top 'Memory' 'legacy memory keeps its own column'
+    Write-TaskbarMetricsPreference $metricPath @(
+        [pscustomobject]@{ Top='Cpu'; Bottom='FiveHour' },
+        [pscustomobject]@{ Top=''; Bottom='Memory' }
+    )
     $metricSaved = Read-TaskbarMetricsPreference $metricPath
     Assert-Equal $metricSaved.Cpu $true 'taskbar metric choice persists'
     Assert-Equal $metricSaved.Memory $true 'taskbar memory choice persists'
+    Assert-Equal $metricSaved.Columns[0].Bottom 'FiveHour' 'mixed taskbar rows keep their order'
+    Assert-Equal $metricSaved.Columns[1].Top '' 'an empty row stays empty'
+    Write-TaskbarMetricsPreference $metricPath @()
+    Assert-Equal (Read-TaskbarMetricsPreference $metricPath).Columns.Count 0 'an empty taskbar layout survives reload'
+    Assert-Equal (Format-TaskbarOutputRate @{ codex=208.7; claude=0.5 }) '209 tok/s' 'output rate sums task rows'
+    Assert-Equal (Format-TaskbarOutputRate @{ codex=2.51 }) '2.51 tok/s' 'fractional output retains explicit units'
+    Assert-Equal (Format-TaskbarOutputRate @{}) '0 tok/s' 'no observed output shows zero'
     $instanceName = 'tokcat-test-instance-' + [guid]::NewGuid()
     $firstInstance = Open-TokcatInstance $instanceName; $secondInstance = $null
     try {

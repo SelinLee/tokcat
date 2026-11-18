@@ -19,7 +19,10 @@ Add-Type -ReferencedAssemblies System.Drawing.dll -TypeDefinition 'using System;
 $hostForm = New-Object Windows.Forms.Form
 $hostForm.FormBorderStyle='None'; $hostForm.Size=New-Object Drawing.Size(1000,48); $hostForm.ShowInTaskbar=$false
 $widget = New-Object TokcatTaskbarWidget
-$quotaSample = '5h ' + [char]0x2014 + ' / ' + [char]0x5468 + ' 39%'
+$metricKeys = [string[]]@('Output','Weekly','Upload','Download')
+function Set-DemoMetrics([string[]]$Dots, [string]$Upload, [string]$Download, [string]$Speed = '17.0 tok/s', [string]$Quota = '39%') {
+    $widget.SetMetricColumns($Dots, $metricKeys, @{ Output=$Speed; Weekly=$Quota; Upload=$Upload; Download=$Download })
+}
 try {
     $hostForm.Show(); $widget.AttachForTest($hostForm.Handle,(New-Object Drawing.Rectangle(500,0,300,48)))
     $widget.SetContent(@('running','waiting'), 'tokcat test', 'CPU 10%  MEM 20%')
@@ -29,15 +32,20 @@ try {
     Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU 10%')) 'Taskbar metrics must be exposed as accessible window text.'
     [void][TokcatTaskbarTestInput]::SendMessage($widget.Handle,0x0202,[IntPtr]::Zero,[IntPtr]::Zero)
     Assert-Taskbar $script:taskbarClicked 'Clicking the taskbar widget must raise the details action.'
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'15 K/s','161 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '15 K/s' '161 K/s'
     Assert-Taskbar ($widget.PreferredWidth(96) -lt 220) 'Default metrics must keep the compact reference layout.'
     Assert-Taskbar (-not [TokcatTaskbarWidget]::Caption($widget.Handle).Contains('CPU')) 'CPU must be omitted when disabled.'
     $stableWidth=$widget.PreferredWidth(96)
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'999 M/s','0 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '15 K/s' '161 K/s' '123456789 tok/s' '100%'
+    Assert-Taskbar ($widget.PreferredWidth(96) -eq $stableWidth) 'Large rates and quota changes must retain the reserved width.'
+    Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle).Contains('123456789 tok/s / wk 100%')) 'Both configured rows must remain accessible.'
+    $widget.SetMetricColumns(@('running'), [string[]]@('FiveHour','Upload','','Cpu'), @{ FiveHour='51%'; Upload='15 K/s'; Cpu='21%' })
+    Assert-Taskbar ([TokcatTaskbarWidget]::Caption($widget.Handle) -eq ('tokcat: 5h 51% / ' + [char]0x2191 + ': 15 K/s |  / CPU 21%')) 'Either row can contain any metric, including a blank.'
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '999 M/s' '0 K/s'
     Assert-Taskbar ($widget.PreferredWidth(96) -eq $stableWidth) 'Network digit changes must not move other columns.'
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'10.5 G/s','1 M/s',$null,$null,$null)
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '10.5 G/s' '1 M/s'
     Assert-Taskbar ($widget.PreferredWidth(96) -eq $stableWidth) 'Network unit changes must not resize the widget.'
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'15 K/s','161 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '15 K/s' '161 K/s'
     $preview=$widget.RenderPreview(96)
     try {
         Assert-Taskbar ($preview.GetPixel(0,0).A -eq 0) 'The taskbar background must be transparent.'
@@ -59,7 +67,7 @@ try {
         Assert-Taskbar (-not [TokcatTaskbarTestPixels]::SameRight($before,$dimmedPreview,$before.Width)) 'Reminder flashing must visibly dim the dots.'
         Assert-Taskbar ([TokcatTaskbarTestPixels]::SameRight($before,$dimmedPreview,$before.Width-29)) 'Dot flashing must leave metric positions and glyphs unchanged.'
     } finally { $dimmedPreview.Dispose(); $widget.SetDotDimming(@()) }
-    $widget.SetMetrics(@('running','waiting','failed','completed','stalled','approval'),'17.0 tok/s',$quotaSample,'0.3 K/s','999 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running','waiting','failed','completed','stalled','approval') '0.3 K/s' '999 K/s'
     $after=$widget.RenderPreview(96); $font=[TokcatTaskbarWidget]::CreateTextFont(96); $surface=New-Object Drawing.Bitmap(1,1); $graphics=[Drawing.Graphics]::FromImage($surface)
     try {
         $flags=[Windows.Forms.TextFormatFlags]::NoPadding -bor [Windows.Forms.TextFormatFlags]::SingleLine -bor [Windows.Forms.TextFormatFlags]::NoPrefix
@@ -68,7 +76,7 @@ try {
         $unitRows=[TokcatTaskbarTestPixels]::Ink($after,$after.Width-$unitWidth-2,$after.Width-2)
         Assert-Taskbar ($unitRows[1] -gt $unitRows[0]) 'The fixed unit region must contain visible glyphs.'
     } finally { $before.Dispose(); $after.Dispose(); $font.Dispose(); $graphics.Dispose(); $surface.Dispose() }
-    $widget.SetMetrics(@('running','completed'),'17.0 tok/s','5h 80%','15 K/s','161 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running','completed') '15 K/s' '161 K/s'
     $preview=$widget.RenderPreview(96)
     try {
         $textRows=[TokcatTaskbarTestPixels]::Ink($preview,18,$preview.Width); $dotRows=[TokcatTaskbarTestPixels]::Ink($preview,0,14)
@@ -81,7 +89,7 @@ try {
             Assert-Taskbar ($dotRows[0] -eq $textRows[0] -and $dotRows[1] -lt $textRows[1]) 'Scaled dots must retain the fixed top and middle slots.'
         } finally { $preview.Dispose() }
     }
-    $widget.SetMetrics(@('running'),'17.0 tok/s','5h 80%','15 K/s','161 K/s',$null,$null,$null)
+    Set-DemoMetrics @('running') '15 K/s' '161 K/s'
     foreach ($dpi in @(96,144,192)) {
         $preview=$widget.RenderPreview($dpi); $scale=$dpi/96.0
         try {

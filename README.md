@@ -6,7 +6,7 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-**[Download for macOS](https://github.com/SelinLee/tokcat/releases/latest)** · **[Download Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip)**
+**[Download for macOS](https://github.com/SelinLee/tokcat/releases/latest)** · **[Download Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip)**
 
 </div>
 
@@ -14,7 +14,16 @@ Follow your AI agents’ tasks, conversations and usage from the **macOS menu ba
 |---|---|---|
 | Task monitor | Click the menu-bar dots to open your tasks, or keep toki or biti at the edge of your desktop | Click the taskbar dots to open task details, or use the notification-area icon |
 | Quick launcher | **Control + Space** opens the launcher to search apps and run Terminal commands | **Alt + Space** opens the launcher, with an optional Cyber Wheel layout and local file search through Everything |
-| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip) · [Windows installation](#install-for-windows) |
+| Get tokcat | [macOS release](https://github.com/SelinLee/tokcat/releases/latest) | [Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip) · [Windows installation](#install-for-windows) |
+
+## Windows taskbar
+
+Alongside the task dots, the default column shows total output in `tok/s` above the remaining weekly Codex quota (`wk`). Open **Settings → Edit metric layout** to add columns and pick each row. Column widths stay fixed as values change. Click the widget for task details.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/taskbar-dark.png" />
+  <img src="windows/docs/taskbar-light.png" alt="Windows taskbar with status dots, 209 tok/s above 38% weekly quota remaining, and upload and download speeds." width="900" />
+</picture>
 
 ## Quick launcher
 
@@ -29,11 +38,6 @@ On either platform, find an app by name, pinyin or initials. Try `sqrt(9)+2^3` a
 </p>
 
 **Windows** · Select **Cyber Wheel** under **Quick launcher → General**, save your choice and press **Alt + Space**. The wheel matches apps as you type pinyin, before you choose a Chinese character. As you type or backspace, results move into place across up to three rings. Classic and Cyber Floating are also available in the same settings. [Windows launcher guide](windows/README.md#quick-launcher)
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/ui-dark.png" />
-  <img src="windows/docs/ui-light.png" alt="Task list and details window in tokcat for Windows" width="900" />
-</picture>
 
 <details>
 <summary>macOS launcher controls, examples and settings</summary>
@@ -236,9 +240,9 @@ Monitoring reads local records; no API key is required. Usage data stays in `~/L
 
 ### Install for Windows
 
-On Windows 10 or 11, [download the Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.14.1/tokcat-windows-2026.11.14.1.zip), extract the entire archive and double-click `tokcat-windows/Tokcat.cmd`. It runs with the Windows PowerShell 5.1 included with the system.
+On Windows 10 or 11, [download the Windows ZIP](https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18/tokcat-windows-2026.11.18.zip), extract the entire archive and double-click `tokcat-windows/Tokcat.cmd`. It runs with the Windows PowerShell 5.1 included with the system.
 
-The **Windows 2026.11.14.1** release includes live matching while composing pinyin in Sogou’s floating candidate window, Cyber Wheel and the fix for the flash when the wheel settles. Select Cyber Wheel under **Quick launcher → General**, save and press **Alt + Space**. [Release notes and SHA-256 checksum](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.14.1) · [Windows guide](windows/README.md)
+The **Windows 2026.11.18** release adds configurable two-row taskbar metrics alongside Cyber Wheel and live matching in Sogou’s floating candidate window. [Release notes and SHA-256 checksum](https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.18) · [Windows guide](windows/README.md)
 
 ## Get started
 
