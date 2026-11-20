@@ -24,7 +24,7 @@ Assert-Radial ($weighted.Slots[0].Radius -eq 76 -and $weighted.Slots[0].Span -eq
 Assert-Radial (([TokcatRadialLayout]::new([double[]]@())).Diameter -eq 226) 'The empty wheel has a 226-point canvas.'
 $nine=[TokcatRadialLayout]::new([double[]]@(1,1,1,1,1,1,1,1,1))
 Assert-Radial (($nine.Slots.Ring -join ',') -eq '0,1,1,1,2,2,2,2,2') 'Outer rings have capacities 3, 5, 7, ...'
-foreach($case in @(@(0,'Down',3),@(4,'Up',0),@(0,'Up',1),@(1,'Down',0),@(0,'Right',2),@(0,'Left',3),@(2,'Right',8),@(8,'Left',2),@(4,'Down',4),@(8,'Right',8),@(999,'Down',0))) {
+foreach($case in @(@(0,'Down',3),@(4,'Up',0),@(0,'Up',-1),@(1,'Down',-1),@(-1,'Up',1),@(-1,'Down',0),@(0,'Right',2),@(0,'Left',3),@(2,'Right',8),@(8,'Left',2),@(4,'Down',4),@(8,'Right',8),@(999,'Down',0))) {
     Assert-Radial ($nine.Neighbor($case[0],[Windows.Forms.Keys]$case[1],$positions) -eq $case[2]) ('Mac directional parity: '+($case -join ' '))
 }
 foreach($count in 2..18) {
@@ -63,7 +63,7 @@ $controller=$null
 try {
     $settings=[TokcatLauncherSettings]::new(); $settings.Skin='radial'; $settings.AutoTextColor=$true
     $settings.DictionaryPath=Join-Path $testRoot 'dictionary.json'
-    $settings.Remember('first history',$null); $settings.Remember('second history',$null)
+    $settings.Remember('tran+first history',$null); $settings.Remember('tran+second history',$null)
     [IO.File]::WriteAllText($settings.DictionaryPath,'{"hello":"你好；问候。\nHello, world!\n这是一段可以滚动阅读和复制的词典释义。"}',[Text.UTF8Encoding]::new($false))
     $settingsPath=Join-Path $testRoot 'launcher.json'; $settings.Save($settingsPath)
     Assert-Radial (([TokcatLauncherSettings]::Load($settingsPath)).Skin -eq 'radial') 'The third skin persists without replacing cyber.'
@@ -74,11 +74,44 @@ try {
     Assert-Radial ($window.Results.Items.Count -eq 0 -and -not $window.Hint.Visible) 'The empty wheel contains only its input arc.'
     Assert-Radial ($null -ne $window.Query.Region) 'The native editor remains focusable with its straight selection fill clipped out.'
     $keyDown=$window.GetType().GetMethod('QueryKeyDown',[Reflection.BindingFlags]'Instance,NonPublic')
-    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Up)))
-    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Up)))
-    Assert-Radial ($window.Query.Text -eq 'first history') 'Up continues browsing history after the first recalled query.'
+    function Press-ControlUp {
+        $key = [Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Control -bor [Windows.Forms.Keys]::Up)
+        [void]$keyDown.Invoke($window,[object[]]@($window.Query,$key))
+        Assert-Radial $key.SuppressKeyPress 'Ctrl+Up is consumed by wheel navigation.'
+    }
+    Press-ControlUp
+    Assert-Radial ($window.Results.SelectedIndex -eq -1 -and $window.Query.Text -eq '' -and -not $window.BrowsingHistory) 'Without an upper result Ctrl+Up stays on the input.'
+    $window.Query.Text='tran+my draft'
+    $window.Query.Select(2,0)
+    Assert-Radial ($window.Radial.BeginAim()) 'Holding Ctrl starts a pointing gesture.'
+    $window.Radial.MoveAim(0,76)
+    Assert-Radial ($window.Radial.AimIndex -eq 0) 'The ray points below the input before the shortcut.'
+    Press-ControlUp
+    $release=[Windows.Forms.Message]::Create($window.Query.Handle,0x0101,[IntPtr]([int][Windows.Forms.Keys]::ControlKey),[IntPtr]::Zero)
+    [void]$window.Radial.PreFilterMessage([ref]$release)
+    Assert-Radial ($window.Visible -and -not $window.Radial.PointerLocked -and $window.Results.SelectedIndex -eq 1 -and -not $window.BrowsingHistory -and $window.Query.Text -eq 'tran+my draft' -and $window.Query.SelectionStart -eq 2) 'Ctrl+Up selects above the original input and release preserves the draft and caret.'
     [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
-    Assert-Radial ($window.Query.Text -eq 'second history') 'Down recalls newer history before spatial navigation resumes.'
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Up)))
+    $window.Radial.Motion.Finish()
+    Press-ControlUp
+    Assert-Radial ($window.Results.SelectedIndex -eq 1 -and $window.BrowsingHistory -and $window.Query.Text -eq 'tran+second history') 'Ctrl+Up leaves a recalled entry without stepping to the older entry.'
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Up)))
+    Assert-Radial ($window.Query.Text -eq 'tran+first history') 'Up continues browsing history after the first recalled query.'
+    $window.Radial.Motion.Finish()
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Up)))
+    Assert-Radial ($window.Results.SelectedIndex -ge 0 -and $window.Query.Text -eq 'tran+first history') 'Up past the oldest input selects the result above.'
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
+    Assert-Radial ($window.Results.SelectedIndex -eq -1 -and $window.BrowsingHistory) 'Moving back into the input preserves the history position.'
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
+    Assert-Radial ($window.Query.Text -eq 'tran+second history') 'Down recalls newer history before spatial navigation resumes.'
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
+    Assert-Radial ($window.Results.SelectedIndex -eq -1 -and $window.Query.Text -eq 'tran+my draft' -and $window.Query.SelectionStart -eq 2) 'The draft and native caret are restored before leaving the input.'
+    $window.Radial.Motion.Finish()
+    [void]$keyDown.Invoke($window,[object[]]@($window,[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Down)))
+    $right=[Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Right)
+    [void]$keyDown.Invoke($window,[object[]]@($window,$right))
+    Assert-Radial ($right.SuppressKeyPress -and $window.Visible -and $window.Query.SelectionStart -eq 2) 'Arrows on results only move selection.'
     $window.Query.Text='hello'
     Assert-Radial (@($window.Results.Items | Where-Object Kind -eq 'translate').Count -eq 1 -and -not $window.DictionaryDefinition) 'Bare words offer opt-in translation without automatically opening definitions.'
     Assert-Radial (@($window.Results.Items | Where-Object Key -eq 'web-search').Count -eq 1) 'Every query has a small web search choice.'

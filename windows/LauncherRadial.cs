@@ -14,6 +14,8 @@ using System.Windows.Forms;
 public sealed class TokcatRadialLayout
 {
     public const int MaxRings = 3, MaxVisibleResults = 9;
+    public const int InputIndex = -1;
+    static readonly Slot Input = new Slot { Index = InputIndex, Ring = 0, Radius = InputRadius, Angle = Math.PI * 1.5, Span = Math.PI };
     public const double InputRadius = 76, Thickness = 34, RingSpacing = 56, Feather = 20;
     public sealed class Slot
     {
@@ -59,18 +61,18 @@ public sealed class TokcatRadialLayout
     }
     public int Neighbor(int index, Keys direction, IDictionary<int, PointF> positions)
     {
-        var current = Slots.FirstOrDefault(s => s.Index == index);
+        var current = index == InputIndex ? Input : Slots.FirstOrDefault(s => s.Index == index);
         if (current == null) return Slots.Length == 0 ? -1 : Slots[0].Index;
-        Func<Slot, PointF> point = s => positions.ContainsKey(s.Index) ? positions[s.Index] : s.Center;
+        Func<Slot, PointF> point = s => s.Index == InputIndex ? new PointF(0, -74) : positions.ContainsKey(s.Index) ? positions[s.Index] : s.Center;
         PointF origin = point(current);
-        if (direction == Keys.Down && current.Ring == 0)
+        if (direction == Keys.Down && current.Ring == 0 && index != InputIndex)
         {
             var lower = Slots.Where(s => s.Ring == 1 && point(s).Y > 0 && Math.Abs(point(s).Y - origin.Y) <= 17).OrderBy(s => point(s).X).ToArray();
             if (lower.Length > 1) return lower[0].Index;
         }
         double ax = direction == Keys.Left ? -1 : direction == Keys.Right ? 1 : 0;
         double ay = direction == Keys.Up ? -1 : direction == Keys.Down ? 1 : 0;
-        var candidates = Slots.Where(s => s.Index != index).Select(s => new { Slot = s, P = point(s) })
+        var candidates = Slots.Concat(new[] { Input }).Where(s => s.Index != index).Select(s => new { Slot = s, P = point(s) })
             .Where(s => !(direction == Keys.Down && origin.Y > 0 && s.P.Y > 0 && s.Slot.Ring < current.Ring))
             .Select(s => new { s.Slot, s.P, Forward = (s.P.X - origin.X) * ax + (s.P.Y - origin.Y) * ay,
                 Sideways = Math.Abs((s.P.X - origin.X) * ay - (s.P.Y - origin.Y) * ax) }).Where(s => s.Forward > 0.5).ToArray();
@@ -236,6 +238,10 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
     bool filtering, ignoreControl, wasFollowing, rendering, preciseTimer;
     volatile bool dirty = true;
     int iconRevision, renderedIconRevision;
+    string previousInput;
+    bool rollingOlder;
+    readonly Stopwatch historyRoll = new Stopwatch();
+    const double HistoryRollMilliseconds = 130;
     public double LastRenderMilliseconds { get; private set; }
     Bitmap contentLayer, presentation;
     byte[] maskPixels, animatedMaskPixels, maskRasterPixels;
@@ -313,6 +319,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
             string id = snapshot == null ? Motion.HitTest(LocalPoint(surface.PointToScreen(e.Location))) : snapshot.ItemId;
             int index = Array.FindIndex(Items, r => r.Key == id);
             if (index >= 0) { window.Results.SelectedIndex = index; window.SubmitRadial(); }
+            else if (OverInput(LocalPoint(surface.PointToScreen(e.Location)))) window.Results.SelectedIndex = TokcatRadialLayout.InputIndex;
         };
         timer = new System.Threading.Timer(delegate { QueueFrame(); }, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
         window.VisibleChanged += delegate { if (!window.Visible) Stop(); };
@@ -424,13 +431,17 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         window.Location = TokcatLauncherWindow.Constrain(new Point(point.X - window.Width / 2, point.Y - window.Height / 2), window.Size);
     }
     PointF LocalPoint(Point point) { return new PointF((point.X - window.Left) / Scale - (float)Motion.Extent, (point.Y - window.Top) / Scale - (float)Motion.Extent); }
+    static bool OverInput(PointF point)
+    {
+        return point.Y < 0 && Math.Abs(Math.Sqrt(point.X * point.X + point.Y * point.Y) - TokcatRadialLayout.InputRadius) <= TokcatRadialLayout.Thickness / 2;
+    }
     public void Navigate(Keys direction)
     {
         CancelAim(); ignoreControl = true; Following = false;
         var positions = new Dictionary<int, PointF>(); var items = Items;
         foreach (var entry in Motion.Entries.Where(e => !e.Departing)) { int index = Array.FindIndex(items, r => r.Key == entry.Id); if (index >= 0) positions[index] = entry.Pose.Center; }
         int next = Layout.Neighbor(window.Results.SelectedIndex, direction, positions);
-        if (next >= 0) window.Results.SelectedIndex = next;
+        window.Results.SelectedIndex = next;
         dirty = true;
     }
     public bool BeginAim()
@@ -457,7 +468,6 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         double x = AimVector.X + dx, y = AimVector.Y + dy, length = Math.Sqrt(x * x + y * y), limit = Layout.OuterRadius + 16;
         if (length > limit) { x *= limit / length; y *= limit / length; }
         AimVector = new PointF((float)x, (float)y); AimIndex = Layout.HitTest(AimVector, true);
-        if (AimIndex >= 0) window.Results.SelectedIndex = AimIndex;
         dirty = true;
     }
     public void FinishAim(bool commit)
@@ -500,7 +510,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
                 {
                     // Keep Windows' existing reveal-file shortcut when a Ctrl
                     // hold has not yet pointed at a sector.
-                    var selected = window.Results.SelectedItem as TokcatLauncherResult;
+                    var selected = window.SubmissionResult;
                     if (selected != null && selected.Kind == "file" && AimVector.X * AimVector.X + AimVector.Y * AimVector.Y < 24 * 24) { CancelAim(); ignoreControl = true; return false; }
                     FinishAim(true); return true;
                 }
@@ -542,8 +552,10 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
             }
             else if (!Aiming)
             {
-                string id = Motion.HitTest(LocalPoint(pointer)); int index = Array.FindIndex(Items, r => r.Key == id);
+                var point = LocalPoint(pointer);
+                string id = Motion.HitTest(point); int index = Array.FindIndex(Items, r => r.Key == id);
                 if (index >= 0) window.Results.SelectedIndex = index;
+                else if (OverInput(point)) window.Results.SelectedIndex = TokcatRadialLayout.InputIndex;
             }
             if (!Following) dirty = true;
         }
@@ -556,6 +568,11 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
             dirty = true;
         }
         if (window.Appearance.PollRadialBackground()) dirty = true;
+        if (historyRoll.IsRunning)
+        {
+            dirty = true;
+            if (historyRoll.Elapsed.TotalMilliseconds >= HistoryRollMilliseconds) EndHistoryRoll();
+        }
         if (selectionStart != window.Query.SelectionStart || selectionLength != window.Query.SelectionLength) { selectionStart = window.Query.SelectionStart; selectionLength = window.Query.SelectionLength; dirty = true; }
         HideCaret(window.Query.Handle);
         if (renderedIconRevision != System.Threading.Volatile.Read(ref iconRevision)) dirty = true;
@@ -579,6 +596,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
     public void Invalidate() { dirty = true; }
     public void Stop()
     {
+        EndHistoryRoll();
         System.Threading.Interlocked.Exchange(ref frameWindow, IntPtr.Zero);
         if (!disposed) timer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
         CancelAim(); Motion.Finish(); surface.Hide(); dictionaryWindow.Hide();
@@ -703,7 +721,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
     {
         var style = window.Appearance; var items = accessibleItems;
         int selection = Aiming ? AimIndex : window.Results.SelectedIndex;
-        StrokeGlow(g, 76, Math.PI, Math.PI, style.Accent, Aiming ? 30 : 13);
+        StrokeGlow(g, 76, Math.PI, Math.PI, style.Accent, !Aiming && selection == TokcatRadialLayout.InputIndex ? 38 : 13);
         foreach (var entry in Motion.Entries)
         {
             var p = entry.Pose; if (p.Opacity <= 0.003) continue;
@@ -818,14 +836,35 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         }
         finally { image.UnlockBits(data); }
     }
+    public void StartHistoryRoll(string previous, bool older)
+    {
+        if (TokcatRadialMotion.ReducedMotion) { EndHistoryRoll(); return; }
+        previousInput = previous; rollingOlder = older; historyRoll.Restart(); dirty = true;
+    }
+    public void EndHistoryRoll() { historyRoll.Reset(); previousInput = null; }
+
     void DrawInput(Graphics g)
     {
+        bool editing = !Aiming && window.Results.SelectedIndex == TokcatRadialLayout.InputIndex;
+        if (editing && historyRoll.IsRunning)
+        {
+            double t = Math.Min(1, historyRoll.Elapsed.TotalMilliseconds / HistoryRollMilliseconds);
+            double turn = (rollingOlder ? 1 : -1) * Math.PI / 2;
+            if (t < 1) DrawInputText(g, previousInput, turn * t, false);
+            DrawInputText(g, window.Query.DisplayText, turn * (t - 1), t >= 1);
+        }
+        else DrawInputText(g, window.Query.DisplayText, 0, editing);
+    }
+    void DrawInputText(Graphics g, string query, double rollAngle, bool editing)
+    {
         var style = window.Appearance;
-        string query = window.Query.DisplayText;
+        Color color = query.Length == 0 || window.Results.SelectedIndex >= 0 ? style.Secondary : style.Foreground;
+        color = Color.FromArgb((int)(color.A * Math.Cos(rollAngle)), color);
         using (var font = new Font(query.Length == 0 ? "Microsoft YaHei UI" : "Consolas", query.Length == 0 ? 14 : 18, FontStyle.Regular, GraphicsUnit.Pixel))
-            DrawArcText(g, query.Length == 0 ? "输入内容…" : query, 76, Math.PI * 1.5, Math.PI * 0.76, font, query.Length == 0 ? style.Secondary : style.Foreground, true,
-                query.Length == 0 ? -1 : window.Query.Composing ? window.Query.CompositionStart + window.Query.CompositionCaret : window.Query.SelectionStart,
-                window.Query.Composing ? 0 : window.Query.SelectionLength, window.Query.Composing ? window.Query.CompositionStart : -1, (window.Query.CompositionText ?? "").Length);
+            DrawArcText(g, query.Length == 0 ? "输入内容…" : query, 76, Math.PI * 1.5, Math.PI * 0.76, font, color, true,
+                !editing || query.Length == 0 ? -1 : window.Query.Composing ? window.Query.CompositionStart + window.Query.CompositionCaret : window.Query.SelectionStart,
+                editing && !window.Query.Composing ? window.Query.SelectionLength : 0,
+                editing && window.Query.Composing ? window.Query.CompositionStart : -1, (window.Query.CompositionText ?? "").Length, rollAngle);
     }
     void DrawContents(Graphics g)
     {
@@ -967,7 +1006,7 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
         }
         return result;
     }
-    public static void DrawArcText(Graphics g, string text, double radius, double angle, double maxSpan, Font font, Color color, bool upper, int caret, int selection, int markedStart, int markedLength)
+    public static void DrawArcText(Graphics g, string text, double radius, double angle, double maxSpan, Font font, Color color, bool upper, int caret, int selection, int markedStart, int markedLength, double rollAngle = 0)
     {
         if (string.IsNullOrEmpty(text)) return;
         var glyphs = new List<string>(); var advances = new List<double>(); var ranges = new List<int>();
@@ -997,6 +1036,11 @@ public sealed class TokcatLauncherRadial : IDisposable, IMessageFilter
                 if (caret == ranges[i]) insertion = offset;
                 double a = angle + (upper ? 1 : -1) * (offset + advances[i] / 2) / radius;
                 var state = g.Save(); g.TranslateTransform((float)(Math.Cos(a) * radius), (float)(Math.Sin(a) * radius)); g.RotateTransform((float)((a + (upper ? Math.PI / 2 : -Math.PI / 2)) * 180 / Math.PI));
+                if (rollAngle != 0)
+                {
+                    g.TranslateTransform(0, (float)(Math.Sin(rollAngle) * font.Size * 0.67));
+                    g.ScaleTransform(1, (float)Math.Max(0.001, Math.Cos(rollAngle)));
+                }
                 int end = i + 1 < ranges.Count ? ranges[i + 1] : text.Length;
                 if (selection > 0 && end > caret && ranges[i] < caret + selection)
                     using (var fill = new SolidBrush(Color.FromArgb((int)(color.A * 0.22), color))) g.FillRectangle(fill, (float)-advances[i] / 2, -font.Size * 0.65f, (float)advances[i], font.Size * 1.3f);

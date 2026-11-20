@@ -499,7 +499,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 if settings.applicationLauncherSkin == .radial {
-                    Text("轮盘跟随鼠标。← → 移动输入光标，↑ ↓ 固定轮盘并选择结果；固定后可悬停、点击或回车。按住 ⌘ 锁定鼠标，以色散光线指向结果，松开执行；Esc 收起。")
+                    Text("输入框中，← → 移动光标，↑ ↓ 翻历史，⌘↑ 直接选中上方结果。到最旧记录或当前草稿后再按一次，即可选中该方向的结果。选中结果后，用四个方向键移动，回车执行。按住 ⌘ 锁定鼠标，以色散光线指向结果，松开执行；Esc 收起。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if #available(macOS 14, *), settings.applicationLauncherSkin.usesCyberAppearance {

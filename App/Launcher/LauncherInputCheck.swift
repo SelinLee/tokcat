@@ -22,6 +22,11 @@ enum LauncherInputCheck {
         let weibo = LauncherApplication(url: URL(fileURLWithPath: "/Applications/Weibo.app"), name: "微博")
         var openedURLs: [URL] = []
         let historyStore = LauncherHistoryStore(defaults: defaults)
+        let history = LauncherHistory(entries: [
+            LauncherHistoryEntry(text: "微信", application: wechat),
+            LauncherHistoryEntry(text: "微博", application: weibo)
+        ])
+        if skin == .radial { historyStore.save(history) }
         let usageStore = LauncherUsageStore(defaults: defaults)
         let controller = ApplicationLauncherController(historyStore: historyStore,
             positionStore: LauncherWindowPositionStore(defaults: defaults),
@@ -85,11 +90,93 @@ enum LauncherInputCheck {
         controller.radialMotion.finishImmediately()
         pressArrow(NSDownArrowFunctionKey, code: 125)
         let lowerResult = controller.selectedIndex
-        precondition(lowerResult != 0 && editor.selectedRange() == NSRange(location: 1, length: 0))
+        precondition(lowerResult == (skin == .radial ? 0 : 1) && editor.selectedRange() == NSRange(location: 1, length: 0))
         pressArrow(NSUpArrowFunctionKey, code: 126)
         precondition(controller.selectedIndex != lowerResult && editor.selectedRange() == NSRange(location: 1, length: 0))
 
-        precondition(openedURLs.isEmpty && historyStore.load().entries.isEmpty && usageStore.load().isEmpty)
+        if skin == .radial {
+            precondition(controller.radialInputSelected)
+            // A non-empty draft may have its insertion point in the middle.
+            pressArrow(NSLeftArrowFunctionKey, code: 123)
+            pressArrow(NSUpArrowFunctionKey, code: 126)
+            precondition(controller.radialInputSelected && controller.query == "微信" && controller.historyRoll?.previous == "微")
+            pressArrow(NSUpArrowFunctionKey, code: 126)
+            precondition(controller.query == "微博" && controller.historyRoll?.older == true)
+            pressArrow(NSUpArrowFunctionKey, code: 126)
+            precondition(!controller.radialInputSelected && controller.query == "微博" && controller.isBrowsingHistory)
+            pressArrow(NSDownArrowFunctionKey, code: 125)
+            precondition(controller.radialInputSelected && controller.query == "微博")
+            pressArrow(NSDownArrowFunctionKey, code: 125)
+            precondition(controller.query == "微信" && controller.historyRoll?.older == false)
+            pressArrow(NSDownArrowFunctionKey, code: 125)
+            precondition(controller.radialInputSelected && !controller.isBrowsingHistory && controller.query == "微")
+            precondition(editor.selectedRange() == NSRange(location: 0, length: 0))
+            pressArrow(NSDownArrowFunctionKey, code: 125)
+            precondition(controller.selectedIndex == 0)
+            let caret = editor.selectedRange()
+            pressArrow(NSRightArrowFunctionKey, code: 124)
+            precondition(editor.selectedRange() == caret && !controller.radialInputSelected)
+            pressArrow(NSLeftArrowFunctionKey, code: 123)
+            precondition(editor.selectedRange() == caret)
+        }
+
+        precondition(openedURLs.isEmpty && historyStore.load().entries == (skin == .radial ? history.entries : []) && usageStore.load().isEmpty,
+                     "Moving the selection must not execute or record launcher actions")
+        if skin == .radial {
+            editor.selectAll(nil)
+            editor.insertText("https://example.org", replacementRange: notFound)
+            settle()
+            pressArrow(NSDownArrowFunctionKey, code: 125)
+            precondition(controller.selectedIndex == 0 && openedURLs.isEmpty)
+            editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+            precondition(openedURLs.count == 1 && openedURLs[0].host == "example.org")
+            verifyCommandUp(controller, opened: { openedURLs.count })
+        }
+    }
+
+    private static func verifyCommandUp(_ controller: ApplicationLauncherController, opened: () -> Int) {
+        controller.show()
+        defer { controller.dismiss() }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        guard let field = controller.searchField, let panel = field.window,
+              let editor = field.currentEditor() as? NSTextView else { preconditionFailure("Missing wheel editor") }
+        func send(_ type: NSEvent.EventType, _ code: UInt16, _ flags: NSEvent.ModifierFlags, _ characters: String = "") {
+            let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+            NSApp.sendEvent(event)
+        }
+        let openedBefore = opened()
+        let arrow = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        func commandUp() {
+            send(.flagsChanged, 55, .command)
+            send(.keyDown, 126, [.command, .numericPad, .function], arrow)
+            send(.flagsChanged, 55, [])
+        }
+
+        commandUp()
+        precondition(controller.radialInputSelected && controller.query.isEmpty && !controller.isBrowsingHistory)
+        editor.insertText("tran+two words", replacementRange: NSRange(location: NSNotFound, length: 0))
+        controller.radialMotion.finishImmediately()
+        let caret = editor.selectedRange()
+        let upper = controller.radialLayout.neighbor(of: LauncherRadialLayout.inputIndex, direction: .up)
+        precondition(upper != LauncherRadialLayout.inputIndex && upper != nil)
+        send(.flagsChanged, 55, .command)
+        controller.moveRadialAim(dx: 0, dy: LauncherRadialLayout.resultRadius)
+        precondition(controller.radialAimIndex == 0)
+        send(.keyDown, 126, [.command, .numericPad, .function], arrow)
+        send(.flagsChanged, 55, [])
+        precondition(controller.selectedIndex == upper && !controller.radialIsAiming && opened() == openedBefore)
+        precondition(controller.query == "tran+two words" && !controller.isBrowsingHistory && editor.selectedRange() == caret)
+
+        send(.keyDown, 125, [.numericPad, .function], String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        send(.keyDown, 126, [.numericPad, .function], arrow)
+        precondition(controller.radialInputSelected && controller.isBrowsingHistory)
+        let recalled = controller.query
+        commandUp()
+        precondition(!controller.radialInputSelected && controller.query == recalled && controller.isBrowsingHistory)
+        precondition(opened() == openedBefore)
+        print("Verified Command-Up skips history, preserves the draft and cancels release-to-execute")
     }
 }
 #endif

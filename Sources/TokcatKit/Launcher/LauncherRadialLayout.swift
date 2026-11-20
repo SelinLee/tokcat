@@ -3,6 +3,8 @@ import Foundation
 /// Coordinates are relative to the wheel center, with positive Y pointing down.
 public struct LauncherRadialLayout: Sendable {
     public static let inputCenter = CGPoint(x: 0, y: -74)
+    /// The input participates in keyboard navigation, but is never an executable sector.
+    public static let inputIndex = -1
     public static let inputRadius: CGFloat = 76
     public static let inputThickness: CGFloat = 34
     public static let resultRadius = inputRadius
@@ -99,8 +101,13 @@ public struct LauncherRadialLayout: Sendable {
     }
 
     public func neighbor(of index: Int, direction: Direction, positions: [Int: CGPoint] = [:]) -> Int? {
-        guard let current = slots.first(where: { $0.index == index }) else { return slots.first?.index }
-        let origin = positions[index] ?? current.center
+        let input = Slot(index: Self.inputIndex, ring: 0, radius: Self.inputRadius, startAngle: .pi, endAngle: 2 * .pi)
+        let targets = [input] + slots
+        func point(_ slot: Slot) -> CGPoint {
+            slot.index == Self.inputIndex ? Self.inputCenter : positions[slot.index] ?? slot.center
+        }
+        guard let current = targets.first(where: { $0.index == index }) else { return slots.first?.index }
+        let origin = point(current)
         let axis: CGPoint
         switch direction {
         case .left: axis = CGPoint(x: -1, y: 0)
@@ -108,17 +115,16 @@ public struct LauncherRadialLayout: Sendable {
         case .up: axis = CGPoint(x: 0, y: -1)
         case .down: axis = CGPoint(x: 0, y: 1)
         }
-        func point(_ slot: Slot) -> CGPoint { positions[slot.index] ?? slot.center }
         // The inner lower semicircle's center is slightly lower than the two
         // outer lower arcs' centers. They still form the next visible row.
-        if direction == .down, current.ring == 0 {
+        if direction == .down, current.ring == 0, index != Self.inputIndex {
             let lowerPair = slots.filter {
                 let p = point($0)
                 return $0.ring == 1 && p.y > 0 && abs(p.y - origin.y) <= Self.resultThickness / 2
             }
             if lowerPair.count > 1 { return lowerPair.min { point($0).x < point($1).x }?.index }
         }
-        let candidates = slots.compactMap { slot -> (index: Int, forward: CGFloat, sideways: CGFloat, x: CGFloat)? in
+        let candidates = targets.compactMap { slot -> (index: Int, forward: CGFloat, sideways: CGFloat, x: CGFloat)? in
             guard slot.index != index else { return nil }
             let candidate = point(slot)
             // On the lower half, Down must not jump back to a shallower arc

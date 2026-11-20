@@ -62,8 +62,15 @@ final class LauncherRadialTests: XCTestCase {
         let layout = LauncherRadialLayout(count: 9)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .down), 3, "The lower outer pair is the next visible row, starting at its left arc")
         XCTAssertEqual(layout.neighbor(of: 4, direction: .up), 0)
-        XCTAssertEqual(layout.neighbor(of: 0, direction: .up), 1)
-        XCTAssertEqual(layout.neighbor(of: 1, direction: .down), 0)
+        let input = LauncherRadialLayout.inputIndex
+        XCTAssertEqual(layout.neighbor(of: 0, direction: .up), input)
+        XCTAssertEqual(layout.neighbor(of: 1, direction: .down), input)
+        XCTAssertEqual(layout.neighbor(of: input, direction: .up), 1)
+        XCTAssertEqual(layout.neighbor(of: input, direction: .down), 0)
+        XCTAssertEqual(LauncherRadialLayout(count: 0).neighbor(of: input, direction: .down), input)
+        let sides = [0: CGPoint(x: -90, y: -74), 1: CGPoint(x: 90, y: -74)]
+        XCTAssertEqual(LauncherRadialLayout(count: 2).neighbor(of: 0, direction: .right, positions: sides), input)
+        XCTAssertEqual(LauncherRadialLayout(count: 2).neighbor(of: 1, direction: .left, positions: sides), input)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .right), 2)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .left), 3)
         XCTAssertEqual(layout.neighbor(of: 2, direction: .right), 8)
@@ -75,12 +82,23 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertEqual(LauncherRadialLayout(count: 1).neighbor(of: 0, direction: .down), 0)
     }
 
-    func testEveryArrowFollowsItsScreenDirectionOrScansTheLowerRow() {
+    func testEveryArrowFollowsItsScreenDirectionOrScansTheLowerRow() throws {
         for count in 2...18 {
             let layout = LauncherRadialLayout(count: count)
             for slot in layout.slots {
                 for direction in [LauncherRadialLayout.Direction.up, .down, .left, .right] {
-                    let next = layout.slots.first { $0.index == layout.neighbor(of: slot.index, direction: direction) }!
+                    let target = layout.neighbor(of: slot.index, direction: direction)
+                    if target == LauncherRadialLayout.inputIndex {
+                        let input = LauncherRadialLayout.inputCenter
+                        switch direction {
+                        case .up: XCTAssertLessThan(input.y, slot.center.y)
+                        case .down: XCTAssertGreaterThan(input.y, slot.center.y)
+                        case .left: XCTAssertLessThan(input.x, slot.center.x)
+                        case .right: XCTAssertGreaterThan(input.x, slot.center.x)
+                        }
+                        continue
+                    }
+                    let next = try XCTUnwrap(layout.slots.first { $0.index == target })
                     if next.index == slot.index { continue }
                     switch direction {
                     case .up: XCTAssertLessThan(next.center.y, slot.center.y - 0.5)
@@ -103,7 +121,7 @@ final class LauncherRadialTests: XCTestCase {
         XCTAssertEqual(layout.neighbor(of: 3, direction: .down), 2)
         XCTAssertEqual(layout.neighbor(of: 2, direction: .down), 2)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .down, positions: [
-            0: CGPoint(x: 0, y: -80), 1: CGPoint(x: 0, y: -160),
+            0: CGPoint(x: 0, y: -40), 1: CGPoint(x: 0, y: -160),
             2: CGPoint(x: 90, y: 80), 3: CGPoint(x: -90, y: 80)
         ]), 3, "Equal candidates below must choose the left one rather than the earlier result index")
     }
@@ -119,7 +137,7 @@ final class LauncherRadialTests: XCTestCase {
 
     func testNavigationUsesPresentationPositionsDuringAReflow() {
         let layout = LauncherRadialLayout(count: 3)
-        let positions = [0: CGPoint(x: 0, y: 76), 1: CGPoint(x: 0, y: 170), 2: CGPoint(x: 0, y: -130)]
+        let positions = [0: CGPoint(x: 0, y: 76), 1: CGPoint(x: 0, y: 170), 2: CGPoint(x: 0, y: -45)]
         XCTAssertEqual(layout.neighbor(of: 0, direction: .down, positions: positions), 1)
         XCTAssertEqual(layout.neighbor(of: 0, direction: .up, positions: positions), 2)
     }

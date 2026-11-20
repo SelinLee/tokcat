@@ -61,19 +61,40 @@ struct LauncherRadialView: View {
         ZStack(alignment: .topLeading) {
             let arc = RadialSector(center: canvas.center, radius: LauncherRadialLayout.inputRadius,
                                    thickness: LauncherRadialLayout.inputThickness, start: .pi, end: .pi * 2)
-            arc.fill(style.accent.opacity(controller.radialIsAiming ? 0.12 : 0.05)).blur(radius: 7)
+            arc.fill(style.accent.opacity(controller.radialInputSelected ? 0.17 : 0.05)).blur(radius: 7)
+                .contentShape(arc)
+                .onTapGesture { controller.selectRadialHover(LauncherRadialLayout.inputIndex) }
             LauncherSearchField(controller: controller, query: controller.query, cyberStyle: style, compact: true)
                 .frame(width: 166, height: 28)
                 .position(x: canvas.center.x, y: canvas.center.y + LauncherRadialLayout.inputCenter.y)
-            LauncherArcText(text: controller.query.isEmpty ? LauncherSearchField.radialPlaceholder : controller.query,
-                            center: canvas.center, radius: LauncherRadialLayout.inputRadius,
-                            angle: .pi * 1.5, maxSpan: .pi * 0.76,
-                            font: controller.query.isEmpty ? .systemFont(ofSize: 14, weight: .medium)
-                                : .monospacedSystemFont(ofSize: 18, weight: .medium),
-                            color: controller.query.isEmpty ? style.secondaryText : style.primaryText,
-                            upper: true, caret: controller.query.isEmpty ? nil : controller.radialInputSelection.location,
-                            selection: controller.radialInputSelection, marked: controller.radialMarkedRange)
+            if let roll = controller.historyRoll, !reduceMotion, controller.radialInputSelected {
+                let duration = ApplicationLauncherController.HistoryRoll.duration
+                let frames = (0...12).map { roll.start.addingTimeInterval(duration * Double($0) / 12) }
+                    + [roll.start.addingTimeInterval(duration + 0.016)]
+                TimelineView(.explicit(frames)) { frame in
+                    let t = min(1, max(0, frame.date.timeIntervalSince(roll.start) / duration))
+                    let turn = (roll.older ? 1.0 : -1.0) * .pi / 2
+                    ZStack {
+                        if t < 1 { inputText(roll.previous, angle: turn * t, editing: false) }
+                        inputText(controller.query, angle: turn * (t - 1), editing: t >= 1)
+                    }
+                }
+                .id(roll.start)
+            } else {
+                inputText(controller.query, angle: 0, editing: controller.radialInputSelected)
+            }
         }
+    }
+
+    private func inputText(_ text: String, angle: Double, editing: Bool) -> some View {
+        LauncherArcText(text: text.isEmpty ? LauncherSearchField.radialPlaceholder : text,
+                        center: canvas.center, radius: LauncherRadialLayout.inputRadius,
+                        angle: .pi * 1.5, maxSpan: .pi * 0.76,
+                        font: text.isEmpty ? .systemFont(ofSize: 14, weight: .medium) : .monospacedSystemFont(ofSize: 18, weight: .medium),
+                        color: text.isEmpty || !controller.radialInputSelected ? style.secondaryText : style.primaryText,
+                        upper: true, caret: editing && !text.isEmpty ? controller.radialInputSelection.location : nil,
+                        selection: editing ? controller.radialInputSelection : nil,
+                        marked: editing ? controller.radialMarkedRange : nil, rollAngle: angle)
     }
 
     private func result(_ entry: LauncherRadialMotion.Entry) -> some View {

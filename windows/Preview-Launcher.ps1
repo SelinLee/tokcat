@@ -30,7 +30,7 @@ foreach ($theme in @('light','dark')) {
                             [TokcatLauncherResult]@{Title='计算器';Detail='应用';Kind='application';Key='preview:calculator';RadialWeight=1.6;App=[TokcatLauncherApp]@{Name='计算器';Target=(Join-Path $env:WINDIR 'System32/calc.exe')}},
                             [TokcatLauncherResult]@{Title='翻译';Detail='查看释义';Kind='translate';Key='translate';RadialWeight=1.8},
                             [TokcatLauncherResult]@{Title='网页搜索';Detail='百度搜索';Kind='website';Key='web-search';RadialWeight=0.25}
-                        ),'← → 移动光标 · ↑ ↓ 选择结果 · Enter 执行')
+                        ),'输入框 ↑ ↓ 翻历史 · 结果中方向键选择 · Enter 执行')
                     }
                     translation {
                         $window.Query.Text='tran+hello world'

@@ -14,6 +14,7 @@ struct LauncherArcText: View {
     var caret: Int? = nil
     var selection: NSRange? = nil
     var marked: NSRange? = nil
+    var rollAngle: Double = 0
 
     private struct Glyph {
         let text: String
@@ -52,6 +53,11 @@ struct LauncherArcText: View {
                 var layer = context
                 layer.translateBy(x: point.x, y: point.y)
                 layer.rotate(by: .radians(a + (upper ? .pi / 2 : -.pi / 2)))
+                if rollAngle != 0 {
+                    layer.translateBy(x: 0, y: sin(rollAngle) * font.pointSize * 0.67)
+                    layer.scaleBy(x: 1, y: cos(rollAngle))
+                    layer.opacity *= cos(rollAngle)
+                }
                 if let selection, selection.length > 0, NSIntersectionRange(selection, glyph.range).length > 0 {
                     layer.fill(Path(roundedRect: CGRect(x: -glyph.advance / 2, y: -font.pointSize * 0.65,
                                                         width: glyph.advance, height: font.pointSize * 1.3), cornerRadius: 2),

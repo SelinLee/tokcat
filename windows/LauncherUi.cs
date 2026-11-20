@@ -263,10 +263,17 @@ public sealed class TokcatLauncherWindow : Form
     {
         if (IsPreview) return;
         if (Query.Composing) return;
-        if (Appearance.IsRadial && e.Modifiers == Keys.None && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
+        if (Appearance.IsRadial && e.KeyData == (Keys.Control | Keys.Up))
         {
-            if ((Query.TextLength == 0 && e.KeyCode == Keys.Up) || BrowsingHistory)
+            Radial.Navigate(Keys.Up);
+            e.Handled = true; e.SuppressKeyPress = true; return;
+        }
+        if (Appearance.IsRadial && e.Modifiers == Keys.None &&
+            (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down || e.KeyCode == Keys.Left || e.KeyCode == Keys.Right))
+        {
+            if (Results.SelectedIndex == TokcatRadialLayout.InputIndex)
             {
+                if (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right) return;
                 if (e.KeyCode == Keys.Up && HistoryOlder != null) HistoryOlder(this, EventArgs.Empty);
                 else if (e.KeyCode == Keys.Down && HistoryNewer != null) HistoryNewer(this, EventArgs.Empty);
             }
@@ -294,6 +301,11 @@ public sealed class TokcatLauncherWindow : Form
     }
 
     public bool BrowsingHistory { get; set; }
+    public TokcatLauncherResult SubmissionResult
+    {
+        get { return Results.SelectedItem as TokcatLauncherResult ??
+            (Appearance.IsRadial && Results.Items.Count > 0 ? (TokcatLauncherResult)Results.Items[0] : null); }
+    }
     void Submit() { if (Submitted != null) Submitted(this, EventArgs.Empty); }
 
     void DrawResult(object sender, DrawItemEventArgs e)
@@ -350,7 +362,7 @@ public sealed class TokcatLauncherWindow : Form
                 Results.Items.Add(result);
                 if (result.Kind == "application") icons.Request(result.App);
             }
-            if (Results.Items.Count > 0) Results.SelectedIndex = 0;
+            if (Results.Items.Count > 0 && (!Appearance.IsRadial || selectedKey != null)) Results.SelectedIndex = 0;
             if (selectedKey != null)
                 for (int i = 0; i < Results.Items.Count; i++)
                     if (string.Equals(((TokcatLauncherResult)Results.Items[i]).Key, selectedKey, StringComparison.OrdinalIgnoreCase)) { Results.SelectedIndex = i; break; }
@@ -628,6 +640,8 @@ public sealed class TokcatLauncherController : IDisposable
     bool scanning, recalling, configurationValid = true;
     volatile bool disposed;
     int historyCursor = -1;
+    string historyDraft = "";
+    int draftStart, draftLength;
     string catalogError;
     string observedInput;
     public readonly TokcatLauncherWindow Window;
@@ -748,16 +762,27 @@ public sealed class TokcatLauncherController : IDisposable
     void Recall(bool older)
     {
         int next = historyCursor + (older ? 1 : -1);
-        if (next < -1 || next >= settings.History.Count) return;
+        if (next < -1 || next >= settings.History.Count)
+        {
+            if (Window.Appearance.IsRadial) Window.Radial.Navigate(older ? Keys.Up : Keys.Down);
+            return;
+        }
+        if (historyCursor == -1)
+        {
+            historyDraft = Window.Query.Text;
+            draftStart = Window.Query.SelectionStart;
+            draftLength = Window.Query.SelectionLength;
+        }
+        if (Window.Appearance.IsRadial) Window.Radial.StartHistoryRoll(Window.Query.Text, older);
         historyCursor = next;
         recalling = true;
         try
         {
             Window.BrowsingHistory = next >= 0;
-            string text = next < 0 ? "" : settings.History[next].Text;
+            string text = next < 0 ? historyDraft : settings.History[next].Text;
             if (Window.Query.Text == text) UpdateResults();
             else Window.Query.Text = text;
-            Window.Query.SelectionStart = Window.Query.TextLength;
+            Window.Query.Select(next < 0 ? draftStart : text.Length, next < 0 ? draftLength : 0);
         }
         finally { recalling = false; }
     }
@@ -776,7 +801,11 @@ public sealed class TokcatLauncherController : IDisposable
         string text = Window.Query.DisplayText;
         if (observedInput == text) return;
         observedInput = text;
-        if (!recalling) { historyCursor = -1; Window.BrowsingHistory = false; }
+        if (!recalling)
+        {
+            historyCursor = -1; Window.BrowsingHistory = false;
+            Window.Radial.EndHistoryRoll();
+        }
         UpdateResults();
     }
 
@@ -932,7 +961,7 @@ public sealed class TokcatLauncherController : IDisposable
 
     void OpenContainingFolder()
     {
-        var result = Window.Results.SelectedItem as TokcatLauncherResult;
+        var result = Window.SubmissionResult;
         if (result == null) return;
         if (result.Kind != "file") { SubmitSelection(); return; }
         try
@@ -948,7 +977,7 @@ public sealed class TokcatLauncherController : IDisposable
 
     public void SubmitSelection()
     {
-        var radialResult = Window.Results.SelectedItem as TokcatLauncherResult;
+        var radialResult = Window.SubmissionResult;
         if (Window.Appearance.IsRadial && radialResult != null)
         {
             if (radialResult.Kind == "translate") { requestedTranslation = Window.Query.DisplayText.Trim(); UpdateResults(); Window.Query.Focus(); return; }
@@ -966,7 +995,7 @@ public sealed class TokcatLauncherController : IDisposable
             catch (Exception error) { Window.SetHint("无法复制释义 · " + error.Message, true); }
             return;
         }
-        var result = Window.Results.SelectedItem as TokcatLauncherResult;
+        var result = radialResult;
         if (result == null) return;
         string input = Window.Query.DisplayText.Trim();
         if (result.Kind == "fill")
@@ -1223,7 +1252,7 @@ public sealed class TokcatLauncherSettingsWindow : Form
         automaticText.Checked = settings.AutoTextColor; automaticText.SetBounds(24, 66, 660, 30);
         skin.SelectedIndexChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
         automaticText.CheckedChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
-        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n中文输入法组字即时匹配；tran+翻译，>命令，setup 打开设置\n按 ↑ 调出历史；经典／赛博悬浮可拖动背景保存位置\n轮盘最多三层，跟随鼠标；← → 移动光标，↑ ↓ 固定轮盘并选择结果\n按住 Ctrl 指向，松开执行；Ctrl+滚轮阅读释义；Esc 收起", Location = new Point(24, 246), Size = new Size(650, 108) };
+        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n中文输入法组字即时匹配；tran+翻译，>命令，setup 打开设置\n按 ↑ 调出历史；经典／赛博悬浮可拖动背景保存位置\n输入框中 ← → 移动光标，↑ ↓ 翻历史，Ctrl+↑ 直接选中上方结果\n结果中用四个方向键选择，Enter 执行\n按住 Ctrl 指向，松开执行；Ctrl+滚轮阅读释义；Esc 收起", Location = new Point(24, 246), Size = new Size(650, 108) };
         var clear = new Button { Text = "清空历史与使用权重", Location = new Point(24, 360), Size = new Size(200, 32) };
         clear.Click += delegate { settings.History.Clear(); settings.Usage.Clear(); ClearsHistory = true; clear.Text = "保存后清空历史与权重"; };
         general.Controls.AddRange(new Control[] { enabled, caption, shortcut, skinCaption, skin, automaticText, hint, clear });

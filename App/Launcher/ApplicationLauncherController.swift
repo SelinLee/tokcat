@@ -20,6 +20,14 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     @Published private(set) var historyCount: Int
     @Published private(set) var usage: LauncherUsageHistory
     @Published private(set) var isBrowsingHistory = false
+    struct HistoryRoll {
+        let previous: String
+        let older: Bool
+        let start = Date()
+        static let duration = 0.13
+    }
+    @Published private(set) var historyRoll: HistoryRoll?
+    var radialInputSelected: Bool { skin == .radial && selectedIndex == LauncherRadialLayout.inputIndex }
     @Published private(set) var calculation: LauncherCalculation?
     @Published private(set) var customCommands: [LauncherCustomCommand]
     @Published private(set) var webShortcuts: [LauncherWebShortcut]
@@ -60,6 +68,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
     private var usageGeneration = 0
     private var history: LauncherHistory
     private var historyCursor: Int?
+    private var historyDraft = ""
+    private var draftSelection: NSRange?
     private var presentationID = 0
     private let positionStore: LauncherWindowPositionStore
     private var panelAnchor: LauncherWindowPosition?
@@ -215,6 +225,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         let wasRadial = self.skin == .radial
         stopRadialTracking()
         self.skin = skin
+        selectedIndex = skin == .radial ? LauncherRadialLayout.inputIndex : 0
+        historyRoll = nil
         panel?.hasShadow = skin == .classic
         panel?.isMovableByWindowBackground = skin != .radial
         if skin == .radial {
@@ -285,6 +297,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         radialAnchor = NSEvent.mouseLocation
         radialIsFollowing = true
         presentationID += 1
+        historyRoll = nil
         historyCursor = nil
         isBrowsingHistory = false
         query = ""
@@ -413,12 +426,14 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
                 self.icons.removeAll()
                 self.lastScan = Date()
                 self.isIndexing = false
-                self.updateResults()
+                self.updateResults(preservingRadialSelection: true)
             }
         }
     }
 
-    private func updateResults() {
+    private func updateResults(preservingRadialSelection: Bool = false) {
+        let oldItems = preservingRadialSelection && skin == .radial ? radialItems : []
+        let selectedID = oldItems.indices.contains(selectedIndex) ? oldItems[selectedIndex].id : nil
         if skin == .radial { cancelRadialAim(ignoreUntilRelease: true) }
         let recalledApplication = historyCursor.flatMap { cursor in
             history.entries.indices.contains(cursor) ? history.entries[cursor].application : nil
@@ -439,7 +454,8 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             suggestedSearch = nil
         }
         updateTranslation()
-        selectedIndex = 0
+        selectedIndex = skin == .radial
+            ? selectedID.flatMap { id in radialItems.firstIndex { $0.id == id } } ?? LauncherRadialLayout.inputIndex : 0
         resizePanel()
     }
 
@@ -471,7 +487,9 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
                     self.updateRadialDefinitionPanel()
                     return
                 }
-                self.selectedIndex = selectedID.flatMap { id in newItems.firstIndex { $0.id == id } } ?? 0
+                if !self.radialInputSelected {
+                    self.selectedIndex = selectedID.flatMap { id in newItems.firstIndex { $0.id == id } } ?? 0
+                }
                 self.resizePanel()
             }
         }
@@ -536,20 +554,32 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         historyCount = history.entries.count
     }
 
-    private func recallHistory(older: Bool) {
-        guard !history.entries.isEmpty else { return }
+    @discardableResult
+    private func recallHistory(older: Bool) -> Bool {
         let next = historyCursor.map { $0 + (older ? 1 : -1) } ?? (older ? 0 : -1)
+        guard history.entries.indices.contains(next) || (next == -1 && historyCursor != nil) else { return false }
+        if historyCursor == nil {
+            historyDraft = query
+            draftSelection = (searchField?.currentEditor() as? NSTextView)?.selectedRange()
+        }
+        if skin == .radial { historyRoll = HistoryRoll(previous: query, older: older) }
         if next < 0 {
             historyCursor = nil
             isBrowsingHistory = false
-            query = ""
-        } else if history.entries.indices.contains(next) {
+            query = historyDraft
+        } else {
             historyCursor = next
             isBrowsingHistory = true
             query = history.entries[next].text
-        } else { return }
+        }
+        if let field = searchField {
+            let selection = next < 0 ? draftSelection : nil
+            LauncherSearchField.synchronize(field, query: query, selection: selection ?? NSRange(location: query.utf16.count, length: 0))
+            updateRadialEditorState()
+        }
         launchError = nil
         updateResults()
+        return true
     }
 
     private func resizePanel() {
@@ -767,10 +797,13 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
+        let text = skin == .radial ? (field.currentEditor()?.string ?? field.stringValue) : field.stringValue
+        updateRadialEditorState()
+        guard query != text else { return }
+        historyRoll = nil
         historyCursor = nil
         isBrowsingHistory = false
-        query = skin == .radial ? (field.currentEditor()?.string ?? field.stringValue) : field.stringValue
-        updateRadialEditorState()
+        query = text
         launchError = nil
         updateResults()
     }
@@ -780,17 +813,26 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         guard !textView.hasMarkedText() else { return false }
         if skin == .radial {
             let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.command, .option, .shift]) ?? []
-            if modifiers.isEmpty, !radialItems.isEmpty {
+            if modifiers.isEmpty {
                 let direction: LauncherRadialLayout.Direction?
                 switch command {
+                case #selector(NSResponder.moveLeft(_:)): direction = .left
+                case #selector(NSResponder.moveRight(_:)): direction = .right
                 case #selector(NSResponder.moveUp(_:)): direction = .up
                 case #selector(NSResponder.moveDown(_:)): direction = .down
                 default: direction = nil
                 }
-                if let direction { navigateRadial(direction); return true }
+                if let direction {
+                    if radialInputSelected {
+                        if direction == .left || direction == .right { return false }
+                        if recallHistory(older: direction == .up) { return true }
+                    }
+                    navigateRadial(direction)
+                    return true
+                }
             }
             if command == #selector(NSResponder.insertNewline(_:)) {
-                performRadialItem(at: selectedIndex)
+                performRadialItem(at: radialInputSelected ? 0 : selectedIndex)
                 return true
             }
         }
@@ -876,6 +918,7 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
         applySkin(skin)
         index = ApplicationSearchIndex(applications: applications)
         self.query = query
+        historyRoll = nil
         radialInputSelection = NSRange(location: query.utf16.count, length: 0)
         updateResults()
     }
@@ -956,7 +999,15 @@ extension ApplicationLauncherController {
                 _ = beginRadialAim()
             }
         case .keyDown:
-            if event.keyCode == 53, (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() != true {
+            let isComposing = (searchField?.currentEditor() as? NSTextView)?.hasMarkedText() == true
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            // Handle ⌘↑ before the field editor interprets it as a text command.
+            if event.keyCode == 126, modifiers == .command, (event.window ?? NSApp.keyWindow) === panel, !isComposing {
+                radialIgnoreCommand = true
+                navigateRadial(.up)
+                return nil
+            }
+            if event.keyCode == 53, !isComposing {
                 cancelRadialAim(ignoreUntilRelease: true)
                 dismiss(restoreFocus: true)
                 return nil
@@ -1021,7 +1072,9 @@ extension ApplicationLauncherController {
         } else if let anchor = radialAnchor {
             let mouse = NSEvent.mouseLocation
             let point = CGPoint(x: (mouse.x - anchor.x) / radialScale, y: (anchor.y - mouse.y) / radialScale)
-            if let id = radialMotion.hitTest(point), let index = radialItems.firstIndex(where: { $0.id == id }) {
+            if point.y < 0, abs(hypot(point.x, point.y) - LauncherRadialLayout.inputRadius) <= LauncherRadialLayout.inputThickness / 2 {
+                selectRadialHover(LauncherRadialLayout.inputIndex)
+            } else if let id = radialMotion.hitTest(point), let index = radialItems.firstIndex(where: { $0.id == id }) {
                 selectRadialHover(index)
             }
         }
@@ -1055,7 +1108,6 @@ extension ApplicationLauncherController {
         radialAim.move(dx: dx, dy: dy, limit: radialLayout.outerRadius + 16)
         radialAimVector = radialAim.vector
         radialAimIndex = radialAim.target(in: radialLayout)
-        if let index = radialAimIndex { selectedIndex = index }
     }
 
     func finishRadialAim(commit: Bool) {
@@ -1068,7 +1120,10 @@ extension ApplicationLauncherController {
         radialAimVector = .zero
         radialAimIndex = nil
         radialIsFollowing = radialWasFollowing
-        if let selected { performRadialItem(at: selected) }
+        if let selected {
+            selectedIndex = selected
+            performRadialItem(at: selected)
+        }
     }
 
     private func cancelRadialAim(ignoreUntilRelease: Bool) {
@@ -1089,7 +1144,7 @@ extension ApplicationLauncherController {
     }
 
     func selectRadialHover(_ index: Int) {
-        guard !radialIsFollowing, !radialIsAiming, radialItems.indices.contains(index) else { return }
+        guard !radialIsFollowing, !radialIsAiming, index == LauncherRadialLayout.inputIndex || radialItems.indices.contains(index) else { return }
         if selectedIndex != index { selectedIndex = index }
     }
 

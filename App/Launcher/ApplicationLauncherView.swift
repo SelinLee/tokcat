@@ -441,16 +441,18 @@ struct LauncherSearchField: NSViewRepresentable {
         let editor = field.currentEditor() as? NSTextView
         guard editor?.hasMarkedText() != true else { return }
         applySkin(to: field, coordinator: context.coordinator)
-        guard field.stringValue != query || (editor != nil && editor?.string != query) else { return }
-        // An active NSTextField displays its shared field editor, so synchronize
-        // both the stored value and the text being edited when recalling history.
-        field.stringValue = query
-        if let editor {
-            editor.string = query
-            let caret = NSRange(location: query.utf16.count, length: 0)
-            editor.setSelectedRange(caret)
-            editor.scrollRangeToVisible(caret)
-        }
+        Self.synchronize(field, query: query)
+    }
+
+    static func synchronize(_ field: NSTextField, query: String, selection: NSRange? = nil) {
+        let editor = field.currentEditor() as? NSTextView
+        guard selection != nil || field.stringValue != query || (editor != nil && editor?.string != query) else { return }
+        if field.stringValue != query { field.stringValue = query }
+        guard let editor else { return }
+        if editor.string != query { editor.string = query }
+        let caret = selection ?? NSRange(location: query.utf16.count, length: 0)
+        editor.setSelectedRange(caret)
+        editor.scrollRangeToVisible(caret)
     }
 
     private func applySkin(to field: NSTextField, coordinator: Coordinator) {
