@@ -783,8 +783,6 @@ final class ApplicationLauncherController: NSObject, ObservableObject, NSWindowD
             if modifiers.isEmpty, !radialItems.isEmpty {
                 let direction: LauncherRadialLayout.Direction?
                 switch command {
-                case #selector(NSResponder.moveLeft(_:)): direction = .left
-                case #selector(NSResponder.moveRight(_:)): direction = .right
                 case #selector(NSResponder.moveUp(_:)): direction = .up
                 case #selector(NSResponder.moveDown(_:)): direction = .down
                 default: direction = nil

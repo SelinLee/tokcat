@@ -263,9 +263,9 @@ public sealed class TokcatLauncherWindow : Form
     {
         if (IsPreview) return;
         if (Query.Composing) return;
-        if (Appearance.IsRadial && e.Modifiers == Keys.None && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right || e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
+        if (Appearance.IsRadial && e.Modifiers == Keys.None && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
         {
-            if ((Query.TextLength == 0 && e.KeyCode == Keys.Up) || (BrowsingHistory && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)))
+            if ((Query.TextLength == 0 && e.KeyCode == Keys.Up) || BrowsingHistory)
             {
                 if (e.KeyCode == Keys.Up && HistoryOlder != null) HistoryOlder(this, EventArgs.Empty);
                 else if (e.KeyCode == Keys.Down && HistoryNewer != null) HistoryNewer(this, EventArgs.Empty);
@@ -1223,7 +1223,7 @@ public sealed class TokcatLauncherSettingsWindow : Form
         automaticText.Checked = settings.AutoTextColor; automaticText.SetBounds(24, 66, 660, 30);
         skin.SelectedIndexChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
         automaticText.CheckedChanged += delegate { if (AppearanceChanged != null) AppearanceChanged(this, EventArgs.Empty); };
-        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n中文输入法组字即时匹配；tran+翻译，>命令，setup 打开设置\n按 ↑ 调出历史；经典／赛博悬浮可拖动背景保存位置\n轮盘最多三层，跟随鼠标；方向键固定，悬停、点击或回车选择\n按住 Ctrl 指向，松开执行；Ctrl+滚轮阅读释义；Esc 收起", Location = new Point(24, 246), Size = new Size(650, 108) };
+        var hint = new Label { Text = "运行 Everything 后可搜索文件，Ctrl+Enter 打开所在位置\n中文输入法组字即时匹配；tran+翻译，>命令，setup 打开设置\n按 ↑ 调出历史；经典／赛博悬浮可拖动背景保存位置\n轮盘最多三层，跟随鼠标；← → 移动光标，↑ ↓ 固定轮盘并选择结果\n按住 Ctrl 指向，松开执行；Ctrl+滚轮阅读释义；Esc 收起", Location = new Point(24, 246), Size = new Size(650, 108) };
         var clear = new Button { Text = "清空历史与使用权重", Location = new Point(24, 360), Size = new Size(200, 32) };
         clear.Click += delegate { settings.History.Clear(); settings.Usage.Clear(); ClearsHistory = true; clear.Text = "保存后清空历史与权重"; };
         general.Controls.AddRange(new Control[] { enabled, caption, shortcut, skinCaption, skin, automaticText, hint, clear });

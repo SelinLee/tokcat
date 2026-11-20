@@ -499,7 +499,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 if settings.applicationLauncherSkin == .radial {
-                    Text("轮盘跟随鼠标。← → 同环选择，↑ ↓ 换环并固定轮盘；固定后可悬停、点击或回车。按住 ⌘ 锁定鼠标，以色散光线指向结果，松开执行；Esc 收起。")
+                    Text("轮盘跟随鼠标。← → 移动输入光标，↑ ↓ 固定轮盘并选择结果；固定后可悬停、点击或回车。按住 ⌘ 锁定鼠标，以色散光线指向结果，松开执行；Esc 收起。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if #available(macOS 14, *), settings.applicationLauncherSkin.usesCyberAppearance {

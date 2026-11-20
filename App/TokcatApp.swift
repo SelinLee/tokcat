@@ -6,6 +6,10 @@ import AppKit
 struct TokcatLauncher {
     @MainActor static func main() {
         #if DEBUG
+        if CommandLine.arguments.contains("--verify-launcher-input") {
+            LauncherInputCheck.run()
+            return
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--preview-radial-launcher-live"),
            CommandLine.arguments.count > index + 1 {
             LauncherRadialPreview.runLive(stateURL: URL(fileURLWithPath: CommandLine.arguments[index + 1]))

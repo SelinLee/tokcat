@@ -103,8 +103,8 @@ extension ApplicationLauncherController {
         }
         if radialItems.isEmpty { return isIndexing ? "正在索引应用…" : "没有匹配结果" }
         if radialIsAiming { return radialAimIndex == nil ? "指向外弧\n松开 ⌘ 执行" : "松开 ⌘ 执行" }
-        if radialIsFollowing { return "⌘ 指向 · 方向键固定" }
-        return "↑ ↓ ← → 按方位选择\n悬停选择 · ↵ 执行"
+        if radialIsFollowing { return "⌘ 指向 · ↑ ↓ 固定轮盘" }
+        return "← → 移动光标 · ↑ ↓ 选择\n悬停选择 · ↵ 执行"
     }
 
     func performRadialItem(at index: Int) {

@@ -68,6 +68,15 @@ try {
         [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0102,[IntPtr][int]$letter,[IntPtr]::Zero)
     }
     Assert-Input ($editor.Text -eq 'wewe') 'Plain English typing must keep deliberately repeated text.'
+    $selectedResult=$window.Results.SelectedIndex
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr][int][Windows.Forms.Keys]::Left,[IntPtr]::Zero)
+    Assert-Input ($editor.SelectionStart -eq 3 -and $editor.SelectionLength -eq 0) 'Left must move the caret inside the query.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr][int][Windows.Forms.Keys]::Right,[IntPtr]::Zero)
+    Assert-Input ($editor.SelectionStart -eq 4 -and $editor.SelectionLength -eq 0) 'Right must move the caret forward.'
+    Assert-Input ($window.Results.SelectedIndex -eq $selectedResult -and $window.Radial.Following) 'Moving the caret must leave the wheel and its selection alone.'
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0100,[IntPtr][int][Windows.Forms.Keys]::Left,[IntPtr]::Zero)
+    [void][TokcatImeInputTest]::SendMessage($editor.Handle,0x0102,[IntPtr][int][char]'中',[IntPtr]::Zero)
+    Assert-Input ($editor.Text -eq 'wew中e' -and $editor.SelectionStart -eq 4) 'Typing must insert at the new caret position.'
     $editor.Clear()
     # Sogou's floating reading window can send only candidate notifications and
     # processed keys. Exercise that path without injecting a composition string.
