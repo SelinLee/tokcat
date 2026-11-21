@@ -2,98 +2,45 @@
 
 # tokcat
 
-**See when Codex or Claude Code needs your attention.**
+**AI task status dots and a radial launcher for macOS and Windows**
 
-One dot per task in your macOS menu bar or Windows taskbar. See what’s running, what needs approval, and which replies are ready. Monitoring reads local records and needs no API key.
+Track Codex and Claude Code in your menu bar or taskbar. See when a task needs approval or a reply is ready. Open Cyber Wheel with a shortcut and type an app name to launch it.
 
 **[Download for macOS][mac]** · **[Download Windows preview (ZIP)][win]** · [简体中文](README.zh-CN.md)
 
 </div>
 
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-companion-dark.png" />
-  <img src="docs/assets/screenshots/readme-companion-light.png" alt="Three macOS companion states. In the middle, toki shows a Codex task waiting for you to choose an implementation approach." width="800" />
-</picture>
-</p>
-
-On macOS, **toki** or **biti** can keep watch at the edge of your screen. In this example, Codex needs a decision on a plan. Click the bubble to open Tasks. [See the Windows taskbar](#windows-taskbar)
-
-## Install
-
-### Install for macOS
-
-Get the DMG from the [macOS release][mac], drag `tokcat.app` into Applications, and open it. The same download runs on Apple Silicon and Intel Macs with macOS 13 or later. A ZIP and checksums are also available. Builds are ad-hoc signed and unnotarized. [Apple’s first-launch guide](https://support.apple.com/en-us/102445)
-
-### Install for Windows
-
-On Windows 10 or 11, [download the preview ZIP][win], extract the entire archive, and double-click `tokcat-windows/Tokcat.cmd`. It uses the Windows PowerShell 5.1 included with the system. [Release notes and SHA-256 checksum][win-notes]
-
-## Get started
-
-1. Open tokcat, give **Codex CLI** a task, and switch back to your editor. A yellow dot appears in the macOS menu bar or Windows taskbar while the task runs.
-2. Click the dots to find the session that needs input or approval. Open its conversation to see what the agent asked. A green dot means the turn has finished.
-3. If you also use **Claude Code**, enable hooks in **Settings → Agent** on macOS or follow the [Windows hook setup](windows/README.md#optional-claude-code-monitoring), then restart existing Claude Code sessions to see approval waits.
-
-**Check usage.** Next to the dots, `tok/s` shows combined output speed and `wk` shows the last reported weekly Codex quota remaining. Open Usage to compare tokens and costs by agent, model, or provider.
-
-## Windows taskbar
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/taskbar-dark.png" />
-  <img src="windows/docs/taskbar-light.png" alt="Windows taskbar with status dots, 209 tok/s above 38% weekly quota remaining, and upload and download speeds." width="900" />
-</picture>
-
-Click the taskbar dots to open task details, then double-click a task to read its conversation. Choose the readings beside them in **Settings → Edit metric layout**. [Windows guide](windows/README.md)
-
-## Supported agents
-
-Codex, Claude Code, WorkBuddy, and DeepSeek Harness provide task status and conversations. Codex Work tasks open in ChatGPT. OpenClaw and Kimi provide activity and usage records. On macOS, optional adapters read usage from compatible Cursor and Gemini CLI logs.
-
-<details>
-<summary>macOS support matrix and setup notes</summary>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-agents-dark.png" />
-  <img src="docs/assets/screenshots/readme-agents-light.png" alt="Agent support grouped by live state and conversations, activity and usage, and optional usage adapters" width="1040" />
-</picture>
-
-| Agent | Live task state | Recent tasks | Conversation | Usage / cost |
-|---|---|---|---|---|
-| **Codex** | Local lifecycle events | Per turn | ✓ | ✓ |
-| **Claude Code** | Automatic local registry; optional hooks | ✓ | ✓ | ✓ |
-| **WorkBuddy** | Local database state | Per session | ✓ | ✓ |
-| **WorkBuddy AI** | Local database state | Per session | ✓ | ✓ |
-| **DeepSeek Harness** | Local session projection | Per session | ✓ | ✓ |
-| **OpenClaw** | Activity records only | Activity | — | ✓ |
-| **Kimi** | Activity records only | Activity | — | ✓ |
-| **Cursor** | — | — | — | Compatible JSONL logs, optional |
-| **Gemini CLI** | — | — | — | Compatible JSONL logs, optional |
-
-**CC Switch** is a billing integration for provider attribution and reported costs. It does not supply task lifecycle states.
-
-Claude Code running state is read automatically from the local session registry when available. Optional hooks add approval waits, failures and explicit turn ends; idle alone does not mean completion. DeepSeek Harness covers `dsh web` and DSH Desktop; waiting prompts require the harness's **timed ask-user** mode. Cursor and Gemini CLI adapters are disabled by default and require compatible local usage records. [Setup and data sources](docs/AgentSupport.md)
-
-tokcat displays what local sources report. A quiet log does not prove completion, and a finished turn does not prove the whole project is done. Missing metrics stay unavailable; no invented progress percentages are shown.
-
-</details>
-
-[Windows setup](windows/README.md) · [Local data sources](docs/AgentSupport.md)
-
-## Quick launcher
-
-Press **Control + Space** on macOS or **Alt + Space** on Windows. Find an app by name or pinyin, or type `sqrt(9)+2^3` and press Enter to copy `11`. [Watch Cyber Wheel launch Chrome (video)](https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2)
-
-<details>
-<summary>Cyber Wheel demo, setup, and keyboard controls</summary>
-
-**macOS** · Select Cyber Wheel in **Settings → General → Application Launcher**. Click the animation for the full-quality video.
-
-<p>
   <a href="https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2">
-    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="macOS demo: native menu-bar task status dots, followed by typing chrome in the Cyber Wheel launcher" width="900" />
+    <img src="https://raw.githubusercontent.com/SelinLee/tokcat/main/docs/assets/demos/launcher-chrome.gif?v=2" alt="macOS demo showing task status dots changing state, then Cyber Wheel narrowing app matches to Google Chrome as chrome is typed." width="800" />
   </a>
 </p>
+
+macOS demo · 14 seconds · [Watch the MP4][demo]
+
+## Task status dots
+
+Each dot represents an active task or an unread status update. Click the status area to see the session title and task details. Monitoring reads local records and needs no API key.
+
+| Task state | macOS menu bar | Windows taskbar |
+|---|---|---|
+| Running | Pulsing yellow | Gold |
+| Needs input or approval | Alternating yellow and red | Orange-red |
+| Turn complete | Green | Green |
+| Failed | Solid red | Red |
+
+Beside the dots, `tok/s` shows combined output speed and `wk` shows the last reported weekly Codex quota remaining. [See the Windows taskbar](#windows-taskbar)
+
+<a name="quick-launcher"></a>
+
+## Cyber Wheel
+
+Select **Cyber Wheel** in launcher settings. Press **Control + Space** on macOS or **Alt + Space** on Windows. As you type, matching apps rearrange along the rings. Try `chr`, select Chrome, and press Enter to launch it. For a calculation, enter `sqrt(9)+2^3` and press Enter to copy `11`.
+
+<details>
+<summary>Wheel settings and keyboard navigation</summary>
+
+**macOS** · Select **Cyber Wheel** in **Settings → General → Application Launcher**.
 
 **Windows** · Select **Cyber Wheel** under **Quick launcher → General**, save your choice and press **Alt + Space**. With Everything installed, the launcher can also search local files. The wheel matches apps as you type pinyin, before you choose a Chinese character. As you type or backspace, results move into place across up to three rings. Classic and Cyber Floating are also available in the same settings. [Windows launcher guide](windows/README.md#quick-launcher)
 
@@ -169,26 +116,71 @@ Press **Control + Space** for a compact rounded input field. Matches or results 
 
 </details>
 
+## Install
+
+### Install for macOS
+
+Get the DMG from the [macOS release][mac], drag `tokcat.app` into Applications, and open it. The same download runs on Apple Silicon and Intel Macs with macOS 13 or later. A ZIP and checksums are also available. Builds are ad-hoc signed and unnotarized. [Apple’s first-launch guide](https://support.apple.com/en-us/102445)
+
+### Install for Windows
+
+On Windows 10 or 11, [download the preview ZIP][win], extract the entire archive, and double-click `tokcat-windows/Tokcat.cmd`. It uses the Windows PowerShell 5.1 included with the system. [Release notes and SHA-256 checksum][win-notes]
+
+## Get started
+
+1. Open tokcat, give **Codex CLI** a task, and switch back to your editor. A yellow dot appears in the macOS menu bar or Windows taskbar while the task runs.
+2. Click the dots to find the session that needs input or approval. Open its conversation to see what the agent asked. A green dot means the turn has finished.
+3. If you also use **Claude Code**, enable hooks in **Settings → Agent** on macOS or follow the [Windows hook setup](windows/README.md#optional-claude-code-monitoring), then restart existing Claude Code sessions to see approval waits.
+
+Open Usage to compare tokens and costs by agent, model, or provider.
+
+## Windows taskbar
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="windows/docs/taskbar-dark.png" />
+  <img src="windows/docs/taskbar-light.png" alt="Windows taskbar with status dots, 209 tok/s above 38% weekly quota remaining, and upload and download speeds." width="900" />
+</picture>
+
+Click the taskbar dots to open task details, then double-click a task to read its conversation. Choose the readings beside them in **Settings → Edit metric layout**. [Windows guide](windows/README.md)
+
+## Supported agents
+
+Codex, Claude Code, WorkBuddy, and DeepSeek Harness provide task status and conversations. Codex Work tasks open in ChatGPT. OpenClaw and Kimi provide activity and usage records. On macOS, optional adapters read usage from compatible Cursor and Gemini CLI logs.
+
+<details>
+<summary>macOS support matrix and setup notes</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-agents-dark.png" />
+  <img src="docs/assets/screenshots/readme-agents-light.png" alt="Agent support grouped by live state and conversations, activity and usage, and optional usage adapters" width="1040" />
+</picture>
+
+| Agent | Live task state | Recent tasks | Conversation | Usage / cost |
+|---|---|---|---|---|
+| **Codex** | Local lifecycle events | Per turn | ✓ | ✓ |
+| **Claude Code** | Automatic local registry; optional hooks | ✓ | ✓ | ✓ |
+| **WorkBuddy** | Local database state | Per session | ✓ | ✓ |
+| **WorkBuddy AI** | Local database state | Per session | ✓ | ✓ |
+| **DeepSeek Harness** | Local session projection | Per session | ✓ | ✓ |
+| **OpenClaw** | Activity records only | Activity | — | ✓ |
+| **Kimi** | Activity records only | Activity | — | ✓ |
+| **Cursor** | — | — | — | Compatible JSONL logs, optional |
+| **Gemini CLI** | — | — | — | Compatible JSONL logs, optional |
+
+**CC Switch** is a billing integration for provider attribution and reported costs. It does not supply task lifecycle states.
+
+Claude Code running state is read automatically from the local session registry when available. Optional hooks add approval waits, failures and explicit turn ends; idle alone does not mean completion. DeepSeek Harness covers `dsh web` and DSH Desktop; waiting prompts require the harness's **timed ask-user** mode. Cursor and Gemini CLI adapters are disabled by default and require compatible local usage records. [Setup and data sources](docs/AgentSupport.md)
+
+tokcat displays what local sources report. A quiet log does not prove completion, and a finished turn does not prove the whole project is done. Missing metrics stay unavailable; no invented progress percentages are shown.
+
+</details>
+
+[Windows setup](windows/README.md) · [Local data sources](docs/AgentSupport.md)
+
 ## macOS interface tour
 
 <details>
-<summary>See the menu bar, desktop companion, tasks and usage views</summary>
-
-### A quiet desktop companion
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/readme-avatars-dark.png" />
-  <img src="docs/assets/screenshots/readme-avatars-light.png" alt="Manually selectable neutral-faced toki boy and three biti outfits" width="1040" />
-</picture>
-
-The new companion stays attached to a screen edge, the bottom-right corner, or either side of the Dock. Dragging only adjusts along the selected edge.
-
-
-- **Quiet by default:** no persistent bubble. Recent tools and phases scroll upward one line at a time above the character, within its width.
-- **Details when needed:** click the character or wait for an input/approval request to open a bubble above it. Click the bubble to open Tasks.
-- **Your choice of character:** male **toki**, or **biti** in coral, whale, or violet outfits. All use calm, neutral expressions. Model families determine activity text colors independently of the character.
-
-Choose the appearance and attachment in **Settings → Desktop companion**, or the character's right-click menu. The **Head information** setting also offers a persistent list: each title takes up to two lines with a trailing ellipsis for overflow, followed by its own output tok/s on a separate line. Tasks stack vertically. [Companion behavior](docs/DesktopCompanion.md)
+<summary>See the task list, menu bar, conversations, and usage</summary>
 
 ### Follow multiple agents in one place
 
@@ -266,6 +258,8 @@ CC Switch can add provider attribution, reported charges, and pricing multiplier
 
 The usage database lives in `~/Library/Application Support/Tokcat/`. Task caches and optional Claude hooks live in `~/Library/Application Support/TokenCat/`. Upgrades preserve usage history and monitoring preferences.
 
+On macOS you can also show task alerts at the screen edge in **Settings → Desktop companion**. [Desktop companion settings](docs/DesktopCompanion.md)
+
 </details>
 
 ## Build from source
@@ -298,7 +292,7 @@ Package a release with `bash scripts/package_app.sh`. Build artifacts stay in `d
 
 </details>
 
-If tokcat has earned a spot on your desktop, use **Star** at the top of the page to save the project.
+Use **Star** at the top of this page to save tokcat on GitHub.
 
 Monitoring images use native views with synthetic data and English documentation labels; launcher screenshots retain the current Chinese UI. No private conversations are shown, and the images do not imply full app localization. Light/dark images follow your GitHub theme. [Monitor rendering instructions](scripts/docs_screenshots/README.md)
 
@@ -307,3 +301,5 @@ Monitoring images use native views with synthetic data and English documentation
 [mac]: https://github.com/SelinLee/tokcat/releases/latest
 [win]: https://github.com/SelinLee/tokcat/releases/download/windows-2026.11.18.1/tokcat-windows-2026.11.18.1.zip
 [win-notes]: https://github.com/SelinLee/tokcat/releases/tag/windows-2026.11.18.1
+
+[demo]: https://github.com/SelinLee/tokcat/raw/refs/heads/main/docs/assets/demos/launcher-chrome.mp4?v=2
